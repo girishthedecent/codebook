@@ -1,5 +1,6 @@
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '../generated/prisma/client.js';
+import { shutdownRegistry } from '../utils/helpers/shutdown.helpers.js';
 import { serverConfig } from './index.js';
 import logger from './logger.config.js';
 
@@ -20,6 +21,8 @@ const prismaClient = new PrismaClient({
 
 prismaClient.$on('warn', (e) => logger.warn(e.message, { target: e.target }));
 prismaClient.$on('error', (e) => logger.error(e.message, { target: e.target }));
+
+shutdownRegistry.register(() => prismaClient.$disconnect());
 
 // Query logs are noisy and include raw parameters, so they only show up with
 // LOG_LEVEL=silly, which is for local debugging only.

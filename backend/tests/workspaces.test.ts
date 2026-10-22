@@ -38,8 +38,14 @@ async function countLockWaiters() {
 }
 
 describe('auth', () => {
-  it('rejects requests without a session', async () => {
-    const res = await testApp().get('/api/v1/workspaces');
+  it.each([
+    ['get', '/api/v1/workspaces'],
+    ['post', '/api/v1/workspaces'],
+    ['get', `/api/v1/workspaces/${MISSING_ID}`],
+    ['patch', `/api/v1/workspaces/${MISSING_ID}`],
+    ['delete', `/api/v1/workspaces/${MISSING_ID}`],
+  ] as const)('rejects %s %s without a session', async (method, url) => {
+    const res = await testApp()[method](url);
     expect(res.status).toBe(401);
     expect(res.body.code).toBe('UNAUTHENTICATED');
   });
@@ -290,6 +296,22 @@ describe('isolation between users', () => {
 
     const res = await bob.agent.get('/api/v1/workspaces');
     expect(res.body.data.items.map((w: { name: string }) => w.name)).toEqual(["Bob's"]);
+  });
+
+  it("keeps another user's demo workspace out of the workspace routes", async () => {
+    await prismaClient.workspace.update({
+      where: { id: aliceWorkspaceId },
+      data: { isDemo: true },
+    });
+    const url = `/api/v1/workspaces/${aliceWorkspaceId}`;
+
+    for (const res of [
+      await bob.agent.get(url),
+      await bob.agent.patch(url).send({ name: 'Mine now' }),
+      await bob.agent.delete(url),
+    ]) {
+      expect(res.status).toBe(404);
+    }
   });
 
   it('lets anyone read the demo workspace only when the caller allows it', async () => {

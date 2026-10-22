@@ -6,7 +6,7 @@ import workspaceRouter from '../../modules/workspaces/workspace.router.js';
 const v1Router = express.Router();
 
 v1Router.use('/health', healthRouter);
-v1Router.use(authRouter);
+v1Router.use('/me', authRouter);
 v1Router.use('/workspaces', workspaceRouter);
 
 export default v1Router;

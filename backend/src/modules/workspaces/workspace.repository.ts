@@ -20,7 +20,8 @@ export async function createWorkspace(userId: string, data: NewWorkspace, limit:
 
 export async function listWorkspaces(userId: string, page: PaginationQuery) {
   return paginate(
-    (query) => prismaClient.workspace.findMany({ ...query, where: { ...query.where, userId } }),
+    (query) =>
+      prismaClient.workspace.findMany({ ...query, where: { AND: [query.where, { userId }] } }),
     page,
   );
 }

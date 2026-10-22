@@ -63,7 +63,15 @@ export function notFoundHandler(req: Request, _res: Response, next: NextFunction
 
 export function genericErrorHandler(err: unknown, req: Request, res: Response, next: NextFunction) {
   // Once a response has started (e.g. an SSE stream) Express has to close the connection itself.
-  if (res.headersSent) return next(err);
+  // Log it here first: Express's own fallback prints to stderr without the correlation id.
+  if (res.headersSent) {
+    logger.error('error after response started', {
+      error: err,
+      method: req.method,
+      path: req.path,
+    });
+    return next(err);
+  }
 
   const appError = toAppError(err);
 

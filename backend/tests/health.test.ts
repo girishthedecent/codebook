@@ -32,7 +32,12 @@ describe('GET /api/v1/health/ready', () => {
 
     const res = await testApp().get('/api/v1/health/ready');
     expect(res.status).toBe(503);
-    expect(res.body).toMatchObject({ success: false, data: { status: 'degraded', db: 'down' } });
+    expect(res.body).toMatchObject({
+      success: false,
+      code: 'SERVICE_UNAVAILABLE',
+      data: { status: 'degraded', db: 'down' },
+      correlationId: expect.any(String),
+    });
   });
 });
 

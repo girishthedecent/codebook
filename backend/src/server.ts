@@ -1,8 +1,8 @@
 import { createServer } from 'node:http';
 import { createApp } from './app.js';
-import prismaClient from './config/db.config.js';
 import { serverConfig } from './config/index.js';
 import logger from './config/logger.config.js';
+import { shutdownRegistry } from './utils/helpers/shutdown.helpers.js';
 
 // Not app.listen(): in Express 5 its callback also runs on errors like EADDRINUSE.
 const server = createServer(createApp());
@@ -28,14 +28,9 @@ function shutdown(signal: string) {
   const forceExit = setTimeout(() => process.exit(1), 10_000);
   forceExit.unref();
 
-  server.close(() => {
-    prismaClient.$disconnect().then(
-      () => process.exit(0),
-      (err: unknown) => {
-        logger.error('Failed to disconnect from the database', { error: err });
-        process.exit(1);
-      },
-    );
+  server.close(async () => {
+    const ok = await shutdownRegistry.run();
+    process.exit(ok ? 0 : 1);
   });
 }
 

@@ -62,7 +62,8 @@ describe('parseServerConfig', () => {
 
   it('parses TRUST_PROXY as a flag, a hop count or a proxy list', () => {
     expect(parseServerConfig(base).TRUST_PROXY).toBe(false);
-    expect(parseServerConfig({ ...base, TRUST_PROXY: 'true' }).TRUST_PROXY).toBe(true);
+    const dev = { ...base, NODE_ENV: 'development' };
+    expect(parseServerConfig({ ...dev, TRUST_PROXY: 'true' }).TRUST_PROXY).toBe(true);
     expect(parseServerConfig({ ...base, TRUST_PROXY: '1' }).TRUST_PROXY).toBe(1);
     expect(parseServerConfig({ ...base, TRUST_PROXY: 'loopback, 10.0.0.0/8' }).TRUST_PROXY).toBe(
       'loopback, 10.0.0.0/8',
@@ -74,6 +75,10 @@ describe('parseServerConfig', () => {
     expect(config.GROQ_API_KEY).toBeUndefined();
     expect(config.LOG_TO_FILE).toBe(false);
     expect(config.PORT).toBe(4000);
+  });
+
+  it('refuses TRUST_PROXY=true in production', () => {
+    expect(() => parseServerConfig({ ...base, TRUST_PROXY: 'true' })).toThrow(/X-Forwarded-For/);
   });
 
   it('rejects a TRUST_PROXY value Express would choke on', () => {

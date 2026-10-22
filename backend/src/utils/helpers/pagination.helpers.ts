@@ -63,8 +63,8 @@ export type PageQuery = {
 
 /**
  * Keyset pagination, newest first. `id` breaks ties between rows created in the same
- * millisecond, so no row is skipped or repeated between pages. `query` must spread the given
- * `where` into its own filter.
+ * millisecond, so no row is skipped or repeated between pages. `query` must AND the given
+ * `where` with its own filter (spreading it would clash with a filter that has its own `OR`).
  */
 export async function paginate<T extends CursorRow>(
   query: (page: PageQuery) => Promise<T[]>,

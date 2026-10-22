@@ -96,6 +96,15 @@ const baseSchema = z.object({
 
 const schema = baseSchema
   .superRefine((config, ctx) => {
+    // `true` takes the left-most X-Forwarded-For entry, which the client writes, so anyone could
+    // pick their own IP and dodge the sign-in rate limit.
+    if (config.NODE_ENV === 'production' && config.TRUST_PROXY === true) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['TRUST_PROXY'],
+        message: 'true trusts client-supplied X-Forwarded-For; use a hop count or proxy IPs',
+      });
+    }
     if (config.NODE_ENV === 'production' && !config.BETTER_AUTH_URL) {
       ctx.addIssue({
         code: 'custom',

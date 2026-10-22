@@ -1,7 +1,8 @@
 import express from 'express';
 import request from 'supertest';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
+import logger from '../config/logger.config.js';
 import { Prisma } from '../generated/prisma/client.js';
 import { ConflictError, NotFoundError } from '../utils/errors/app.error.js';
 import { attachCorrelationIdMiddleware } from './correlation.middleware.js';
@@ -93,6 +94,26 @@ describe('genericErrorHandler', () => {
     // OpenAI-style SDK errors carry a `type` as well.
     const typed = Object.assign(new Error('rate limited'), { status: 429, type: 'tokens' });
     expect((await post(typed)).status).toBe(500);
+  });
+
+  it('logs an error thrown after the response has started', async () => {
+    const log = vi.spyOn(logger, 'error').mockImplementation(() => logger);
+    const app = express();
+    app.get('/stream', (_req, res) => {
+      res.write('partial');
+      throw new Error('stream broke');
+    });
+    app.use(genericErrorHandler);
+
+    // Express resets the connection, so the client sees a socket error.
+    await request(app)
+      .get('/stream')
+      .catch(() => undefined);
+    expect(log).toHaveBeenCalledWith(
+      'error after response started',
+      expect.objectContaining({ path: '/stream' }),
+    );
+    log.mockRestore();
   });
 
   it('answers unknown routes with a JSON 404', async () => {

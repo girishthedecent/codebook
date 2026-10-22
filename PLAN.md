@@ -142,7 +142,7 @@ Rules:
 
 ### 4.3 Errors
 - Error classes in `src/utils/errors/app.error.ts`: `AppError(message, statusCode, code, details?)` and subclasses `BadRequestError`, `UnauthorizedError`, `ForbiddenError`, `NotFoundError`, `ConflictError`, `PayloadTooLargeError`, `TooManyRequestsError`, `UpstreamError`, `NotImplementedError`, `InternalServerError`.
-- Codes: `VALIDATION_ERROR` 400, `UNAUTHENTICATED` 401, `FORBIDDEN` 403, `NOT_FOUND` 404, `CONFLICT` 409, `PAYLOAD_TOO_LARGE` 413, `RATE_LIMITED` 429, `NOT_IMPLEMENTED` 501, `UPSTREAM_ERROR` 502, `INTERNAL` 500.
+- Codes: `VALIDATION_ERROR` 400, `UNAUTHENTICATED` 401, `FORBIDDEN` 403, `NOT_FOUND` 404, `CONFLICT` 409, `PAYLOAD_TOO_LARGE` 413, `RATE_LIMITED` 429, `NOT_IMPLEMENTED` 501, `UPSTREAM_ERROR` 502, `INTERNAL` 500. `SERVICE_UNAVAILABLE` 503 is used only by `/health/ready`, whose body is the error shape plus `data`.
 - `genericErrorHandler` (in `middlewares/error.middleware.ts`) also maps zod errors → 400, Prisma `P2025` → 404, `P2002` → 409, body-parser errors → 400/413, anything else → 500 with a generic message (stack only logged).
 - Error response: `{ "success": false, "message": "...", "code": "...", "details"?: ..., "correlationId": "..." }`.
 - Not-found and not-owned both return `404` (don't leak existence).
@@ -151,13 +151,13 @@ Rules:
 - Prefix `/api/v1` (better-auth keeps its own `/api/auth/*`, Inngest `/api/inngest`). JSON only (except upload = multipart, streams = SSE).
 - Success response: `{ "success": true, "message": "...", "data": ... }` via `successResponse(message, data)`.
 - `/api/auth/*` responses are better-auth's own (`{ message, code }` on errors); everything under `/api/v1` uses the shapes above.
-- List endpoints: cursor pagination `?cursor=&limit=` (default 20, max 100) → `data: { items, nextCursor }`.
+- List endpoints: cursor pagination `?cursor=&limit=` (default 20, max 100) → `data: { items, nextCursor }`, via `paginationQuerySchema` + `paginate()`; repositories AND the cursor filter with their own.
 - Every request gets an `x-correlation-id` (incoming one kept if it is a short safe token). It is on the response header, every log line and every error body.
 
 ### 4.5 Logging
 - winston (`src/config/logger.config.ts`), one JSON object per line: `timestamp` (ISO 8601 UTC), `level, message, correlationId, data`.
 - Transports: console always; daily rotating file `logs/%DATE%-app.log` (20 MB, 14 days) only when `LOG_TO_FILE=true` (local dev). In containers logs go to stdout for the platform to collect. Tests: no file, `LOG_LEVEL=silent`.
-- `requestLoggerMiddleware` writes one line per request (method, full path, status, duration; `info` / `warn` 4xx / `error` 5xx; aborted requests as `warn`); query strings, headers and bodies are never logged. It runs first, so CORS preflights are logged too.
+- `requestLoggerMiddleware` writes one line per request, except health probes (method, full path, status, duration; `info` / `warn` 4xx / `error` 5xx; aborted requests as `warn`); query strings, headers and bodies are never logged. It runs first, so CORS preflights are logged too.
 - Error objects are serialized with name, message and stack.
 - `LOG_LEVEL=silly` turns on Prisma query logs (local debugging only — they contain raw parameters).
 
@@ -298,14 +298,14 @@ PORT=4000
 APP_URL=http://localhost:4000
 LOG_LEVEL=debug
 LOG_TO_FILE=true
-TRUST_PROXY=false
+TRUST_PROXY=false                               # hop count or proxy IPs behind a load balancer; true is refused in production
 
 # database
 DATABASE_URL=postgresql://codebook:codebook@localhost:5436/codebook
 TEST_DATABASE_URL=postgresql://codebook:codebook@localhost:5436/codebook_test
 
 # auth (better-auth)
-BETTER_AUTH_SECRET=change-me-32-chars-min
+BETTER_AUTH_SECRET=                            # openssl rand -base64 32
 BETTER_AUTH_URL=http://localhost:4000
 GITHUB_CLIENT_ID=
 GITHUB_CLIENT_SECRET=
@@ -713,7 +713,7 @@ Goal: an empty but production-shaped backend that boots, logs, validates env, ta
 
 **0.11 Manual testing helpers**
 - [x] `backend/http/health.http` (REST Client format)
-- [x] `README` section "Local setup": `cd backend && docker compose up -d && pnpm i && cp .env.example .env && pnpm db:migrate && pnpm dev`
+- [x] `README` section "Local setup": `cd backend && docker compose up -d && pnpm i && cp .env.example .env && pnpm db:deploy && pnpm dev`
 
 **Done when:** `docker compose up -d` + `pnpm dev` serves `/api/v1/health/ready` → ok with db ok; `pnpm lint && pnpm typecheck && pnpm test` pass; CI config present.
 
@@ -908,6 +908,7 @@ Goal: users add sources to a workspace; PDFs land in MinIO; adding a source enqu
 - [ ] Validate: extension `.pdf`, **magic bytes** `%PDF-`, mime `application/pdf`
 - [ ] Stream to MinIO, store `origin.storageKey`, `fileName`, `size`
 - [ ] Title = file name without extension (editable later)
+- [ ] Multipart is a CORS "simple" request, so the upload route checks `Origin` against `TRUSTED_ORIGINS` instead of relying on SameSite alone (from the M1 review)
 
 **4.6 Add repo / website**
 - [ ] `POST /api/v1/workspaces/:id/sources` with JSON body (discriminated union on `type`):
@@ -923,6 +924,8 @@ Goal: users add sources to a workspace; PDFs land in MinIO; adding a source enqu
 - [ ] `listSources(workspaceId)`, `getSource`, `deleteSource` (DB cascade + send `source/deleted` for storage cleanup), `resyncSource` (only if not PROCESSING; sends `ingest.requested` with reason `resync`)
 - [ ] `updateProgress(sourceId, { stage, progress, stats? })` — used by ingestion
 - [ ] `GET /api/v1/workspaces/:workspaceId` gains `counts.sources` by status (moved from 2.6)
+- [ ] Sources router mounted inside the workspace router (`mergeParams`), or `requireAuth` skips when the session is already loaded, so a request doesn't look the session up twice (from the M1 review)
+- [ ] Write paths call `assertWorkspaceAccess` **without** `allowDemoRead`; only read paths pass it (from the M1 review)
 - [ ] Cleanup Inngest functions: `cleanupSourceStorage` (on `source/deleted`), `cleanupWorkspaceStorage` (on `workspace/deleted`; workspaces service sends it on delete)
 
 **4.8 Progress stream (SSE)**
@@ -1633,6 +1636,7 @@ Goal: a public, read-only sample workspace anyone can query as a guest, safely a
 - [ ] Guests can: create conversations **in the demo workspace only**, ask questions, read sources/TOC/graph of demo sources
 - [ ] Guests cannot: create workspaces/sources, study tools (or limited: 2/day), memory (disabled for guests)
 - [ ] Demo workspace is read-only for everyone except system user (assert in workspace/source services)
+- [ ] `toAppError` maps better-auth `APIError` (thrown when services call `auth.api.*`) to its 4xx status instead of a 500 (from the M1 review)
 
 **16.3 Limits**
 - [ ] Guest message limit per IP + per guest (Phase 15)
@@ -1660,7 +1664,8 @@ Goal: secure, documented, demo-ready backend.
 - [ ] Regex DoS guard on `search_code`
 - [ ] Secrets: never logged (test: logger output for an auth request contains no cookie/token), never stored from repos, never in Inngest event payloads
 - [ ] Prompt injection: untrusted blocks escaped; tools re-check scope; agent can't call tools outside workspace
-- [ ] Helmet headers, CORS allowlist, cookie flags
+- [ ] Helmet headers, CORS allowlist, cookie flags (confirm `Secure` on the session cookie with `NODE_ENV=production`)
+- [ ] Known and accepted: sign-up answers 422 for an existing email (better-auth default), so emails can be enumerated; rate limiting is the mitigation without email verification
 - [ ] Dependency audit (`pnpm audit`), lockfile committed
 - [ ] Error responses never include stack traces / SQL
 
@@ -1832,7 +1837,7 @@ Each phase lists: **Entry** · **Build order** · **Risks & mitigations** · **P
   1. better-auth config.
   2. Generate the Prisma models, merge them, add `isGuest` and `isSystem`, migrate.
   3. Mount the handler before `express.json()`.
-  4. `requireAuth`, `optionalAuth`, `getUser`.
+  4. `requireAuth`, `attachOptionalAuth`, `getAuthUser`.
   5. `GET /api/v1/me`.
   6. Test helpers and tests.
 - **Risks & mitigations:**
@@ -2042,7 +2047,9 @@ One line per phase: `date · phase · commit · notes / deviations`.
 |---|---|---|---|
 | 2026-10-22 | 0 Setup | 77eb5ad | Prisma 7 needs `prisma.config.ts` + `@prisma/adapter-pg`/`pg`; TypeScript 6.0 (typescript-eslint limit); `minio/mc` image gone → init uses `minio/minio`; vitest `fileParallelism: false`; `db:seed` deferred to when a seed exists. Production layout: `config/` (serverConfig, logger/db configs), `middlewares/*.middleware.ts`, `utils/errors` classes, `routers/v1`, `{ success, message, data }` responses with `code` + `correlationId` on errors, winston JSON logs (ISO UTC, correlation id, rotating files only with `LOG_TO_FILE`), `/api/v1` prefix, health split into `/live` and `/ready` (503 when DB down), `TRUST_PROXY`. `docker-compose.yml` lives in `backend/` (its services are backend-only). Prisma 7 `migrate dev` no longer runs generate → `db:migrate` chains `prisma generate`. `start` sets NODE_ENV=production + source maps; stricter env URLs/port/origins; aborted requests logged with their correlation id; correlation id on preflights + exposed to CORS; test DB guard + pinned test env; type-aware ESLint; CI runs format check + build |
 | 2026-10-22 | 1 Auth | 41ad8d2 | better-auth 1.7 (schema CLI is now the `auth` package); `isGuest`/`isSystem` as `input: false` fields (better-auth drops them from sign-up bodies). Mounted through better-call `getRequest`/`setResponse` (direct dep, same version better-auth uses) so `/api/auth` gets a fixed base URL instead of the client's Host / X-Forwarded-Proto, and bodies are read by `express.text` with a 64 KB limit (413, chunked included). Global `x-client-ip` from `req.ip` so better-auth's rate limiter can't be bypassed with a forged X-Forwarded-For. CSRF origin check kept on in tests; refreshed session cookies forwarded from `requireAuth`; better-auth logs go through winston. `BETTER_AUTH_URL` required in production; GitHub id + secret set together. Manual GitHub login verified (user + account rows, session, no errors). 45 tests |
-| 2026-10-22 | 2 Workspaces | _this commit_ | Settings key `defaultSearchMode` (the plan's `defaultQueryMode: "hybrid"` mixed up search `mode` and `queryMode`). Workspace counts on `GET /:id` moved to Phases 4 and 11, where the sources and conversations tables appear. Keyset pagination with an opaque `(createdAt, id)` cursor in `pagination.helpers.ts`. The per-user limit locks the user row (`SELECT … FOR UPDATE`) before counting; a test holds a table lock so four creates really overlap, and fails without the row lock. Bodies drop unknown fields; `settings` is strict and merged on PATCH under a row lock (concurrent PATCHes keep both changes, tested the same way). Bad cursors fail in the query schema with `details` like other fields. 78 tests |
+| 2026-10-22 | 2 Workspaces | 19f1c91 | Settings key `defaultSearchMode` (the plan's `defaultQueryMode: "hybrid"` mixed up search `mode` and `queryMode`). Workspace counts on `GET /:id` moved to Phases 4 and 11, where the sources and conversations tables appear. Keyset pagination with an opaque `(createdAt, id)` cursor in `pagination.helpers.ts`. The per-user limit locks the user row (`SELECT … FOR UPDATE`) before counting; a test holds a table lock so four creates really overlap, and fails without the row lock. Bodies drop unknown fields; `settings` is strict and merged on PATCH under a row lock (concurrent PATCHes keep both changes, tested the same way). Bad cursors fail in the query schema with `details` like other fields. 78 tests |
+| 2026-10-22 | M1 review | _this commit_ | Cross-review of Phases 0–2. Fixed: `TRUST_PROXY=true` refused in production (client-written XFF would bypass the sign-in rate limit); errors after a response started are logged through winston; `paginate()` callers AND the cursor filter instead of spreading it. Tests added: CORS + trusted-origin sign-up, app-level 413/400/404, 401 on every workspace route, demo workspace over HTTP, 503 body. Moved to later phases: nested router/double session lookup and demo write guard (4), better-auth `APIError` mapping (16), cookie flags + email enumeration note (17); typed validated input parked under Later. 91 tests |
 
 **Later** (ideas parked during the build, not in scope):
+- Typed access to validated input (`res.locals.query` / `req.body` are cast in controllers today), if the casts start drifting from the router schemas
 - `/api/v1/health/ready`: own timeout on the `SELECT 1` so a silently dropped pooled connection can't hang it (Phase 15 monitoring)
