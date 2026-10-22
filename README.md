@@ -13,11 +13,15 @@ Needs Node 22, pnpm and Docker.
 ```bash
 cd backend
 docker compose up -d            # postgres + pgvector, minio, inngest dev server
-cp .env.example .env            # then fill in the API keys
+cp .env.example .env            # then set BETTER_AUTH_SECRET (see below) and the API keys
 pnpm install
 pnpm db:deploy                  # apply migrations
 pnpm dev                        # http://localhost:4000/api/v1/health/ready
 ```
+
+`BETTER_AUTH_SECRET` is required (32+ characters); generate one with `openssl rand -base64 32`.
+GitHub login turns on only when `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` are both set
+(OAuth app callback: `http://localhost:4000/api/auth/callback/github`).
 
 Checks: `pnpm format:check && pnpm lint && pnpm typecheck && pnpm test` (tests use the `codebook_test` database).
 

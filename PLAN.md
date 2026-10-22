@@ -726,37 +726,37 @@ Goal: users can sign up / sign in with email+password and GitHub; protected rout
 **Accounts needed:** GitHub OAuth App (Settings → Developer settings → OAuth Apps → New): Homepage `http://localhost:4000`, Callback `http://localhost:4000/api/auth/callback/github`. Put Client ID/Secret in `.env`.
 
 **1.1 Install & configure**
-- [ ] Install `better-auth` (1.7.x). The schema CLI is now the `auth` package: `pnpm dlx auth@<same version> generate`
-- [ ] `src/config/auth.config.ts`: `betterAuth({ database: prismaAdapter(prisma, { provider: "postgresql" }), emailAndPassword: { enabled: true, minPasswordLength: 8 }, socialProviders: { github: { clientId, clientSecret } }, trustedOrigins, secret, baseURL })`
-- [ ] Session config: cookie-based, `expiresIn` 7 days, `updateAge` 1 day
-- [ ] Generate Prisma models with better-auth CLI → merge into `schema.prisma` (User, Session, Account, Verification)
-- [ ] Add `isGuest`, `isSystem` to `User` as better-auth `additionalFields` with `input: false` (sign-up bodies can't set them; better-auth drops them)
-- [ ] Migration `auth_tables`
+- [x] Install `better-auth` (1.7.x). The schema CLI is now the `auth` package: `pnpm dlx auth@<same version> generate`
+- [x] `src/config/auth.config.ts`: `betterAuth({ database: prismaAdapter(prisma, { provider: "postgresql" }), emailAndPassword: { enabled: true, minPasswordLength: 8 }, socialProviders: { github: { clientId, clientSecret } }, trustedOrigins, secret, baseURL })`
+- [x] Session config: cookie-based, `expiresIn` 7 days, `updateAge` 1 day
+- [x] Generate Prisma models with better-auth CLI → merge into `schema.prisma` (User, Session, Account, Verification)
+- [x] Add `isGuest`, `isSystem` to `User` as better-auth `additionalFields` with `input: false` (sign-up bodies can't set them; better-auth drops them)
+- [x] Migration `auth_tables`
 
 **1.2 Mount**
-- [ ] In `app.ts`: mount `app.all("/api/auth/*splat", authHandler)` **before** `express.json()` (better-auth parses its own body). `readAuthBody` (`express.text`, 64 KB limit → 413, with or without Content-Length) runs first; `authHandler` then calls better-call's `getRequest` with a fixed base (`BETTER_AUTH_URL` origin, not the client's Host / X-Forwarded-Proto) and `setResponse`
-- [ ] `clientIp.middleware.ts` (global) overwrites `x-client-ip` with `req.ip`; better-auth reads only that header (`advanced.ipAddress.ipAddressHeaders`), so its rate limiter can't be bypassed with a forged `X-Forwarded-For`
-- [ ] `advanced.disableOriginCheck: false` so the CSRF origin check also runs in tests (better-auth skips it under NODE_ENV=test otherwise)
-- [ ] better-auth's own log messages go through winston (`logger.log` option)
-- [ ] CORS `credentials: true` already set
+- [x] In `app.ts`: mount `app.all("/api/auth/*splat", authHandler)` **before** `express.json()` (better-auth parses its own body). `readAuthBody` (`express.text`, 64 KB limit → 413, with or without Content-Length) runs first; `authHandler` then calls better-call's `getRequest` with a fixed base (`BETTER_AUTH_URL` origin, not the client's Host / X-Forwarded-Proto) and `setResponse`
+- [x] `clientIp.middleware.ts` (global) overwrites `x-client-ip` with `req.ip`; better-auth reads only that header (`advanced.ipAddress.ipAddressHeaders`), so its rate limiter can't be bypassed with a forged `X-Forwarded-For`
+- [x] `advanced.disableOriginCheck: false` so the CSRF origin check also runs in tests (better-auth skips it under NODE_ENV=test otherwise)
+- [x] better-auth's own log messages go through winston (`logger.log` option)
+- [x] CORS `credentials: true` already set
 
 **1.3 Middleware**
-- [ ] `src/config/auth.config.ts` holds the better-auth instance; `middlewares/auth.middleware.ts` → `requireAuth`: `auth.api.getSession({ headers: fromNodeHeaders(req.headers) })` → if none → `UNAUTHENTICATED`; else set `res.locals.user` and `res.locals.session`. Uses `returnHeaders: true` and forwards the refreshed session cookie, so active users aren't signed out after 7 days
-- [ ] Typed helper `getAuthUser(res)` returns the user or throws; `res.locals` typed in `types/express.d.ts`
-- [ ] `attachOptionalAuth` variant (used by demo later)
+- [x] `src/config/auth.config.ts` holds the better-auth instance; `middlewares/auth.middleware.ts` → `requireAuth`: `auth.api.getSession({ headers: fromNodeHeaders(req.headers) })` → if none → `UNAUTHENTICATED`; else set `res.locals.user` and `res.locals.session`. Uses `returnHeaders: true` and forwards the refreshed session cookie, so active users aren't signed out after 7 days
+- [x] Typed helper `getAuthUser(res)` returns the user or throws; `res.locals` typed in `types/express.d.ts`
+- [x] `attachOptionalAuth` variant (used by demo later)
 
 **1.4 Routes**
-- [ ] `GET /api/v1/me` → `{ id, email, name, image, createdAt }` (never return password hash/tokens)
-- [ ] `modules/auth/auth.router.ts` + `auth.controller.ts` (`getMeHandler`), mounted in the v1 router
+- [x] `GET /api/v1/me` → `{ id, email, name, image, createdAt }` (never return password hash/tokens)
+- [x] `modules/auth/auth.router.ts` + `auth.controller.ts` (`getMeHandler`), mounted in the v1 router
 
 **1.5 Tests**
-- [ ] `tests/helpers/auth.ts`: `signUp(agent, email, password)` via `/api/auth/sign-up/email`, keep cookie in a supertest `agent`
-- [ ] Tests: sign-up → 200 + httpOnly/SameSite=Lax cookie; `isGuest`/`isSystem` in body ignored; password < 8 → 400; forged `X-Forwarded-For` not stored as session IP; sign-in wrong password → 401; `/api/v1/me` with cookie → user; without cookie → 401; sign-out → `/api/v1/me` 401
-- [ ] GitHub OAuth: manual test only (`http/auth.http` + browser to `/api/auth/sign-in/social`). The sign-in POST must come from the browser itself (it sets the OAuth state cookie) — e.g. a `fetch` from the devtools console on a localhost:4000 page
+- [x] `tests/helpers/auth.ts`: `signUp(agent, email, password)` via `/api/auth/sign-up/email`, keep cookie in a supertest `agent`
+- [x] Tests: sign-up → 200 + httpOnly/SameSite=Lax cookie; `isGuest`/`isSystem` in body ignored; password < 8 → 400; forged `X-Forwarded-For` not stored as session IP; sign-in wrong password → 401; `/api/v1/me` with cookie → user; without cookie → 401; sign-out → `/api/v1/me` 401
+- [x] GitHub OAuth: manual test only (`http/auth.http` + browser to `/api/auth/sign-in/social`). The sign-in POST must come from the browser itself (it sets the OAuth state cookie) — e.g. a `fetch` from the devtools console on a localhost:4000 page
 
 **1.6 Security checks**
-- [ ] Rate limiting on auth endpoints: better-auth's built-in limiter is on everywhere except tests (memory storage, fine for one instance; Phase 15 limiter adds Postgres-backed limits)
-- [ ] Confirm cookies `httpOnly`, `sameSite=lax`, `secure` in production
+- [x] Rate limiting on auth endpoints: better-auth's built-in limiter is on everywhere except tests (memory storage, fine for one instance; Phase 15 limiter adds Postgres-backed limits)
+- [x] Confirm cookies `httpOnly`, `sameSite=lax`, `secure` in production
 
 **Done when:** email sign-up/in/out works via tests, GitHub login works manually, `/api/v1/me` protected.
 
@@ -2038,7 +2038,8 @@ One line per phase: `date · phase · commit · notes / deviations`.
 
 | Date | Phase | Commit | Notes |
 |---|---|---|---|
-| 2026-10-22 | 0 Setup | _this commit_ | Prisma 7 needs `prisma.config.ts` + `@prisma/adapter-pg`/`pg`; TypeScript 6.0 (typescript-eslint limit); `minio/mc` image gone → init uses `minio/minio`; vitest `fileParallelism: false`; `db:seed` deferred to when a seed exists. Production layout: `config/` (serverConfig, logger/db configs), `middlewares/*.middleware.ts`, `utils/errors` classes, `routers/v1`, `{ success, message, data }` responses with `code` + `correlationId` on errors, winston JSON logs (ISO UTC, correlation id, rotating files only with `LOG_TO_FILE`), `/api/v1` prefix, health split into `/live` and `/ready` (503 when DB down), `TRUST_PROXY`. `docker-compose.yml` lives in `backend/` (its services are backend-only). Prisma 7 `migrate dev` no longer runs generate → `db:migrate` chains `prisma generate`. `start` sets NODE_ENV=production + source maps; stricter env URLs/port/origins; aborted requests logged with their correlation id; correlation id on preflights + exposed to CORS; test DB guard + pinned test env; type-aware ESLint; CI runs format check + build |
+| 2026-10-22 | 0 Setup | 77eb5ad | Prisma 7 needs `prisma.config.ts` + `@prisma/adapter-pg`/`pg`; TypeScript 6.0 (typescript-eslint limit); `minio/mc` image gone → init uses `minio/minio`; vitest `fileParallelism: false`; `db:seed` deferred to when a seed exists. Production layout: `config/` (serverConfig, logger/db configs), `middlewares/*.middleware.ts`, `utils/errors` classes, `routers/v1`, `{ success, message, data }` responses with `code` + `correlationId` on errors, winston JSON logs (ISO UTC, correlation id, rotating files only with `LOG_TO_FILE`), `/api/v1` prefix, health split into `/live` and `/ready` (503 when DB down), `TRUST_PROXY`. `docker-compose.yml` lives in `backend/` (its services are backend-only). Prisma 7 `migrate dev` no longer runs generate → `db:migrate` chains `prisma generate`. `start` sets NODE_ENV=production + source maps; stricter env URLs/port/origins; aborted requests logged with their correlation id; correlation id on preflights + exposed to CORS; test DB guard + pinned test env; type-aware ESLint; CI runs format check + build |
+| 2026-10-22 | 1 Auth | _this commit_ | better-auth 1.7 (schema CLI is now the `auth` package); `isGuest`/`isSystem` as `input: false` fields (better-auth drops them from sign-up bodies). Mounted through better-call `getRequest`/`setResponse` (direct dep, same version better-auth uses) so `/api/auth` gets a fixed base URL instead of the client's Host / X-Forwarded-Proto, and bodies are read by `express.text` with a 64 KB limit (413, chunked included). Global `x-client-ip` from `req.ip` so better-auth's rate limiter can't be bypassed with a forged X-Forwarded-For. CSRF origin check kept on in tests; refreshed session cookies forwarded from `requireAuth`; better-auth logs go through winston. `BETTER_AUTH_URL` required in production; GitHub id + secret set together. Manual GitHub login verified (user + account rows, session, no errors). 45 tests |
 
 **Later** (ideas parked during the build, not in scope):
 - `/api/v1/health/ready`: own timeout on the `SELECT 1` so a silently dropped pooled connection can't hang it (Phase 15 monitoring)

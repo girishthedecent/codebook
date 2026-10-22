@@ -36,7 +36,7 @@ function isTrustProxyValue(value: string) {
   });
 }
 
-const schema = z.object({
+const baseSchema = z.object({
   // Defaults to production so a deploy that forgets NODE_ENV doesn't run with dev settings.
   NODE_ENV: z.enum(['development', 'test', 'production']).default('production'),
   PORT: z.coerce.number().int().min(1).max(65535).default(4000),
@@ -61,13 +61,15 @@ const schema = z.object({
   DATABASE_URL: postgresUrl,
   TEST_DATABASE_URL: optional,
 
-  TRUSTED_ORIGINS: originList,
-
-  // Auth, providers and storage become required in the phases that use them.
-  BETTER_AUTH_SECRET: optional,
+  BETTER_AUTH_SECRET: z.string().min(32, 'must be at least 32 characters'),
+  // Required in production: OAuth callbacks and cookies are built from it.
   BETTER_AUTH_URL: httpUrl.optional(),
+  // GitHub login is turned on only when both are set.
   GITHUB_CLIENT_ID: optional,
   GITHUB_CLIENT_SECRET: optional,
+  TRUSTED_ORIGINS: originList,
+
+  // Providers and storage become required in the phases that use them.
   GITHUB_TOKEN: optional,
 
   S3_ENDPOINT: optional,
@@ -91,6 +93,28 @@ const schema = z.object({
 
   LIVE_TESTS: z.stringbool().default(false),
 });
+
+const schema = baseSchema
+  .superRefine((config, ctx) => {
+    if (config.NODE_ENV === 'production' && !config.BETTER_AUTH_URL) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['BETTER_AUTH_URL'],
+        message: 'required in production',
+      });
+    }
+    if (!!config.GITHUB_CLIENT_ID !== !!config.GITHUB_CLIENT_SECRET) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['GITHUB_CLIENT_SECRET'],
+        message: 'set both GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET, or neither',
+      });
+    }
+  })
+  .transform((config) => ({
+    ...config,
+    BETTER_AUTH_URL: config.BETTER_AUTH_URL ?? 'http://localhost:4000',
+  }));
 
 export type ServerConfig = z.infer<typeof schema>;
 

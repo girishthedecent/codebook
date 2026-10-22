@@ -3,6 +3,8 @@ import express from 'express';
 import helmet from 'helmet';
 import { appConfig } from './config/app.config.js';
 import { serverConfig } from './config/index.js';
+import { authHandler, readAuthBody } from './middlewares/authHandler.middleware.js';
+import { attachClientIpMiddleware } from './middlewares/clientIp.middleware.js';
 import { attachCorrelationIdMiddleware } from './middlewares/correlation.middleware.js';
 import { genericErrorHandler, notFoundHandler } from './middlewares/error.middleware.js';
 import { requestLoggerMiddleware } from './middlewares/requestLogger.middleware.js';
@@ -24,6 +26,10 @@ export function createApp() {
       exposedHeaders: ['x-correlation-id'],
     }),
   );
+  app.use(attachClientIpMiddleware);
+
+  // Before express.json(): better-auth gets the body as text, not parsed JSON.
+  app.all('/api/auth/*splat', readAuthBody, authHandler);
 
   app.use(express.json({ limit: appConfig.http.jsonLimit }));
   app.use('/api/v1', v1Router);

@@ -10,5 +10,7 @@ export const appConfig = {
   version: pkg.version,
   http: {
     jsonLimit: '1mb',
+    // Sign-in / sign-up payloads are a few hundred bytes.
+    authBodyLimitBytes: 64 * 1024,
   },
 } as const;

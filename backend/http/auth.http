@@ -1,0 +1,34 @@
+@base = http://localhost:4000
+@origin = http://localhost:4000
+
+### Sign up (REST Client keeps the session cookie for the requests below)
+POST {{base}}/api/auth/sign-up/email
+Content-Type: application/json
+Origin: {{origin}}
+
+{ "email": "reader@example.com", "password": "correct-horse-battery", "name": "Reader" }
+
+### Sign in
+POST {{base}}/api/auth/sign-in/email
+Content-Type: application/json
+Origin: {{origin}}
+
+{ "email": "reader@example.com", "password": "correct-horse-battery" }
+
+### Current user
+GET {{base}}/api/v1/me
+
+### Sign out
+POST {{base}}/api/auth/sign-out
+Content-Type: application/json
+Origin: {{origin}}
+
+{}
+
+### GitHub login: returns { url }; open that url in a browser, approve, and the
+### callback at /api/auth/callback/github sets the session cookie.
+POST {{base}}/api/auth/sign-in/social
+Content-Type: application/json
+Origin: {{origin}}
+
+{ "provider": "github", "callbackURL": "{{base}}/api/v1/me" }

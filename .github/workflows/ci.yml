@@ -30,6 +30,7 @@ jobs:
     env:
       DATABASE_URL: postgresql://codebook:codebook@localhost:5432/codebook
       TEST_DATABASE_URL: postgresql://codebook:codebook@localhost:5432/codebook_test
+      BETTER_AUTH_SECRET: ci-only-secret-not-used-anywhere-else
       LIVE_TESTS: '0'
 
     steps:

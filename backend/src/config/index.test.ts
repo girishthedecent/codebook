@@ -3,6 +3,8 @@ import { parseServerConfig } from './index.js';
 
 const base = {
   DATABASE_URL: 'postgresql://u:p@localhost:5432/db',
+  BETTER_AUTH_SECRET: 'x'.repeat(32),
+  BETTER_AUTH_URL: 'https://api.example.com',
 };
 
 describe('parseServerConfig', () => {
@@ -19,6 +21,20 @@ describe('parseServerConfig', () => {
     expect(() => parseServerConfig({})).toThrow(/DATABASE_URL/);
   });
 
+  it('rejects a short auth secret', () => {
+    expect(() => parseServerConfig({ ...base, BETTER_AUTH_SECRET: 'short' })).toThrow(
+      /BETTER_AUTH_SECRET/,
+    );
+  });
+
+  it('requires BETTER_AUTH_URL in production but defaults it locally', () => {
+    const { BETTER_AUTH_URL: _, ...withoutUrl } = base;
+    expect(() => parseServerConfig(withoutUrl)).toThrow(/BETTER_AUTH_URL/);
+    expect(parseServerConfig({ ...withoutUrl, NODE_ENV: 'development' }).BETTER_AUTH_URL).toBe(
+      'http://localhost:4000',
+    );
+  });
+
   it('rejects URLs without the right scheme', () => {
     expect(() => parseServerConfig({ ...base, DATABASE_URL: 'localhost:5432/db' })).toThrow(
       /DATABASE_URL/,
@@ -29,6 +45,14 @@ describe('parseServerConfig', () => {
     expect(() => parseServerConfig({ ...base, TRUSTED_ORIGINS: 'http://ok.test,nope' })).toThrow(
       /TRUSTED_ORIGINS/,
     );
+  });
+
+  it('wants both GitHub OAuth values or neither', () => {
+    expect(() => parseServerConfig({ ...base, GITHUB_CLIENT_ID: 'id' })).toThrow(
+      /GITHUB_CLIENT_SECRET/,
+    );
+    const both = { ...base, GITHUB_CLIENT_ID: 'id', GITHUB_CLIENT_SECRET: 'secret' };
+    expect(parseServerConfig(both).GITHUB_CLIENT_ID).toBe('id');
   });
 
   it('rejects a bad port', () => {
