@@ -20,3 +20,10 @@ export async function signUp(
   if (res.status !== 200) throw new Error(`sign-up failed: ${res.status} ${res.text}`);
   return res;
 }
+
+/** A new user with a signed-in agent. */
+export async function signedInUser(email = 'reader@example.com') {
+  const agent = authAgent();
+  const res = await signUp(agent, email);
+  return { agent, userId: (res.body as { user: { id: string } }).user.id };
+}

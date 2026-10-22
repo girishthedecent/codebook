@@ -767,41 +767,41 @@ Goal: users can sign up / sign in with email+password and GitHub; protected rout
 Goal: users manage their own workspaces; nobody can touch someone else's.
 
 **2.1 Schema**
-- [ ] `Workspace` model (§7.2), enum `WorkspaceTemplate`
-- [ ] Migration `workspaces`
+- [x] `Workspace` model (§7.2), enum `WorkspaceTemplate`
+- [x] Migration `workspaces`
 
 **2.2 Templates**
-- [ ] `modules/workspaces/templates.ts`: per template default `settings` — `STUDY`: `{ defaultQueryMode: "hybrid", studyToolsEnabled: true, preferredTools: ["browse_toc","search_sources"] }`; `CODEBASE`: `{ preferredTools: ["search_code","find_callers","trace_flow"] }`; `BLANK`: `{}`
-- [ ] Template also selects the system-prompt variant used by chat (Phase 11)
+- [x] `modules/workspaces/workspace.templates.ts`: per template default `settings` — `STUDY`: `{ defaultSearchMode: "hybrid", studyToolsEnabled: true, preferredTools: ["browse_toc","search_sources"] }`; `CODEBASE`: `{ preferredTools: ["search_code","find_callers","trace_flow"] }`; `BLANK`: `{}`. (`hybrid` is a search `mode` from 9.1, not a `queryMode`, so the key is `defaultSearchMode`.)
+- [x] Template is stored on the workspace; chat picks the system-prompt variant from it (11.5)
 
 **2.3 Schemas**
-- [ ] `createWorkspaceSchema`: name (1–80, trimmed), description (≤500, optional), template (default BLANK)
-- [ ] `updateWorkspaceSchema`: partial name/description/settings (settings validated by zod per known keys)
-- [ ] params schema `{ workspaceId: cuid }`, list query `{ cursor?, limit? }`
+- [x] `createWorkspaceSchema`: name (1–80, trimmed), description (≤500, optional; empty → null), template (default BLANK)
+- [x] `updateWorkspaceSchema`: partial name/description (null clears)/settings, at least one field; settings is a strict zod object of known keys, merged into the stored settings
+- [x] params schema `{ workspaceId: cuid }`, list query `{ cursor?, limit? }` (shared `paginationQuerySchema`)
 
 **2.4 Repository**
-- [ ] `create(userId, data)`, `listByUser(userId, cursor, limit)`, `findOwned(userId, id)`, `update(userId, id, data)`, `delete(userId, id)`
-- [ ] `findOwned` returns null if not found **or** not owned
+- [x] `createWorkspace(userId, data, limit)` (locks the user row, counts, inserts; null at the limit), `listWorkspaces(userId, page)`, `findWorkspaceForUser(userId, id, { includeDemo? })`, `updateWorkspace(userId, id, data)`, `deleteWorkspace(userId, id)`
+- [x] `findWorkspaceForUser` returns null if not found **or** not owned
 
 **2.5 Service**
-- [ ] `createWorkspace`, `listWorkspaces`, `getWorkspace` (404 if null), `updateWorkspace`, `deleteWorkspace`
-- [ ] `assertWorkspaceAccess(userId, workspaceId, { allowDemoRead? })` — exported for other modules (sources, chat, study)
-- [ ] Limit: max workspaces per user (config, default 20) → `CONFLICT` with message
+- [x] `createWorkspaceService`, `listWorkspacesService`, `getWorkspaceService` (404 if null), `updateWorkspaceService`, `deleteWorkspaceService`
+- [x] `assertWorkspaceAccess(userId, workspaceId, { allowDemoRead? })` — exported for other modules (sources, chat, study)
+- [x] Limit: max workspaces per user (`appConfig.workspaces.maxPerUser`, 20) → `CONFLICT` with message; safe under concurrent creates
 
 **2.6 Controller & routes**
-- [ ] `GET /api/v1/workspaces`, `POST /api/v1/workspaces`, `GET/PATCH/DELETE /api/v1/workspaces/:workspaceId`, all `requireAuth`
-- [ ] `GET /:id` includes counts: sources (by status), conversations
-- [ ] `DELETE` → 204; cascades remove sources/chunks/conversations (DB FKs). Storage files cleanup → Phase 4 adds an Inngest cleanup event
+- [x] `GET /api/v1/workspaces`, `POST /api/v1/workspaces`, `GET/PATCH/DELETE /api/v1/workspaces/:workspaceId`, all `requireAuth`
+- [x] `GET /:id` counts: moved to the phases that create those tables (4.7 sources by status, 11.2 conversations)
+- [x] `DELETE` → 204; cascades remove sources/chunks/conversations (DB FKs). Storage files cleanup → Phase 4 adds an Inngest cleanup event
 
 **2.7 Pagination helper**
-- [ ] `utils/helpers/pagination.helpers.ts`: `paginate(query, { cursor, limit })` pattern using `id` + `createdAt` ordering, returns `{ items, nextCursor }`
+- [x] `utils/helpers/pagination.helpers.ts`: `paginate(query, { cursor, limit })` keyset pagination on `(createdAt, id)` desc with an opaque base64url cursor, returns `{ items, nextCursor }`
 
 **2.8 Tests**
-- [ ] CRUD happy paths
-- [ ] Validation errors (empty name, too long)
-- [ ] User B cannot GET/PATCH/DELETE user A's workspace → 404
-- [ ] Pagination returns `nextCursor` and stable order
-- [ ] Workspace limit enforced
+- [x] CRUD happy paths
+- [x] Validation errors (empty name, too long)
+- [x] User B cannot GET/PATCH/DELETE user A's workspace → 404
+- [x] Pagination returns `nextCursor` and stable order
+- [x] Workspace limit enforced (including parallel creates)
 
 **Done when:** all tests green; isolation tested.
 
@@ -922,6 +922,7 @@ Goal: users add sources to a workspace; PDFs land in MinIO; adding a source enqu
 - [ ] If event send fails → mark `FAILED` with error "queue unavailable" (don't leave orphans in PENDING)
 - [ ] `listSources(workspaceId)`, `getSource`, `deleteSource` (DB cascade + send `source/deleted` for storage cleanup), `resyncSource` (only if not PROCESSING; sends `ingest.requested` with reason `resync`)
 - [ ] `updateProgress(sourceId, { stage, progress, stats? })` — used by ingestion
+- [ ] `GET /api/v1/workspaces/:workspaceId` gains `counts.sources` by status (moved from 2.6)
 - [ ] Cleanup Inngest functions: `cleanupSourceStorage` (on `source/deleted`), `cleanupWorkspaceStorage` (on `workspace/deleted`; workspaces service sends it on delete)
 
 **4.8 Progress stream (SSE)**
@@ -1339,6 +1340,7 @@ Goal: conversations where an agent with 9 tools answers questions, streams steps
 **11.2 Conversations CRUD**
 - [ ] `POST /api/v1/workspaces/:id/conversations` `{ title? }`, `GET` list (paginated, newest first), `GET /api/v1/conversations/:id` (with messages, paginated), `PATCH` (title), `DELETE`
 - [ ] Ownership via workspace access check
+- [ ] `GET /api/v1/workspaces/:workspaceId` gains `counts.conversations` (moved from 2.6)
 
 **11.3 Citation registry (per turn)**
 - [ ] `chat/citations.ts`: `CitationRegistry` — every chunk/line-range/page returned by any tool gets a number `[n]` (dedupe by chunkId+range); stores the ref details
@@ -2039,7 +2041,8 @@ One line per phase: `date · phase · commit · notes / deviations`.
 | Date | Phase | Commit | Notes |
 |---|---|---|---|
 | 2026-10-22 | 0 Setup | 77eb5ad | Prisma 7 needs `prisma.config.ts` + `@prisma/adapter-pg`/`pg`; TypeScript 6.0 (typescript-eslint limit); `minio/mc` image gone → init uses `minio/minio`; vitest `fileParallelism: false`; `db:seed` deferred to when a seed exists. Production layout: `config/` (serverConfig, logger/db configs), `middlewares/*.middleware.ts`, `utils/errors` classes, `routers/v1`, `{ success, message, data }` responses with `code` + `correlationId` on errors, winston JSON logs (ISO UTC, correlation id, rotating files only with `LOG_TO_FILE`), `/api/v1` prefix, health split into `/live` and `/ready` (503 when DB down), `TRUST_PROXY`. `docker-compose.yml` lives in `backend/` (its services are backend-only). Prisma 7 `migrate dev` no longer runs generate → `db:migrate` chains `prisma generate`. `start` sets NODE_ENV=production + source maps; stricter env URLs/port/origins; aborted requests logged with their correlation id; correlation id on preflights + exposed to CORS; test DB guard + pinned test env; type-aware ESLint; CI runs format check + build |
-| 2026-10-22 | 1 Auth | _this commit_ | better-auth 1.7 (schema CLI is now the `auth` package); `isGuest`/`isSystem` as `input: false` fields (better-auth drops them from sign-up bodies). Mounted through better-call `getRequest`/`setResponse` (direct dep, same version better-auth uses) so `/api/auth` gets a fixed base URL instead of the client's Host / X-Forwarded-Proto, and bodies are read by `express.text` with a 64 KB limit (413, chunked included). Global `x-client-ip` from `req.ip` so better-auth's rate limiter can't be bypassed with a forged X-Forwarded-For. CSRF origin check kept on in tests; refreshed session cookies forwarded from `requireAuth`; better-auth logs go through winston. `BETTER_AUTH_URL` required in production; GitHub id + secret set together. Manual GitHub login verified (user + account rows, session, no errors). 45 tests |
+| 2026-10-22 | 1 Auth | 41ad8d2 | better-auth 1.7 (schema CLI is now the `auth` package); `isGuest`/`isSystem` as `input: false` fields (better-auth drops them from sign-up bodies). Mounted through better-call `getRequest`/`setResponse` (direct dep, same version better-auth uses) so `/api/auth` gets a fixed base URL instead of the client's Host / X-Forwarded-Proto, and bodies are read by `express.text` with a 64 KB limit (413, chunked included). Global `x-client-ip` from `req.ip` so better-auth's rate limiter can't be bypassed with a forged X-Forwarded-For. CSRF origin check kept on in tests; refreshed session cookies forwarded from `requireAuth`; better-auth logs go through winston. `BETTER_AUTH_URL` required in production; GitHub id + secret set together. Manual GitHub login verified (user + account rows, session, no errors). 45 tests |
+| 2026-10-22 | 2 Workspaces | _this commit_ | Settings key `defaultSearchMode` (the plan's `defaultQueryMode: "hybrid"` mixed up search `mode` and `queryMode`). Workspace counts on `GET /:id` moved to Phases 4 and 11, where the sources and conversations tables appear. Keyset pagination with an opaque `(createdAt, id)` cursor in `pagination.helpers.ts`. The per-user limit locks the user row (`SELECT … FOR UPDATE`) before counting; a test holds a table lock so four creates really overlap, and fails without the row lock. Bodies drop unknown fields; `settings` is strict and merged on PATCH under a row lock (concurrent PATCHes keep both changes, tested the same way). Bad cursors fail in the query schema with `details` like other fields. 78 tests |
 
 **Later** (ideas parked during the build, not in scope):
 - `/api/v1/health/ready`: own timeout on the `SELECT 1` so a silently dropped pooled connection can't hang it (Phase 15 monitoring)

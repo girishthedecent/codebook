@@ -13,4 +13,11 @@ export const appConfig = {
     // Sign-in / sign-up payloads are a few hundred bytes.
     authBodyLimitBytes: 64 * 1024,
   },
+  pagination: {
+    defaultLimit: 20,
+    maxLimit: 100,
+  },
+  workspaces: {
+    maxPerUser: 20,
+  },
 } as const;

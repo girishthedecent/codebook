@@ -1,0 +1,34 @@
+@base = http://localhost:4000
+@origin = http://localhost:4000
+
+### Sign in first (REST Client keeps the session cookie)
+POST {{base}}/api/auth/sign-in/email
+Content-Type: application/json
+Origin: {{origin}}
+
+{ "email": "reader@example.com", "password": "correct-horse-battery" }
+
+### Create
+# @name created
+POST {{base}}/api/v1/workspaces
+Content-Type: application/json
+
+{ "name": "Postgres internals", "template": "STUDY" }
+
+###
+@workspaceId = {{created.response.body.data.id}}
+
+### List (newest first; pass nextCursor back as ?cursor= for the next page)
+GET {{base}}/api/v1/workspaces?limit=20
+
+### Get
+GET {{base}}/api/v1/workspaces/{{workspaceId}}
+
+### Update (settings are merged into the existing ones)
+PATCH {{base}}/api/v1/workspaces/{{workspaceId}}
+Content-Type: application/json
+
+{ "name": "Postgres notes", "settings": { "studyToolsEnabled": false } }
+
+### Delete
+DELETE {{base}}/api/v1/workspaces/{{workspaceId}}
