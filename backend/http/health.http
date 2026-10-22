@@ -1,0 +1,10 @@
+@base = http://localhost:4000
+
+### Liveness (process is up, no dependency checks)
+GET {{base}}/api/v1/health/live
+
+### Readiness (database reachable)
+GET {{base}}/api/v1/health/ready
+
+### Unknown route returns a JSON 404
+GET {{base}}/api/v1/does-not-exist

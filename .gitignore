@@ -1,0 +1,19 @@
+node_modules/
+dist/
+coverage/
+.cache/
+*.log
+.DS_Store
+
+# env files (keep the example)
+.env
+.env.*
+!.env.example
+
+# local tool settings
+.claude/settings.local.json
+
+# evals: copyrighted corpus stays local, keep only the latest report
+backend/evals/corpus/
+backend/evals/reports/*
+!backend/evals/reports/latest.md

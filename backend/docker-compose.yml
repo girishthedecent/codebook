@@ -1,0 +1,60 @@
+name: codebook
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: codebook
+      POSTGRES_PASSWORD: codebook
+      POSTGRES_DB: codebook
+    ports:
+      - '5436:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./docker/postgres-init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U codebook -d codebook']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  minio:
+    image: minio/minio
+    command: server /data --console-address :9001
+    environment:
+      MINIO_ROOT_USER: minio
+      MINIO_ROOT_PASSWORD: minio12345
+    ports:
+      - '9010:9000'
+      - '9011:9001'
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ['CMD', 'mc', 'ready', 'local']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # the server image ships the mc client, so it doubles as the bucket setup job
+  minio-init:
+    image: minio/minio
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      sh -c "mc alias set local http://minio:9000 minio minio12345 &&
+             mc mb --ignore-existing local/codebook &&
+             mc mb --ignore-existing local/codebook-test"
+    restart: 'no'
+
+  inngest:
+    image: inngest/inngest
+    command: inngest dev -u http://host.docker.internal:4000/api/inngest
+    ports:
+      - '8288:8288'
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+
+volumes:
+  pgdata:
+  miniodata:
