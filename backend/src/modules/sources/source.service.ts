@@ -233,8 +233,12 @@ export async function resyncSourceService(userId: string, sourceId: string) {
     throw new ConflictError('The upload did not finish. Delete this source and upload it again.');
   }
 
-  const staleBefore = new Date(Date.now() - appConfig.sources.stalePendingMs);
-  if (!(await requeueSource(sourceId, staleBefore))) {
+  const now = Date.now();
+  const stale = {
+    pendingBefore: new Date(now - appConfig.sources.stalePendingMs),
+    processingBefore: new Date(now - appConfig.sources.staleProcessingMs),
+  };
+  if (!(await requeueSource(sourceId, stale))) {
     throw new ConflictError('This source is already queued or being processed');
   }
   const source = await findSource(sourceId);

@@ -82,18 +82,23 @@ export async function deleteSource(sourceId: string) {
 }
 
 /**
- * Puts the source back in the queue unless an ingest is already queued or running. A source
- * PENDING since before `staleBefore` counts as stuck (its event was never sent, e.g. the
- * server died mid-create) and can be queued again. Conditional in one statement, so two
- * resyncs can't both start one.
+ * Puts the source back in the queue unless an ingest is already queued or running.
+ * Conditional in one statement, so two resyncs can't both start one. Counts as stuck, and
+ * may be queued again: PENDING since before `pendingBefore` (its event was never sent,
+ * e.g. the server died mid-create), or PROCESSING with no update since `processingBefore`
+ * (its run died without failing, e.g. it was cancelled by hand).
  */
-export async function requeueSource(sourceId: string, staleBefore: Date) {
+export async function requeueSource(
+  sourceId: string,
+  stale: { pendingBefore: Date; processingBefore: Date },
+) {
   const { count } = await prismaClient.source.updateMany({
     where: {
       id: sourceId,
       OR: [
         { status: { in: ['READY', 'FAILED'] } },
-        { status: 'PENDING', updatedAt: { lt: staleBefore } },
+        { status: 'PENDING', updatedAt: { lt: stale.pendingBefore } },
+        { status: 'PROCESSING', updatedAt: { lt: stale.processingBefore } },
       ],
     },
     data: { status: 'PENDING', stage: 'QUEUED', progress: 0, error: null },
@@ -110,13 +115,4 @@ export async function countSourcesByStatus(workspaceId: string) {
   const counts: Record<SourceStatus, number> = { PENDING: 0, PROCESSING: 0, READY: 0, FAILED: 0 };
   for (const group of groups) counts[group.status] = group._count._all;
   return counts;
-}
-
-/**
- * Updates ingestion state. False when the source is gone (deleted while queued or
- * running), so the job can stop instead of failing.
- */
-export async function setIngestState(sourceId: string, data: Prisma.SourceUpdateManyMutationInput) {
-  const { count } = await prismaClient.source.updateMany({ where: { id: sourceId }, data });
-  return count > 0;
 }

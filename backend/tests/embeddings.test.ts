@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
+import { appConfig } from '../src/config/app.config.js';
 import prismaClient from '../src/config/db.config.js';
 import { embedTexts, normalize } from '../src/llm/embeddings.js';
 import { UpstreamError } from '../src/utils/errors/app.error.js';
@@ -6,12 +7,17 @@ import { resetDb } from './helpers/db.js';
 import { apiError, fakeEmbed, fakeEmbeddingModel } from './helpers/llm-mock.js';
 
 vi.mock('../src/llm/providers.js', () => import('./helpers/llm-mock.js'));
+// The real limiter would hold big inputs for minutes; these tests check how it is used.
+const quota = vi.hoisted(() => ({ take: vi.fn(() => Promise.resolve()), record: vi.fn() }));
+vi.mock('../src/utils/pacer.js', () => ({ createWindowLimiter: () => quota }));
 
 let doEmbed: MockInstance<typeof fakeEmbeddingModel.doEmbed>;
 
 beforeEach(async () => {
   await resetDb();
   doEmbed = vi.spyOn(fakeEmbeddingModel, 'doEmbed');
+  quota.take.mockClear();
+  quota.record.mockClear();
 });
 
 afterEach(() => {
@@ -66,14 +72,34 @@ describe('embedTexts', () => {
     expect(asDocument).not.toEqual(asQuery);
   });
 
-  it('splits large inputs into batches of 100', async () => {
+  it('splits large inputs into batches of 40', async () => {
     const texts = Array.from({ length: 250 }, (_, i) => `text ${i}`);
     const vectors = await embedTexts(texts, { kind: 'document' });
 
     expect(vectors).toHaveLength(250);
-    expect(doEmbed.mock.calls.map(([options]) => options.values.length).sort()).toEqual([
-      100, 100, 50,
+    expect(doEmbed.mock.calls.map(([options]) => options.values.length)).toEqual([
+      40, 40, 40, 40, 40, 40, 10,
     ]);
+  });
+
+  it('waits for the free-tier quota before each document batch', async () => {
+    await embedTexts(
+      Array.from({ length: 50 }, (_, i) => `text ${i}`),
+      { kind: 'document' },
+    );
+    expect(quota.take.mock.calls).toEqual([[40], [10]]);
+    expect(quota.record).not.toHaveBeenCalled();
+  });
+
+  it('counts queries against the quota without waiting', async () => {
+    await embedTexts(['how do joins work'], { kind: 'query' });
+    expect(quota.record).toHaveBeenCalledWith(1);
+    expect(quota.take).not.toHaveBeenCalled();
+  });
+
+  it('uses batches that fit in the per-minute window', () => {
+    const { batchSize, documentsPerMinute } = appConfig.llm.embeddings;
+    expect(batchSize).toBeLessThanOrEqual(documentsPerMinute);
   });
 
   it('records one usage row with estimated tokens', async () => {
@@ -106,7 +132,7 @@ describe('embedTexts', () => {
 
   it('keeps finished batches cached when a later one fails', async () => {
     const texts = Array.from({ length: 150 }, (_, i) => `text ${i}`);
-    // Batches run two at a time, so pick the failing one by content, not by call order.
+    // The last batch (texts 120-149) fails; picked by content, not by call order.
     doEmbed.mockImplementation((options) =>
       options.values.some((value) => value.endsWith('text 120'))
         ? Promise.reject(apiError(400))
@@ -114,7 +140,7 @@ describe('embedTexts', () => {
     );
 
     await expect(embedTexts(texts, { kind: 'document' })).rejects.toBeInstanceOf(UpstreamError);
-    expect(await prismaClient.embeddingCache.count()).toBe(100);
+    expect(await prismaClient.embeddingCache.count()).toBe(120);
     const [row] = await prismaClient.usageEvent.findMany();
     expect(row).toMatchObject({ ok: false });
     expect(row?.error).toMatch(/^400/);
@@ -123,7 +149,7 @@ describe('embedTexts', () => {
     doEmbed.mockReset();
     doEmbed.mockImplementation(fakeEmbed);
     await embedTexts(texts, { kind: 'document' });
-    expect(sentValues()).toHaveLength(50);
+    expect(sentValues()).toHaveLength(30);
   });
 
   it('returns an empty list for no texts', async () => {

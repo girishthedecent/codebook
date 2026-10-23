@@ -477,6 +477,19 @@ describe('resync', () => {
     expect(res.status).toBe(202);
   });
 
+  it('recovers a source stuck in PROCESSING (its run died without failing)', async () => {
+    const { id } = bodyOf(await addRepo(alice));
+    await prismaClient.source.update({ where: { id }, data: { status: 'PROCESSING' } });
+    // Still being worked on: every ingest step updates the row.
+    const recent = new Date(Date.now() - appConfig.sources.stalePendingMs - 1_000);
+    await prismaClient.$executeRaw`UPDATE "Source" SET "updatedAt" = ${recent} WHERE id = ${id}`;
+    expect((await alice.agent.post(`/api/v1/sources/${id}/resync`)).status).toBe(409);
+
+    const stale = new Date(Date.now() - appConfig.sources.staleProcessingMs - 1_000);
+    await prismaClient.$executeRaw`UPDATE "Source" SET "updatedAt" = ${stale} WHERE id = ${id}`;
+    expect((await alice.agent.post(`/api/v1/sources/${id}/resync`)).status).toBe(202);
+  });
+
   it('tells the user to re-upload a PDF whose upload never finished', async () => {
     const { id } = bodyOf(await uploadPdf(alice));
     await prismaClient.$executeRaw`

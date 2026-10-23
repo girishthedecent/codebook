@@ -6,6 +6,7 @@ import {
   HeadBucketCommand,
   HeadObjectCommand,
   ListObjectsV2Command,
+  NoSuchKey,
   NotFound,
   PutObjectCommand,
 } from '@aws-sdk/client-s3';
@@ -38,6 +39,18 @@ export async function getObjectStream(key: string) {
   const { Body } = await s3Client.send(new GetObjectCommand({ Bucket: bucket(), Key: key }));
   if (!Body) throw new Error(`Object ${key} has no body`);
   return Body as Readable;
+}
+
+/** The whole object in memory (for files with a size cap), or null when it doesn't exist. */
+export async function getObjectBuffer(key: string) {
+  try {
+    const { Body } = await s3Client.send(new GetObjectCommand({ Bucket: bucket(), Key: key }));
+    if (!Body) throw new Error(`Object ${key} has no body`);
+    return Buffer.from(await Body.transformToByteArray());
+  } catch (error) {
+    if (error instanceof NoSuchKey) return null;
+    throw error;
+  }
 }
 
 /** Size and type of an object, or null when it doesn't exist. */

@@ -37,3 +37,16 @@ export const sourceParamsSchema = z.object({
 });
 
 export const listSourcesQuerySchema = paginationQuerySchema;
+
+export const listFilesQuerySchema = paginationQuerySchema;
+
+// One way to pick the text: a physical page of a PDF, or a TOC section. Phase 6 adds
+// file paths and line ranges for repositories.
+export const sourceContentQuerySchema = z
+  .object({
+    page: z.coerce.number().int().min(1).optional(),
+    tocNodeId: z.uuid().optional(),
+  })
+  .refine((query) => (query.page === undefined) !== (query.tocNodeId === undefined), {
+    message: 'Give either page or tocNodeId',
+  });

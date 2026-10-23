@@ -54,6 +54,32 @@ export function scriptedModel(
   });
 }
 
+/**
+ * Answers each call with `answer(prompt)`, given the call's prompt text; an Error is thrown.
+ * For models whose reply depends on what they were sent.
+ */
+export function promptModel(answer: (prompt: string) => string | Error) {
+  return new MockLanguageModelV4({
+    doGenerate: async ({ prompt }) => {
+      const text = prompt
+        .flatMap((message) =>
+          typeof message.content === 'string'
+            ? [message.content]
+            : message.content.flatMap((part) => (part.type === 'text' ? [part.text] : [])),
+        )
+        .join('\n');
+      const reply = answer(text);
+      if (reply instanceof Error) throw reply;
+      return {
+        content: [{ type: 'text', text: reply }],
+        finishReason: { unified: 'stop', raw: undefined },
+        usage: usage(100, 20),
+        warnings: [],
+      };
+    },
+  });
+}
+
 /** Always answers `text`. */
 export function textModel(text: string, tokens?: Tokens) {
   return scriptedModel([text], tokens);

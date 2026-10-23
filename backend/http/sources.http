@@ -65,6 +65,21 @@ GET {{base}}/api/v1/sources/{{sourceId}}
 ### Progress stream (Server-Sent Events; ends after `done` or `failed`)
 GET {{base}}/api/v1/sources/{{sourceId}}/events
 
+### Table of contents (a tree; empty before the first ingest)
+# @name toc
+GET {{base}}/api/v1/sources/{{sourceId}}/toc
+
+@tocNodeId = {{toc.response.body.$.data[0].id}}
+
+### Files of the source (one per PDF)
+GET {{base}}/api/v1/sources/{{sourceId}}/files
+
+### Text of one PDF page (physical page number, 1 = first page of the file)
+GET {{base}}/api/v1/sources/{{sourceId}}/content?page=24
+
+### Text of a TOC section, subsections included (the first chapter from the toc request)
+GET {{base}}/api/v1/sources/{{sourceId}}/content?tocNodeId={{tocNodeId}}
+
 ### Resync (409 while queued or processing)
 POST {{base}}/api/v1/sources/{{sourceId}}/resync
 Origin: {{origin}}

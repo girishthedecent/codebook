@@ -18,7 +18,8 @@
     "format:check": "prettier --check .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "db:migrate": "prisma migrate dev && prisma generate",
+    "db:migrate": "prisma migrate deploy && prisma generate",
+    "db:migrate:new": "prisma migrate dev --create-only",
     "db:deploy": "prisma migrate deploy",
     "db:reset": "prisma migrate reset",
     "db:studio": "prisma studio"
@@ -37,14 +38,17 @@
     "express": "^5.3.0",
     "helmet": "^8.3.0",
     "inngest": "4.24.0",
+    "js-tiktoken": "1.0.21",
     "multer": "2.4.0",
     "pg": "^8.23.1",
+    "unpdf": "1.9.0",
     "winston": "3.19.0",
     "winston-daily-rotate-file": "5.0.0",
     "zod": "^4.6.7"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@inngest/test": "1.0.0",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/multer": "2.3.0",

@@ -3,6 +3,7 @@ import { embedMany } from 'ai';
 import { appConfig } from '../config/app.config.js';
 import logger from '../config/logger.config.js';
 import { UpstreamError } from '../utils/errors/app.error.js';
+import { createWindowLimiter } from '../utils/pacer.js';
 import type { CallContext } from './client.js';
 import { findCachedEmbeddings, saveCachedEmbeddings } from './embeddingCache.repository.js';
 import { embeddingRoute } from './models.js';
@@ -23,6 +24,11 @@ type EmbedOptions = {
   abortSignal?: AbortSignal;
   ctx?: CallContext;
 };
+
+// Gemini's free tier counts texts, not requests: 100 a minute for everyone. Ingestion
+// waits to stay under documentsPerMinute; queries never wait (a user is waiting) but are
+// counted, so a book being embedded can't push search over the limit.
+const quota = createWindowLimiter(appConfig.llm.embeddings.documentsPerMinute, 60_000);
 
 export function withTaskPrefix(text: string, kind: EmbedKind, title?: string) {
   return kind === 'query'
@@ -70,6 +76,8 @@ async function embedMissing(entries: [key: string, input: string][], options: Em
 
   const embedBatch = async (batch: [string, string][]) => {
     const values = batch.map(([, input]) => input);
+    if (options.kind === 'document') await quota.take(values.length);
+    else quota.record(values.length);
     const { embeddings, usage } = await withRetry(
       (signal) =>
         embedMany({

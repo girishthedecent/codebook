@@ -10,7 +10,10 @@ import {
   createPdfSourceHandler,
   createSourceHandler,
   deleteSourceHandler,
+  getContentHandler,
   getSourceHandler,
+  getTocHandler,
+  listFilesHandler,
   listSourcesHandler,
   resyncSourceHandler,
   sourceEventsHandler,
@@ -18,7 +21,9 @@ import {
 import { receivePdf, requireWorkspaceWrite } from './source.upload.js';
 import {
   createSourceSchema,
+  listFilesQuerySchema,
   listSourcesQuerySchema,
+  sourceContentQuerySchema,
   sourceParamsSchema,
   uploadFieldsSchema,
 } from './source.validator.js';
@@ -58,4 +63,17 @@ sourceRouter.get(
   '/:sourceId/events',
   validateRequestParams(sourceParamsSchema),
   sourceEventsHandler,
+);
+sourceRouter.get('/:sourceId/toc', validateRequestParams(sourceParamsSchema), getTocHandler);
+sourceRouter.get(
+  '/:sourceId/files',
+  validateRequestParams(sourceParamsSchema),
+  validateQueryParams(listFilesQuerySchema),
+  listFilesHandler,
+);
+sourceRouter.get(
+  '/:sourceId/content',
+  validateRequestParams(sourceParamsSchema),
+  validateQueryParams(sourceContentQuerySchema),
+  getContentHandler,
 );

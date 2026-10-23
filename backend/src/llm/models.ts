@@ -98,16 +98,18 @@ export const textRoutes: Record<TextTask, TextRoute> = {
     reasoning: 'low',
     timeoutMs: 20_000,
   },
-  // Bulk work during ingestion: a book is far more than Groq's daily token limit, and
-  // Gemini caches the document prefix these prompts repeat.
+  // Bulk work during ingestion: a book is far more than Groq's daily token limit. No
+  // fallback: gpt-oss-20b serves cheap/rewrite/memory, and one book would use up its day.
+  // A chunk whose context fails is still indexed, just without one.
   contextualize: {
     primary: GEMINI_FLASH_LITE,
-    fallback: GPT_OSS_20B,
-    maxOutputTokens: 1_024,
+    // One call writes the contexts for all children of a parent (5-6), plus reasoning.
+    maxOutputTokens: 2_048,
     temperature: 0.2,
     reasoning: 'low',
     timeoutMs: 30_000,
   },
+  // Long inputs too, but occasional, so Groq can step in.
   summarize: {
     primary: GEMINI_FLASH_LITE,
     fallback: GPT_OSS_20B,

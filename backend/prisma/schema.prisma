@@ -187,6 +187,127 @@ model Source {
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
+  documents   SourceDocument[]
+  tocNodes    TocNode[]
+  chunks      SourceChunk[]
+  ingestDraft IngestDraft?
+
   @@unique([workspaceId, dedupeKey])
   @@index([workspaceId, createdAt])
+}
+
+// The rows below are written only by the ingestion `index` step, which replaces a source's
+// documents, TOC and chunks in one transaction. Their ids come from the draft (randomUUID),
+// so the inserts can link parents without reading ids back.
+
+// One per PDF / repo file / web page: the "files" of a source.
+model SourceDocument {
+  id            String        @id
+  sourceId      String
+  source        Source        @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  path          String
+  language      String?
+  // Full normalized text. PDFs: pages joined with \f, so page N is a split away.
+  content       String
+  pageStart     Int?
+  pageEnd       Int?
+  lineCount     Int?
+  sizeBytes     Int
+  hash          String
+  skippedReason String?
+  createdAt     DateTime      @default(now())
+  tocNodes      TocNode[]
+  chunks        SourceChunk[]
+
+  @@unique([sourceId, path])
+}
+
+model TocNode {
+  id         String         @id
+  sourceId   String
+  source     Source         @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  documentId String
+  document   SourceDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  parentId   String?
+  parent     TocNode?       @relation("TocTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children   TocNode[]      @relation("TocTree")
+  title      String
+  number     String?
+  level      Int
+  // Reading order within the source.
+  ordinal    Int
+  pageStart  Int?
+  pageEnd    Int?
+  // The section's range in the document text, subsections included.
+  charStart  Int
+  charEnd    Int
+  createdAt  DateTime       @default(now())
+
+  @@index([sourceId, ordinal])
+  @@index([documentId])
+  @@index([parentId])
+}
+
+enum ChunkKind {
+  PARENT
+  CHILD
+}
+
+model SourceChunk {
+  id          String                       @id
+  sourceId    String
+  source      Source                       @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  documentId  String
+  document    SourceDocument               @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  // Copied from the source so search can filter on it without a join.
+  workspaceId String
+  parentId    String?
+  parent      SourceChunk?                 @relation("ChunkTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children    SourceChunk[]                @relation("ChunkTree")
+  kind        ChunkKind
+  // Order within the document, counted separately for parents and children.
+  ordinal     Int
+  content     String
+  // Contextual-retrieval note written by the model; null when it failed or is turned off.
+  context     String?
+  headingPath String[]
+  symbolName  String?
+  pageStart   Int?
+  pageEnd     Int?
+  lineStart   Int?
+  lineEnd     Int?
+  tokenCount  Int
+  hash        String
+  // What keyword search indexes (tsv below) and what was embedded. Empty for parents,
+  // which are read, not searched.
+  searchText  String
+  // CHILD chunks only. Set with raw SQL; HNSW index in the migration.
+  embedding   Unsupported("vector(1536)")?
+  // Generated from searchText by Postgres (see the migration); GIN index.
+  tsv         Unsupported("tsvector")?
+  createdAt   DateTime                     @default(now())
+
+  @@index([workspaceId, sourceId])
+  @@index([sourceId])
+  @@index([documentId, kind, ordinal])
+  @@index([parentId])
+}
+
+// Contextual-retrieval results, so a rerun or a second copy of the same book doesn't pay
+// again. Key: sha256(model | prompt id | parent hash | chunk hash).
+model ContextCache {
+  key       String   @id
+  context   String
+  createdAt DateTime @default(now())
+}
+
+// The parsed result of the ingest run in progress, so Inngest steps pass only ids and
+// counts. Owned by the run that wrote it; the `index` step deletes it.
+model IngestDraft {
+  sourceId  String   @id
+  source    Source   @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  runId     String
+  data      Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }

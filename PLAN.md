@@ -451,14 +451,14 @@ Indexes (raw SQL): HNSW on `embedding vector_cosine_ops`, GIN on `tsv`, btree on
 |---|---|---|
 | id | String @id | |
 | sourceId | String | FK cascade |
-| documentId | String? | |
-| parentId | String? | self FK |
+| documentId | String | FK cascade |
+| parentId | String? | self FK cascade |
 | title | String | |
 | number | String? | `7.3` |
 | level | Int | 1 = chapter |
-| ordinal | Int | |
+| ordinal | Int | reading order within the source |
 | pageStart / pageEnd | Int? | |
-| chunkIds | String[] | PARENT chunks belonging to this node |
+| charStart / charEnd | Int | range in the document text, subsections included (Phase 5: replaces a `chunkIds` list — a section's text is a slice, and chunks carry `headingPath`) |
 
 **CodeSymbol**
 | field | type | notes |
@@ -577,7 +577,14 @@ Indexes: `(sourceId, name)`, `(sourceId, qualifiedName)` unique.
 **ContextCache** (contextual retrieval results; created in Phase 5)
 | field | type |
 |---|---|
-| key String @id (sha256(model + promptVersion + docHash + chunkHash)), context String, createdAt |
+| key String @id (sha256(model \| prompt id \| parent hash \| chunk hash)), context String, createdAt |
+
+**IngestDraft** (Phase 5: parsed result of a run in progress, so Inngest steps pass only ids and counts)
+| field | type | notes |
+|---|---|---|
+| sourceId | String @id | FK cascade |
+| data | Json | documents, TOC entries, parent/child chunk offsets |
+| createdAt / updatedAt | DateTime | |
 
 **EvalDataset / EvalCase / EvalRun / EvalResult**
 - `EvalDataset`: id, name (unique), description, corpus (Json: list of source specs), createdAt.
@@ -991,84 +998,124 @@ Goal: users add sources to a workspace; PDFs land in MinIO; adding a source enqu
 
 Goal: a PDF becomes pages → TOC tree → parent/child chunks with context → embeddings → searchable index, with progress and idempotency.
 
-**5.1 Schema**
-- [ ] `SourceDocument` (moved from Phase 4), `SourceChunk`, `TocNode` models
-- [ ] Raw SQL migration `chunks_vector_fts`:
-  - `ALTER TABLE "SourceChunk" ADD COLUMN embedding vector(1536);`
-  - `ADD COLUMN tsv tsvector GENERATED ALWAYS AS (to_tsvector('english', coalesce("searchText",''))) STORED;`
+**Checked 2026-10-23** (planning, before the build):
+- `unpdf@1.9.0` (pdf.js inside, `@napi-rs/canvas` is an optional peer for rendering only — not installed). `extractText(pdf, { mergePages: false })` gives one string per page with line breaks kept; `pdf.getOutline()` + `getDestination()` / `getPageIndex()` resolve outline items to pages. On DDIA (491 pages): load 0.2s, text 3.5s, **all 187 outline items resolve** (depth 3), and 185 of 187 titles can be found as a line on their start page, so sections can start mid-page.
+- DDIA is ~260K tokens → roughly 900 child chunks and 300 parents at the sizes below.
+- **Line-end hyphens are mostly real compounds** ("data-intensive", "non-relational"; 1 true split in the first 15), so the plan's `exam-\nple → example` rule would damage text. New rule: join without the hyphen only if the joined word appears elsewhere in the document, otherwise keep the hyphen and drop the line break.
+- **Running headers/footers** are `2 | Chapter 1: …` / `Thinking About Data Systems | 3` — each one repeats on a few pages only, so "same line on > 50% of pages" catches nothing. New rule (5.3).
+- Free-tier quotas (third-party measurement, Sep 2026; Google no longer publishes them): `gemini-3.5-flash-lite` **15 RPM / 500 RPD**, `gemini-embedding-2` 100 / min and 1,000 / day — **measured at the build entry: counted per text, not per request** (a second 100-text batch in the same minute got `429 embed_content_free_tier_requests, limit: 100`). DDIA's ~900 children take most of a day's embedding quota; `gemini-3.6-flash` **5 RPM / 20 RPD**. One contextualize call per chunk (~900 for DDIA) doesn't fit in a day → **one call per parent** that returns contexts for all its children (~300 calls, paced at 15/min ≈ 20 min).
+- Inngest limits: 4 MB per step output, 32 MB run state, 1,000 steps per run → steps return counts only; parsed data lives in an `IngestDraft` row (5.2).
+- Fixture PDFs can be generated in code (text pages with Helvetica + an outline, ~60 lines of helper) and `unpdf` reads them correctly → no binary fixtures and no PDF-writing dependency.
+- `@inngest/test@1.0.0` (peer `inngest ^4`), `js-tiktoken@1.0.21` (has `o200k_base`, the gpt-oss tokenizer).
+
+**Found during the build** (2026-10-23, all with tests):
+- DDIA's typeset line breaks use **U+2010**, not `-` (1,891 of them; all 124 plain `-` line ends are real compounds) → a U+2010 / soft hyphen at a line end is joined unless the hyphenated form appears elsewhere; a plain `-` is dropped only if the joined word appears elsewhere. A word split across a page break moves whole to the next page (pages never merge), except before a footnote mark like `ii.`
+- "CHAPTER 1" on chapter openers looks like a running head (`chapter #` repeats) → outline titles and bare `Chapter N` lines are never dropped; repeated-head rule (a) only for lines ≤ 100 characters; roman page numbers lowercase `[ivxlc]{1,6}` only; `number | title` heads need a single bar
+- Prisma 7 would drop the HNSW / GIN indexes and the generated `tsv` in every later migration (see 5.1)
+- Section text (`?tocNodeId=`) is sliced in JS: TOC offsets are UTF-16 indexes and Postgres `substr` counts code points
+- Overlap never leaves a child made of overlap only (a big unit after a small one)
+- `onFailure` also ignores runs queued before the last successful ingest (a stale run with no draft)
+- On DDIA ~2% of Flash-Lite calls hit the 30s timeout (free-tier queueing); those chunks stay without context and the next resync fills them in
+
+**5.1 Schema** (migration `pdf_ingestion`, created with `--create-only`, raw SQL added, then applied)
+- [x] `ChunkKind` enum; models `SourceDocument` (moved from Phase 4), `SourceChunk`, `TocNode`, `ContextCache`, `IngestDraft` — see §7
+- [x] `embedding Unsupported("vector(1536)")?` and `tsv Unsupported("tsvector")?` stay in the schema, so Prisma already creates both columns. Raw SQL appended to the generated migration:
+  - `ALTER TABLE "SourceChunk" DROP COLUMN tsv, ADD COLUMN tsv tsvector GENERATED ALWAYS AS (to_tsvector('english', "searchText")) STORED;`
   - `CREATE INDEX ... USING hnsw (embedding vector_cosine_ops) WITH (m = 16, ef_construction = 64);`
   - `CREATE INDEX ... USING gin (tsv);`
-- [ ] Also a `simple`-config tsvector for code identifiers? → decide in Phase 9 (keep one column now)
+- [x] Drift checked with `prisma migrate diff`: Prisma 7 can't describe HNSW or generated columns, so **every migration it generates tries to drop both indexes and the `tsv` expression** (and plain `migrate dev` stops to ask for a migration name). So: `db:migrate` = `migrate deploy && generate` (apply only), `db:migrate:new` = `migrate dev --create-only` (create, then delete the DROP lines for these objects), and `tests/migrations.test.ts` fails if a migration drops them (checked by dropping the index)
+- [ ] Also a `simple`-config tsvector for code identifiers? → decided in Phase 9 (keep one column now)
 
-**5.2 Pipeline shape (Inngest function `ingestSource`)**
-- [ ] Trigger: `source/ingest.requested`
-- [ ] Options: `concurrency: [{ key: "event.data.sourceId", limit: 1 }, { limit: config.ingestConcurrency }]`, `retries: 3`, `cancelOn: [{ event: "source/deleted", match: "data.sourceId" }]`
-- [ ] Steps (each `step.run`, each updates `stage` + `progress`):
-  1. `load-source` → read row, mark `PROCESSING`, pick adapter by `type`
-  2. `fetch` → adapter.fetch (PDF: download from storage to temp file)
-  3. `parse` → adapter.parse → `SourceDocument[]` (+ raw pages)
-  4. `check-hash` → compute `contentHash`; if same as stored and `ingestVersion` unchanged → mark READY, skip rest
-  5. `structure` → TOC (PDF) / symbols+edges (repo, Phase 7)
-  6. `chunk` → parents + children
-  7. `contextualize` → batches (fan-out across steps by batch so retries don't redo everything)
-  8. `embed` → batches
-  9. `index` → replace old chunks atomically (transaction: delete old chunks of source → insert new) and set stats
-  10. `finish` → `READY`, `progress=100`, `lastIngestedAt`
-- [ ] `onFailure` handler: mark `FAILED`, store safe error message, keep previous chunks if this was a resync (don't wipe a working index on failure)
-- [ ] Large data between steps: store intermediate results in DB / temp tables, **not** in step return values (Inngest step output size limits). Pattern: `parse` writes `SourceDocument` rows; `chunk` writes chunks with `embedding = null`; `contextualize` and `embed` update rows in batches
-- [ ] Adapter interface `SourceAdapter { fetch, parse, structure? }` in `ingestion/adapters/types.ts`
+**5.2 Pipeline** (`modules/ingestion/ingest.function.ts`, replaces the Phase 4 stub; same function id)
+- [x] Trigger `source/ingest.requested`; `concurrency: [{ key: 'event.data.sourceId', limit: 1 }, { limit: 2 }]`, `retries: 3`, `cancelOn` `source/deleted` matched on `data.sourceId`
+- [x] Steps (each `step.run` returns small JSON only; each updates `stage` + `progress`):
+  1. `load-source` → read the source + workspace owner, mark `PROCESSING` (stop if it was deleted)
+  2. `prepare` → download the PDF from storage, parse (5.3), TOC (5.4), chunk (5.5), compute the content hash. **Skip** (READY, stage DONE, progress 100, `error` cleared, `lastIngestedAt` now; no model calls) only when the hash equals the stored one, `lastIngestedAt` is set and `stats.missingContexts === 0`. Otherwise write the result to `IngestDraft` (with the source title, so every step uses the same one) and return counts. Expected failures (no text, password, unreadable, source type not supported yet) set `FAILED` with a clear message here and end the run — they aren't retried
+  3. `contextualize-{n}` → 10 parents per step (5.6); each returns `{ done, failed }`
+  4. `embed-{n}` → 80 children per step (5.7), warming the embedding cache
+  5. `index` → final texts and vectors, then one transaction swaps the old documents/TOC/chunks for the new ones (5.7)
+- [x] Progress: FETCHING 2 · PARSING 5 · STRUCTURING 8 · CHUNKING 10 · CONTEXTUALIZING 10→60 · EMBEDDING 60→90 · INDEXING 95 · DONE 100
+- [x] **Old index stays live until the `index` step commits.** Nothing is written to the chunk tables before it, so a failed resync leaves the working index untouched, and readers never see a half-built one (no draft flag to filter on)
+- [x] `IngestDraft` (one row per source, JSON, cascade-deleted with the source): documents with content, TOC entries with character ranges, parents and children as offsets into the document text. Later steps read it; `index` deletes it. DDIA's draft is a few MB, well inside Postgres limits
+- [x] Contexts and vectors go to `ContextCache` and `EmbeddingCache` as each batch finishes; `index` reads them back by key. A retried step or a rerun after a failure only pays for what's missing
+- [x] Content hash = sha256 of the document text, the source title and the settings that change the index (`ingestion.version`, chunk sizes, contextual retrieval on/off, contextualize model + prompt id, embedding model + dimensions). Stored with `ingestVersion` and `stats` only by `index`, so a failed run never looks done. `missingContexts` counts children without a context while contextual retrieval is on (0 when it's off), so a run that lost some contexts isn't skipped next time and a resync fills them in
+- [x] Replay-safe control flow: anything the function body decides between steps (skip, stop contextualizing) comes from earlier steps' memoized return values, never from variables set inside a step callback (those don't run again on replay)
+- [x] Ids for documents, TOC nodes and chunks are generated in code (`randomUUID()`) when the draft is built, so the `index` inserts are plain `createMany` with parent ids already set (exception to the §4.1 cuid rule; routes that take these ids validate them with `z.uuid()`, e.g. `?tocNodeId=`)
+- [x] **One run owns the draft.** Inngest's concurrency limit counts executing steps, not runs, so two runs of a source could interleave (e.g. after the stuck-PROCESSING resync below). The draft stores the Inngest `runId` that wrote it; later steps and `index` (under the source lock) stop quietly when the draft isn't theirs. The Phase 4 stub comment "one run per source at a time" is corrected
+- [x] `onFailure` (unexpected errors after retries): `FAILED`, "Processing failed. Try a resync." (embedding stage: the message in 5.7), draft removed; previous chunks kept. It does nothing when the draft belongs to another run (`draft.runId` ≠ the failed `event.data.run_id`), so a stale run failing can't clobber the run that took over
+- [x] Per-step timings logged (`Ingest step done { sourceId, step, ms }`)
+- [x] `setIngestState` moves from the sources repository to `ingestion.repository.ts`: ingestion is its only writer and `index` updates the source in the same transaction as the chunk swap. The sources module keeps everything else
+- [x] Repo and website sources → `FAILED` "… isn't supported yet" until Phases 6 and 8 add their adapters (the stub used to mark them READY)
+- [x] A run cancelled by hand in the Inngest UI fires neither `onFailure` nor `cancelOn` cleanup, so the source would stay PROCESSING forever → resync also accepts a PROCESSING source not updated for 30 min (every step updates it; steps take about a minute at most)
+- [x] Types for the parsed result (`ParsedSource`, `ParsedDocument`, `TocEntry`, `ChunkPlan`) in `ingestion/ingestion.types.ts`; the adapter is picked with a `switch` on `source.type` (an interface waits for the second adapter in Phase 6)
 
-**5.3 PDF adapter**
-- [ ] Install `unpdf`
-- [ ] `adapters/pdf.ts`:
-  - load document, iterate pages → text per page (preserve page numbers)
-  - normalize: fix hyphenated line breaks (`exam-\nple` → `example`), collapse whitespace, remove repeated headers/footers (lines appearing on > 50% of pages at same position), strip page-number-only lines
-  - detect empty text across most pages → `FAILED` with "scanned PDF not supported (no OCR)"
-  - one `SourceDocument` for the whole PDF (`path = fileName`, `pageStart=1`, `pageEnd=N`, `content` = pages joined with page markers `\f`)
-- [ ] Page map: array of `[charOffsetStart, pageNumber]` to map any chunk offset back to page(s)
+**5.3 PDF parsing** (`ingestion/pdf/pdf.parser.ts`, `ingestion/pdf/pdf.text.ts`)
+- [x] Install `unpdf`
+- [x] Load from a buffer (50 MB max, enforced at upload), text per page, outline resolved to page numbers
+- [x] Page cleanup:
+  - running headers/footers: only a page's first and last line are candidates; dropped when (a) the line with numbers replaced by `#` is the first/last line of ≥ 3 pages and has a number in it, (b) it's a bare page number (arabic or roman), or (c) it's `number | title` / `title | number`
+  - line-end hyphens: rule above (join only when the joined word occurs elsewhere in the document); never across a page break
+  - any `\f` in the extracted text is removed first, so `\f` only ever marks a page boundary
+  - trailing spaces and runs of blank lines collapsed; line breaks otherwise kept (code and tables in books stay readable)
+- [x] No text layer: fewer than 20 non-space characters on ≥ 90% of pages → `FAILED` "This PDF has no text layer (scanned pages need OCR, which isn't supported)"
+- [x] Password-protected → `FAILED` "This PDF is password-protected"; anything else pdf.js can't open → `FAILED` "Could not read this PDF"
+- [x] One `SourceDocument` for the whole PDF (`path` = file name, `pageStart = 1`, `pageEnd = N`, `content` = pages joined with `\f`); page numbers come from the `\f` positions, so no separate page map is stored
+- [x] **Page numbers are physical PDF pages** (1 = first page of the file) everywhere: chunks, TOC, `?page=`, citations, eval `expectedRefs.page`. Printed page labels (`getPageLabels()`) can be shown later; they aren't stored now
 
-**5.4 TOC**
-- [ ] Try PDF outline (`getOutline`) → resolve each item's destination to page number → `TocNode` tree (title, level, pageStart; pageEnd = next sibling's start − 1)
-- [ ] Fallback heading detection when no outline:
-  - numbered headings regex (`^\d+(\.\d+)*\s+[A-Z]`), `Chapter \d+`, all-caps short lines
-  - (optional) font-size based detection if text items expose font size — use only if `unpdf` gives it reliably
-- [ ] If neither → single root node "Document" covering all pages
-- [ ] Unit tests with fixture PDFs: one with outline, one without
+**5.4 TOC** (`ingestion/toc.ts`)
+- [x] From the outline: flatten in reading order; each entry starts at its title's line on its start page (title matched against 1–3 joined lines, ignoring case and punctuation), or at the page start when not found
+- [x] Each node gets `charStart` / `charEnd` in the document text (its own text plus its descendants', up to the next entry at the same or a higher level) and `pageStart` / `pageEnd` from those offsets; `number` parsed from the title when it has one (`7.3 Collisions`)
+- [x] Fallback without an outline: lines like `7.3 Hash Tables` (number then a capital letter, ≤ 80 characters, no final period) or `Chapter 7` (level from the number of parts); used only if at least 2 are found
+- [x] Neither → one root node "Document" covering every page
+- [x] Unit tests on generated PDFs: with an outline, without one (numbered headings), plain text only
 
-**5.5 Doc chunker**
-- [ ] `chunkers/doc-chunker.ts`:
-  - split by TOC sections → **parent** chunks = section text (cap `parentMaxTokens` ~1500; split long sections at paragraph boundaries into multiple parents)
-  - each parent → **child** chunks of `childTokens` (~350) with `overlapTokens` (~50), split on paragraph → sentence boundaries, never mid-word
-  - each child: `headingPath`, `pageStart/pageEnd` (from page map), `ordinal`, `tokenCount`, `hash`
-  - drop chunks < `minTokens` (~20) by merging with neighbor
-- [ ] `utils/tokens.ts`: token counter (`js-tiktoken` cl100k as approximation, documented as approximate)
-- [ ] Unit tests: chunk sizes within bounds, page mapping correct, overlap present, headings attached
+**5.5 Doc chunker** (`ingestion/doc.chunker.ts`, `utils/tokens.ts`)
+- [x] `utils/tokens.ts`: `countTokens(text)` with `js-tiktoken` `o200k_base` (exact for gpt-oss, approximate for Gemini; noted in the code)
+- [x] Sections = text between consecutive TOC entries (text before the first entry is its own section under the root)
+- [x] **Parents** = section text, split at sentence boundaries into balanced parts when longer than 1,500 tokens
+- [x] **Children** = ~350 tokens with ~50 tokens of overlap, packed from sentences; a sentence over 350 tokens (code, tables) is split at line breaks, then at spaces — never mid-word; overlap is whole sentences
+- [x] Sections under 20 tokens (e.g. a "Part II" title page) merge into the next section, keeping the deeper heading path
+- [x] Each chunk: `headingPath` (TOC ancestors), `pageStart` / `pageEnd` (from `\f` positions), `ordinal`, `tokenCount`, `hash`; `\f` becomes a line break in chunk text
+- [x] Unit tests: sizes within bounds, overlap present, no word cut, pages right across a page break, heading paths, tiny-section merge, long sentence split
 
-**5.6 Contextual retrieval**
-- [ ] Prompt `contextualize@v1`: given document title + heading path + parent text (truncated) + chunk → "1–2 sentences situating this chunk within the document, for search retrieval. Output only the context."
-- [ ] Task `contextualize` (Gemini Flash-Lite, Groq fallback — see Phase 3.3)
-- [ ] `ContextCache` table + migration (deferred from Phase 3); cache key = model + prompt version + parent hash + chunk hash
-- [ ] Batch: N chunks concurrently (config), respect rate limits; on persistent failure for a chunk → leave `context = null` (don't fail the whole source)
-- [ ] Toggle `config.contextualRetrieval` (on by default) — evals compare on/off
-- [ ] `searchText` = `context + "\n" + headingPath.join(" > ") + "\n" + content`
+**5.6 Contextual retrieval** (`ingestion/contextualizer.ts`, prompt `contextualize@v1`)
+- [x] **One call per parent** (task `contextualize`: Gemini Flash-Lite, **no fallback** — Groq's 20B is the primary for `cheap`/`rewrite`/`memory`, and one book would use up its daily tokens; a failed context just stays `null`): document title + heading path + parent text + its numbered children → `{ contexts: [{ chunk, context }] }` (structured output) — 1–2 sentences per child situating it in the document. Contexts missing from the answer stay `null`
+- [x] `contextualize` route: fallback removed, `maxOutputTokens` 1,024 → 2,048 (5–6 contexts plus reasoning); the "Gemini caches the document prefix" comment goes (calls no longer repeat a long prefix)
+- [x] `ContextCache` key = sha256(model | prompt id | parent hash | child hash), where the parent hash covers everything else in the prompt (title, heading path, parent text). A parent whose children are all cached makes no call
+- [x] Pacing: one process-wide `createPacer(4_500)` (`utils/pacer.ts`) spaces call starts to stay under 15 requests/min, even with two sources ingesting at once
+- [x] A parent whose call fails (after retries) keeps `context = null`; if every call in a step fails (daily quota gone), the rest of the run skips contextualization (decided from the steps' returned `{ done, failed }`) and the source ends READY with `stats.missingContexts`
+- [x] Toggle `appConfig.ingestion.contextualRetrieval` (on by default) — evals compare on/off
+- [x] `searchText` = context + heading path (`A > B`) + content, blank parts left out. Parents get `searchText = ''` (they're read, not searched)
 
-**5.7 Embed & index**
-- [ ] Embed **child** chunks only: input text = `context + headingPath + content` (same as `searchText` minus identifier splits)
-- [ ] `indexer.ts`: bulk update `embedding` via raw SQL (`UPDATE ... SET embedding = $1::vector`), batches of 100
-- [ ] Final stats: pages, chunks (parents/children), tokens
+**5.7 Embed & index** (`ingestion/ingestion.repository.ts`)
+- [x] Embed **children** only: `embedTexts(searchTexts, { kind: 'document', title: draft.title })` — same text as `searchText`, and the draft's title so `embed` and `index` compute the same keys
+- [x] Embedding pacing (from the entry measurement): a process-wide sliding window of texts per minute inside `llm/embeddings.ts`: document batches wait until they fit under **80/min**; query embeddings (Phase 9) never wait but are counted, so chat keeps ~20/min of headroom while a book embeds. The daily quota is shared too (DDIA ≈ 900 of 1,000): a daily reserve for queries is decided in Phase 9. Batch size 100 → **40** (a batch must fit the window: two per minute; a unit test checks batch size ≤ the document limit), embedding concurrency 1, `embed-{n}` steps of 80 children (≈ 1 min each). `onFailure` after the embedding stage says "Creating embeddings failed (the provider's daily limit may be reached). Try a resync later; finished batches are kept." 
+- [x] `index` step, before the transaction: read the contexts from `ContextCache` **once**, build the final `searchText`s, and call `embedTexts` on them (normally all cache hits; anything missing — e.g. another source wrote a context for the same text in between — is embedded here). Embedding keys therefore always match the stored text
+- [x] `index` transaction (`timeout` 2 min): lock the source row (gone → stop), delete its documents and TOC (chunks cascade), `createMany` documents → TOC nodes → parents → children, then copy vectors inside Postgres: `UPDATE "SourceChunk" c SET embedding = ec.embedding FROM unnest(ids, keys) v JOIN "EmbeddingCache" ec ON ec.key = v.key WHERE c.id = v.id` (no vectors sent from Node); check every child got one; set `contentHash`, `ingestVersion`, `stats`, `lastIngestedAt`; delete the draft
+- [x] Stats: `{ pages, documents, parentChunks, chunks, tokens, missingContexts }`
 
-**5.8 Read endpoints**
-- [ ] `GET /api/v1/sources/:id/toc` → nested tree
-- [ ] `GET /api/v1/sources/:id/files` → list of `SourceDocument` (path, language, size, skippedReason)
-- [ ] `GET /api/v1/sources/:id/content?page=12` (PDF) → text of that page; `?tocNodeId=` → section text
+**5.8 Read endpoints** (sources module: `sourceContent.repository.ts` / `sourceContent.service.ts`; demo sources readable)
+- [x] `GET /api/v1/sources/:id/toc` → nested tree `[{ id, title, number, level, pageStart, pageEnd, children }]` (`[]` before the first ingest)
+- [x] `GET /api/v1/sources/:id/files` → paginated `SourceDocument` list (`id, path, language, sizeBytes, pageStart, pageEnd, lineCount, skippedReason`)
+- [x] `GET /api/v1/sources/:id/content?page=12` → that page's text; `?tocNodeId=` → the section's text (with its subsections). Exactly one of them (Phase 6 adds `path` / lines); out-of-range page or unknown node → 404
+- [x] A resync in progress keeps serving the old content until `index` commits
+- [x] `http/sources.http` gains the three requests
 
 **5.9 Tests**
-- [ ] Fixture `tests/fixtures/sample.pdf` (generated, ~8 pages, with outline, known sentences per page)
-- [ ] Run the Inngest function directly in tests using `@inngest/test` (`InngestTestEngine`) with mocked LLM/embeddings
-- [ ] Asserts: status READY, TOC nodes match outline, every child chunk has embedding + page range, parents linked, stats correct
-- [ ] Re-run with same file → hash skip path taken (no new LLM calls)
-- [ ] Failure in `embed` step → source FAILED, error stored; resync failure keeps old chunks
-- [ ] Scanned (image-only) PDF fixture → FAILED with clear message
+- [x] `tests/helpers/pdf.ts`: `buildPdf({ pages, outline? })` (text pages + outline), plus an image-only variant (a drawn rectangle, no text)
+- [x] Unit: page cleanup, hyphen rule, TOC (outline, mid-page start, fallback headings, single root), chunker, pacer, content hash changes with settings
+- [x] Pipeline with `@inngest/test` (`InngestTestEngine`), mocked LLM + embeddings, real DB and test bucket, pacer mocked out:
+  - fixture with outline → READY, stage DONE, progress 100; TOC matches the outline; every child has an embedding, context and page range; parents linked; stats right; draft gone
+  - same file again → skip path, no model calls, chunk ids unchanged
+  - one contextualize call per parent; second run reuses the cache
+  - contextualize failing → READY with `missingContexts`, and the next run isn't skipped; every call in a step failing → no calls in later steps
+  - a context appearing in the cache between `embed` and `index` → `index` embeds the new text, every child still has a vector
+  - embed failing on a resync → run fails, `onFailure` marks FAILED, old chunks still there
+  - image-only PDF and unreadable bytes → FAILED with their messages, no chunks, no model calls
+  - a second run that took over the draft → the first run's later steps stop quietly, the index is built once
+  - source deleted mid-run → stops quietly; repo source → FAILED "not supported yet"; PROCESSING for 30+ min → resync accepted
+- [x] API: toc / files / content (page, node, out of range, both or neither → 400, other user → 404, demo readable, nothing ingested yet)
+- [x] Live (`LIVE_TESTS=1`, `tests/ingestion.live.test.ts`): the fixture PDF through the real models — every child gets a context and a 1536-dim vector
 
 **Done when:** a real book PDF ingests end-to-end locally (watch in Inngest UI), chunks visible in DB with embeddings and pages.
 
@@ -1421,7 +1468,7 @@ Goal: conversations where an agent with 9 tools answers questions, streams steps
 - [ ] Order for prompt caching: rules → tool usage guide → workspace info (sources list) → user profile → summary → history → question
 
 **11.6 Context assembly** (`chat/context.ts`)
-- [ ] Workspace sources list (id, title, type, status) — only READY sources usable
+- [ ] Workspace sources list (id, title, type, status) — usable = has an index (`lastIngestedAt` set), not `status = READY`: a source being resynced, or whose resync failed, still serves its last index
 - [ ] Memory block (Phase 12 fills it; empty now)
 - [ ] Conversation summary (if any) + last K messages verbatim (K from config, e.g. 8) within `historyTokenBudget`
 - [ ] Token budget check before calling the model (`maxInputTokens` per task); trim history first, then tool results
@@ -1840,7 +1887,8 @@ docker compose up -d && docker compose ps       # infra
 pnpm dev                                        # server on :4000
 pnpm lint && pnpm typecheck && pnpm test        # the local "CI"
 LIVE_TESTS=1 pnpm test <file>.live.test.ts      # real provider calls
-pnpm db:migrate                                 # dev DB migration
+pnpm db:migrate                                 # apply migrations to the dev DB (+ generate)
+pnpm db:migrate:new --name x                    # create a migration only; delete DROPs of raw-SQL objects
 pnpm db:studio                                  # inspect data
 
 # checks
@@ -1938,27 +1986,29 @@ Each phase lists: **Entry** · **Build order** · **Risks & mitigations** · **P
 - **Commit:** `feat(sources): uploads to MinIO, repo/web sources, Inngest events and progress SSE`. **→ M2 cross-review.**
 
 #### Phase 5 — PDF ingestion
-- **Entry:** Phase 4 done. Quick check that the DDIA PDF has extractable text (pages 1–3).
+- **Entry:** Phase 4 done. DDIA has extractable text (checked in planning: 491 pages, outline resolves). Embedding quota measured (per text, 100/min → limiter in 5.7). Plan reviewed by a fresh reviewer in four passes (18 findings folded in: embedding keys rebuilt in `index`, contextualize without fallback, migration drops/re-adds `tsv`, exact skip rule, replay-safe flow, ids in code, physical pages, no hyphen join across pages, stuck-PROCESSING resync, title in the hash, "usable = has an index", draft owned by one run, uuid validators, draft title for keys, full skip-path state, query headroom in the embedding limiter, run-checked `onFailure`, embedding batch ≤ window).
 - **Build order:**
-  1. Chunk/TOC schema + raw SQL migration (vector, generated tsvector, HNSW, GIN).
-  2. Fixture PDFs generated by a small script: one with an outline, one without, and one image-only.
-  3. PDF adapter (pages, normalization, header/footer removal, page map) + tests.
-  4. TOC (outline, with heading detection as fallback) + tests.
-  5. Doc chunker + tests.
-  6. Contextualizer (prompt, cache, batching, toggle).
-  7. Embed + indexer (batched raw SQL).
-  8. Inngest `ingestSource` steps (intermediate data stored in the DB, not in step outputs), `onFailure`, hash skip.
-  9. Read endpoints.
-  10. `@inngest/test` pipeline tests, then a real run on DDIA.
+  1. Schema + migration (generated tsvector, HNSW, GIN); drift check + guard test; `createMany` works on a model with `Unsupported` columns.
+  2. `buildPdf` fixture helper.
+  3. PDF parsing + page cleanup + tests.
+  4. TOC + tests.
+  5. Tokens + doc chunker + tests.
+  6. Pacer, `contextualize@v1` prompt, contextualizer + cache.
+  7. Repository: draft, index transaction, ingest state.
+  8. Inngest function (steps, hash skip, expected failures, `onFailure`), replacing the stub.
+  9. Read endpoints + `.http`.
+  10. `@inngest/test` pipeline tests, live test, then a real run on DDIA.
 - **Risks & mitigations:**
 
   | Risk | Mitigation |
   |---|---|
-  | DDIA (~600 pages, ~3–4k chunks) contextualization hits the Groq free daily cap | Concurrency 2, every result cached, resumable steps. If the cap is hit, do the first full ingest with `contextualRetrieval=false`, then re-run with it on (cache makes this incremental) |
-  | Outline destinations are hard to map to pages | pdf.js `getDestination` + `getPageIndex`; fall back to heading detection |
-  | Inngest step output size limits | Steps return only IDs and counts |
-  | A failed re-ingest wipes a working index | Old chunks are swapped out only in the final `index` transaction |
-- **Proof:** fixture tests green · DDIA READY · CHILD chunk count equals count with embeddings · the TOC endpoint shows the chapters · per-stage timings logged.
+  | Flash-Lite free tier (15 RPM / 500 RPD) | One call per parent (~300 for DDIA), paced at 15/min, every result cached; quota gone → READY with missing contexts, a later resync fills them in |
+  | Embedding quota counted per text (100/min, 1,000/day — confirmed) | Limiter in `embeddings.ts`; vectors cached per batch, so a run that hits the daily limit resumes on resync the next day; a big book can need two days |
+  | Prisma drops the raw-SQL columns or indexes on the next migration | Confirmed it would: apply-only `db:migrate`, create-only `db:migrate:new`, guard test on the objects |
+  | Inngest step output / state limits | Steps return counts; parsed data in `IngestDraft` |
+  | A failed re-ingest wipes a working index | Chunk tables are only written by the final `index` transaction |
+  | Running headers or broken hyphens pollute chunks | Rules measured on DDIA in planning; unit tests per rule |
+- **Proof:** fixture tests green · DDIA READY · CHILD chunk count equals the count with embeddings · TOC endpoint shows the chapters · per-step timings in the log · resync of the same file takes the skip path.
 - **Commit:** `feat(ingestion): PDF pipeline with TOC, parent/child chunks, contextual retrieval and embeddings`
 
 #### Phase 6 — GitHub repo ingestion
@@ -2070,7 +2120,7 @@ Each phase lists: **Entry** · **Build order** · **Risks & mitigations** · **P
 
 | Risk | Impact | Mitigation |
 |---|---|---|
-| Free-tier limits (Groq/Gemini) | Slow ingestion and evals | Caches everywhere, small batches, resumable jobs, DEV subsets, contextual retrieval toggle |
+| Free-tier limits (Groq/Gemini) | Slow ingestion and evals | Caches everywhere, small batches, resumable jobs, DEV subsets, contextual retrieval toggle. Measured Sep 2026 (third party): `gemini-3.6-flash` is only **5 RPM / 20 RPD**; embeddings are **100 texts/min, 1,000 texts/day** (per text, measured 2026-10-23) and queries share that with ingestion — enough for fallback, not for a judge over a full eval set; revisit the judge route at Phase 10/14 planning |
 | Library API drift vs this plan | Rework | Check installed docs at every phase entry; update this file |
 | Sessions run out of context | Lost state | Ticks + build log + memory; each session resumes from the first unticked step |
 | Scope creep | Never finishing | No work outside the current phase; "Later" list |
@@ -2098,8 +2148,10 @@ One line per phase: `date · phase · commit · notes / deviations`.
 | 2026-10-22 | M1 review | ed44cdc | Cross-review of Phases 0–2. Fixed: `TRUST_PROXY=true` refused in production (client-written XFF would bypass the sign-in rate limit); errors after a response started are logged through winston; `paginate()` callers AND the cursor filter instead of spreading it. Tests added: CORS + trusted-origin sign-up, app-level 413/400/404, 401 on every workspace route, demo workspace over HTTP, 503 body. Moved to later phases: nested router/double session lookup and demo write guard (4), better-auth `APIError` mapping (16), cookie flags + email enumeration note (17); typed validated input parked under Later. 91 tests |
 | 2026-10-23 | 3 LLM layer | 8d08bad | AI SDK v7 (`instructions`, `Output.object`, V4 mocks, portable `reasoning`), pinned a week old because pnpm 12 otherwise writes a release-age exclusion list. Groq key has only gpt-oss-120b/20b (+ Qwen preview), 8K tokens/min and 1K requests/day per model, so bulk tasks (contextualize, summarize) route to Gemini Flash-Lite. `gemini-3.7/3.8-flash` never answered on the free tier → Flash is `gemini-3.6-flash`. Embeddings on `gemini-embedding-2` (8192-token input; task prefixes instead of taskType). Judge has no fallback. Own retry loop (SDK retries off): full jitter, retry-after over 5s goes to the fallback, timeouts not retried, caller abort stops. One UsageEvent per call (tokens of rejected structured-output attempts included); no FKs on UsageEvent. Deferred: `stream()` → 11, `ContextCache` → 5, `Prompt` table (prompt-hashes.json + test instead). LLM keys required in production. 145 tests + 8 live (`LIVE_TESTS=1`) |
 | 2026-10-23 | 4 Sources & storage | 1c9d3de | Inngest SDK v4 (`eventType` + zod, triggers in options, cloud mode by default); `protobufjs` build script declined. One `POST …/sources` route: multipart for PDFs, JSON for repos and websites. PDFs go to a temp file (multer, 50 MB → 413), then magic bytes, sha256, stream to MinIO; workspace access is checked before the upload is read. `dedupeKey` + unique index (not in §7) makes duplicates (same repo+ref, URL, or PDF bytes) a race-free 409. Repo commit SHA resolved at ingest time, not on create. Origin check for writes on all of `/api/v1`, not only uploads. `safeFetch` → Phase 8 (only `assertPublicUrl` now); `SourceDocument` → Phase 5. Drain step added to the shutdown registry so SSE streams end before `server.close()` waits on them. Production requires S3 + Inngest keys and refuses `INNGEST_DEV`. Verified live: upload → MinIO → Inngest run → READY in ~1s over SSE; deletes remove the files. Review fixes: a source deleted mid-upload removes its file (409), SSE streams closed before they open stop polling, a workspace deleted mid-create is a 404, GitHub refs decoded and checked against git's ref rules before any API call. 208 tests + 8 live |
-| 2026-10-23 | M2 review | _this commit_ | Cross-review of Phases 3–4. Fixed: busboy errors (malformed or aborted multipart) were 500s → 400; a source left PENDING by a crash mid-create can be resynced after 10 min (a PDF without its file says to re-upload); temp file removed even when the client left before multer finished; SSE streams opened after shutdown started close at once (`draining` flag); workspaces read source counts through the sources service, not its repository (§4.2); `S3_ENDPOINT` / `INNGEST_BASE_URL` validated as URLs; tests pin `APP_URL`. 213 tests + 8 live |
+| 2026-10-23 | M2 review | 49f519c | Cross-review of Phases 3–4. Fixed: busboy errors (malformed or aborted multipart) were 500s → 400; a source left PENDING by a crash mid-create can be resynced after 10 min (a PDF without its file says to re-upload); temp file removed even when the client left before multer finished; SSE streams opened after shutdown started close at once (`draining` flag); workspaces read source counts through the sources service, not its repository (§4.2); `S3_ENDPOINT` / `INNGEST_BASE_URL` validated as URLs; tests pin `APP_URL`. 213 tests + 8 live |
+| 2026-10-23 | 5 PDF ingestion | _this commit_ | `unpdf@1.9.0`, `js-tiktoken@1.0.21` (o200k), `@inngest/test@1.0.0`. Plan reviewed in four passes before the build. Free tier measured: embeddings are counted **per text** (100/min, ~1,000/day) → process-wide limiter in `embeddings.ts` (documents ≤ 80/min, queries never wait), batches of 40; Flash-Lite 15 RPM / 500 RPD → **one contextualize call per parent** (DDIA: 266 calls instead of 925), paced, no fallback. Parsed data lives in an `IngestDraft` row owned by one run (`runId`); contexts and vectors go to their caches per batch; the `index` step rebuilds the search texts, embeds anything missing, and swaps documents/TOC/chunks in one transaction (vectors copied inside Postgres), so the old index stays live until then. Chunk/TOC/document ids are UUIDs generated in code (exception to §4.1). Prisma 7 would drop the HNSW/GIN indexes and generated `tsv` in every later migration → `db:migrate` is apply-only, `db:migrate:new` create-only, and a guard test. Real-book fixes (DDIA): U+2010 line-break hyphens, `n \| title` running heads, chapter openers kept, footnote marks, words split across pages. TOC entries start at their title line (185/187 on DDIA). Read endpoints: `/toc`, `/files`, `/content?page=|tocNodeId=` (physical pages). Resync also recovers a source stuck PROCESSING for 30 min. Review fixes: section text sliced in JS (UTF-16 offsets), no overlap-only child, NUL stripped, stale `onFailure` ignored after a newer successful ingest, tighter page-number patterns. Real run on DDIA (491 pages): prepare 8s → 266 parents / 925 children / 187 TOC nodes, contextualize ~27 min (cached contexts reused on a second upload in ~50 ms per batch), 11 of 12 embed batches, then the free-tier daily embedding cap (429) → FAILED with the embedding message, draft removed, 880 vectors + 914 contexts cached; resync after the quota reset (2026-10-24): **READY in 30s** — contexts from the cache in ~50 ms per batch, the timed-out sections and the last 45 embeddings done, 924/924 children with embedding, context and pages, 266 parents, 0 missing contexts, TOC endpoint shows the 18 top-level entries with their chapters' sections, keyword and vector search both answer. Inngest re-sent an already finished step once during the retries ("duplicate response; keeping existing output"): steps are at-least-once, which the caches and the draft owner check already cover. 281 tests + 9 live |
 
 **Later** (ideas parked during the build, not in scope):
+- One retry after a timeout for routes without a fallback (`contextualize`): ~2% of Flash-Lite calls queue past 30s on the free tier; today those chunks wait for the next resync
 - Typed access to validated input (`res.locals.query` / `req.body` are cast in controllers today), if the casts start drifting from the router schemas
 - `/api/v1/health/ready`: own timeout on the `SELECT 1` so a silently dropped pooled connection can't hang it (Phase 15 monitoring)

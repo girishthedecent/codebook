@@ -7,6 +7,7 @@ import type { WorkspaceParams } from '../workspaces/workspace.dto.js';
 import {
   toSourceResponse,
   type CreateSourceInput,
+  type SourceContentQuery,
   type SourceParams,
   type UploadFields,
 } from './source.dto.js';
@@ -19,6 +20,7 @@ import {
   resyncSourceService,
   watchSourceProgress,
 } from './source.service.js';
+import { getContentService, getTocService, listFilesService } from './sourceContent.service.js';
 
 export async function createSourceHandler(req: Request, res: Response) {
   const user = getAuthUser(res);
@@ -80,4 +82,24 @@ export async function sourceEventsHandler(req: Request, res: Response) {
   // Checked before the stream opens, so a missing source is a normal JSON 404.
   await getSourceService(user.id, sourceId);
   watchSourceProgress(sourceId, openSse(req, res));
+}
+
+export async function getTocHandler(_req: Request, res: Response) {
+  const user = getAuthUser(res);
+  const { sourceId } = res.locals.params as SourceParams;
+  res.json(successResponse('Table of contents', await getTocService(user.id, sourceId)));
+}
+
+export async function listFilesHandler(_req: Request, res: Response) {
+  const user = getAuthUser(res);
+  const { sourceId } = res.locals.params as SourceParams;
+  const page = await listFilesService(user.id, sourceId, res.locals.query as PaginationQuery);
+  res.json(successResponse('Files', page));
+}
+
+export async function getContentHandler(_req: Request, res: Response) {
+  const user = getAuthUser(res);
+  const { sourceId } = res.locals.params as SourceParams;
+  const query = res.locals.query as SourceContentQuery;
+  res.json(successResponse('Content', await getContentService(user.id, sourceId, query)));
 }
