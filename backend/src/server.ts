@@ -2,14 +2,19 @@ import { createServer } from 'node:http';
 import { createApp } from './app.js';
 import { serverConfig } from './config/index.js';
 import logger from './config/logger.config.js';
-import { shutdownRegistry } from './utils/helpers/shutdown.helpers.js';
+import { drainRegistry, shutdownRegistry } from './utils/helpers/shutdown.helpers.js';
+import { bucketReachable } from './utils/storage.js';
 
 // Not app.listen(): in Express 5 its callback also runs on errors like EADDRINUSE.
 const server = createServer(createApp());
 
-server.on('listening', () =>
-  logger.info(`Server is running on http://localhost:${serverConfig.PORT}`),
-);
+server.on('listening', () => {
+  logger.info(`Server is running on http://localhost:${serverConfig.PORT}`);
+  // A missing bucket or stopped MinIO shows up now instead of on the first upload.
+  void bucketReachable().then((ok) => {
+    if (!ok) logger.warn('Storage bucket is not reachable; uploads will fail');
+  });
+});
 server.on('error', (err) => {
   logger.error('Server failed to start', { error: err });
   process.exit(1);
@@ -32,6 +37,8 @@ function shutdown(signal: string) {
     const ok = await shutdownRegistry.run();
     process.exit(ok ? 0 : 1);
   });
+  // After close(), so no new stream can open once the old ones are ended.
+  void drainRegistry.run();
 }
 
 process.on('SIGINT', () => shutdown('SIGINT'));

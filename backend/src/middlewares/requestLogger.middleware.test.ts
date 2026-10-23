@@ -80,6 +80,40 @@ describe('requestLoggerMiddleware', () => {
     }
   });
 
+  it('logs an event stream the client closed as a normal request', async () => {
+    const warn = vi.spyOn(logger, 'warn');
+    const log = vi.spyOn(logger, 'log');
+
+    let reached!: () => void;
+    const handlerReached = new Promise<void>((resolve) => (reached = resolve));
+    const app = express();
+    app.use(requestLoggerMiddleware);
+    app.get('/stream', (_req, res) => {
+      res.set('Content-Type', 'text/event-stream').flushHeaders();
+      reached(); // never ends: the client leaves
+    });
+
+    const server = app.listen(0);
+    const { port } = server.address() as AddressInfo;
+    try {
+      const closed = new Promise<void>((resolve) =>
+        server.once('connection', (s) => s.once('close', () => resolve())),
+      );
+      const req = httpRequest({ port, path: '/stream' });
+      req.on('error', () => {});
+      req.end();
+      await handlerReached;
+      req.destroy();
+      await closed;
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(warn).not.toHaveBeenCalled();
+      expect(log).toHaveBeenCalledWith('info', 'GET /stream 200', expect.any(Object));
+    } finally {
+      server.close();
+    }
+  });
+
   it('skips health checks', async () => {
     const log = vi.spyOn(logger, 'log');
     const app = express();

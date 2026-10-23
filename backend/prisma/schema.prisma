@@ -93,6 +93,7 @@ model Workspace {
   settings    Json              @default("{}")
   createdAt   DateTime          @default(now())
   updatedAt   DateTime          @updatedAt
+  sources     Source[]
 
   @@index([userId, createdAt])
 }
@@ -134,4 +135,58 @@ model EmbeddingCache {
   key       String                      @id
   embedding Unsupported("vector(1536)")
   createdAt DateTime                    @default(now())
+}
+
+enum SourceType {
+  PDF
+  GITHUB_REPO
+  WEBSITE
+}
+
+enum SourceStatus {
+  PENDING
+  PROCESSING
+  READY
+  FAILED
+}
+
+enum IngestStage {
+  QUEUED
+  FETCHING
+  FILTERING
+  PARSING
+  STRUCTURING
+  CHUNKING
+  CONTEXTUALIZING
+  EMBEDDING
+  INDEXING
+  DONE
+}
+
+model Source {
+  id             String       @id @default(cuid())
+  workspaceId    String
+  workspace      Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  type           SourceType
+  title          String
+  status         SourceStatus @default(PENDING)
+  stage          IngestStage  @default(QUEUED)
+  progress       Int          @default(0)
+  // Last failure, safe to show the user (no secrets, no stack traces).
+  error          String?
+  // PDF: { storageKey, fileName, size, mime } · GITHUB_REPO: { owner, repo, ref, defaultBranch }
+  // · WEBSITE: { url, maxDepth, maxPages }
+  origin         Json
+  stats          Json         @default("{}")
+  // Same repo + ref, same URL or same PDF bytes in one workspace is a duplicate; the unique
+  // index below enforces it even when two requests race.
+  dedupeKey      String
+  contentHash    String?
+  ingestVersion  Int          @default(0)
+  lastIngestedAt DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([workspaceId, dedupeKey])
+  @@index([workspaceId, createdAt])
 }

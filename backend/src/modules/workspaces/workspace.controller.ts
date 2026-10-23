@@ -36,8 +36,8 @@ export async function listWorkspacesHandler(_req: Request, res: Response) {
 export async function getWorkspaceHandler(_req: Request, res: Response) {
   const user = getAuthUser(res);
   const { workspaceId } = res.locals.params as WorkspaceParams;
-  const workspace = await getWorkspaceService(user.id, workspaceId);
-  res.json(successResponse('Workspace', toWorkspaceResponse(workspace)));
+  const { workspace, counts } = await getWorkspaceService(user.id, workspaceId);
+  res.json(successResponse('Workspace', { ...toWorkspaceResponse(workspace), counts }));
 }
 
 export async function updateWorkspaceHandler(req: Request, res: Response) {

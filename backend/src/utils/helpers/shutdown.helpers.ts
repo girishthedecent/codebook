@@ -29,4 +29,9 @@ export function createShutdownRegistry() {
   };
 }
 
+// Runs as soon as shutdown starts: ends long-lived responses (SSE streams) so the server
+// can finish closing instead of waiting for the forced exit.
+export const drainRegistry = createShutdownRegistry();
+
+// Runs after the server has closed and no request is left: closes pools and clients.
 export const shutdownRegistry = createShutdownRegistry();

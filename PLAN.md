@@ -906,72 +906,82 @@ Goal: one internal API for every model call, with task-based routing, retries, c
 
 Goal: users add sources to a workspace; PDFs land in MinIO; adding a source enqueues an ingestion job; progress can be watched live.
 
-**4.1 Storage**
-- [ ] Install `@aws-sdk/client-s3`, `@aws-sdk/s3-request-presigner` (presign maybe later)
-- [ ] `config/storage.config.ts` (S3 client) + `utils/storage.ts`: `putObject(key, stream|buffer, contentType)`, `getObjectStream(key)`, `deleteObject(key)`, `deletePrefix(prefix)`, `headObject(key)`; endpoint/forcePathStyle from env
-- [ ] Key format: `users/{userId}/workspaces/{workspaceId}/sources/{sourceId}/original.pdf`
-- [ ] On boot (dev only): ensure bucket exists (log warning if not)
-- [ ] Tests use bucket `codebook-test`
+**Checked 2026-10-23** (planning): Inngest SDK is **v4** — events are `eventType(name, { schema })` (zod) and `inngest.send(event.create(data))` validates them; triggers go inside `createFunction({ id, triggers })`; the default mode is cloud, so dev needs `INNGEST_DEV=1` and production needs the signing key; the Express adapter reads `req.body`, so `/api/inngest` gets its own JSON parser. Versions pinned at least a few days old: `inngest@4.24.0`, `@aws-sdk/client-s3@3.1153.0`, `multer@2.4.0`. `protobufjs` (an OpenTelemetry dep of inngest) is listed as `false` under `allowBuilds`: its postinstall only prints warnings.
 
-**4.2 Safe fetch**
-- [ ] `utils/httpFetch.ts`: `safeFetch(url, { timeoutMs, maxBytes, allowedContentTypes })`
-  - only `http:`/`https:`
-  - resolve DNS and **block private/loopback/link-local/metadata IPs** (127.0.0.0/8, 10/8, 172.16/12, 192.168/16, 169.254/16, ::1, fc00::/7, fe80::/10) — SSRF guard (re-check after redirects, max 5 redirects)
-  - abort on timeout, abort when body exceeds `maxBytes`
-  - custom User-Agent `CodeBookBot/0.1 (+repo url)`
-- [ ] Unit tests: blocks `http://127.0.0.1`, `http://169.254.169.254`, a hostname resolving to a private IP; enforces size cap
+**4.1 Storage**
+- [x] Install `@aws-sdk/client-s3` (presigner not needed yet)
+- [x] `config/storage.config.ts` (S3 client; `requestChecksumCalculation: WHEN_REQUIRED` for S3-compatible stores; `destroy()` on shutdown) + `utils/storage.ts`: `putObject(key, stream|buffer, { contentType, contentLength })`, `getObjectStream(key)`, `deleteObject(key)`, `deletePrefix(prefix)` (refuses prefixes not ending in `/`), `headObject(key)`, `bucketReachable()`
+- [x] Key format: `users/{userId}/workspaces/{workspaceId}/sources/{sourceId}/original.pdf` (`modules/sources/source.storage.ts`)
+- [x] On boot: warn when the bucket isn't reachable (all environments; it's only a log line)
+- [x] Tests use bucket `codebook-test` (set in `tests/testEnv.ts`), against the real MinIO
+- [x] Production requires `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`
+
+**4.2 Safe fetch** — split (decided in planning)
+- [x] `utils/network.ts`: `assertPublicUrl(url)` — http(s) only, no credentials in the URL, resolve DNS and **reject if any address is private/loopback/link-local/metadata/special** (`net.BlockList`: 0/8, 10/8, 100.64/10, 127/8, 169.254/16, 172.16/12, 192.0.0/24, 192.168/16, 198.18/15, 224/4, 240/4, ::, ::1, 64:ff9b::/96, fc00::/7, fe80::/10, ff00::/8; IPv4-mapped IPv6 is checked against the IPv4 rules by BlockList itself). Used when a website source is saved — an early, friendly check only
+- [x] Unit tests: blocks `127.0.0.1`, `169.254.169.254`, `[::1]`, mapped addresses, a hostname resolving to a private IP (even next to a public one), non-http schemes, credentials; DNS mocked
+- [ ] `safeFetch(url, { timeoutMs, maxBytes, allowedContentTypes })` with the check **at connection time** (undici `Agent` with a validating `lookup`, so DNS rebinding can't bypass it), manual redirects (max 5, each re-checked), size cap, timeout, User-Agent `CodeBookBot/0.1` → **moved to Phase 8**, its first user
 
 **4.3 Schema**
-- [ ] `Source`, `SourceDocument` models + enums `SourceType`, `SourceStatus`, `IngestStage`
-- [ ] Migration `sources`
+- [x] `Source` model + enums `SourceType`, `SourceStatus`, `IngestStage`; `dedupeKey` with `@@unique([workspaceId, dedupeKey])` (repo `github:owner/repo@ref`, website `web:{url}`, PDF `pdf:{sha256}`) so duplicates can't slip in even when requests race; index `(workspaceId, createdAt)`
+- [x] Migration `sources`
+- [ ] `SourceDocument` → **Phase 5**, with its first writer (same rule as `ContextCache`)
 
 **4.4 Inngest base**
-- [ ] Install `inngest`
-- [ ] `config/inngest.config.ts`: `new Inngest({ id: "codebook", schemas: new EventSchemas().fromZod(events) })`
-- [ ] `inngest/events.ts`: `source/ingest.requested { sourceId, reason: "created"|"resync" }`, `source/deleted { sourceId, storagePrefix }`, `workspace/deleted { workspaceId, storagePrefix }`
-- [ ] `inngest/functions.ts`: exports array of all functions (start with a no-op `ingestSource` stub that marks READY — replaced in Phase 5)
-- [ ] Mount `app.use("/api/inngest", serve({ client, functions }))` (body parser must allow larger payload here — Inngest sends JSON)
-- [ ] Verify the function appears in Inngest dev UI (`localhost:8288`)
+- [x] Install `inngest`
+- [x] `config/inngest.config.ts`: `new Inngest({ id: "codebook", isDev, baseUrl, eventKey, signingKey, logger })`
+- [x] `inngest/events.ts`: `source/ingest.requested { sourceId, reason: "created"|"resync" }`, `source/deleted { sourceId, storagePrefix }`, `workspace/deleted { workspaceId, storagePrefix }`
+- [x] `inngest/functions.ts`: `ingestSource` stub (PROCESSING → READY, one run per source at a time, `onFailure` marks FAILED; replaced in Phase 5), `cleanupSourceStorage`, `cleanupWorkspaceStorage` (only delete prefixes shaped like a workspace or source folder)
+- [x] Mount `app.use("/api/inngest", express.json({ limit: "4mb" }), serve({ client, functions }))` before the global JSON parser
+- [x] Verified in the dev server: app registered, events received, runs completed. Note: registering by hand with `curl -X PUT localhost:4000/api/inngest` records `localhost` as the app URL, which the Inngest container can't reach — let the dev server discover `host.docker.internal:4000` (or send that `Host` header)
+- [x] Production requires `INNGEST_EVENT_KEY` + `INNGEST_SIGNING_KEY` and refuses `INNGEST_DEV` (dev mode skips request signing)
 
 **4.5 Upload (PDF)**
-- [ ] Install `multer` (memory storage disabled → use disk temp or stream). Use `multer` with `limits: { fileSize: config.maxPdfBytes (50MB), files: 1 }`
-- [ ] Validate: extension `.pdf`, **magic bytes** `%PDF-`, mime `application/pdf`
-- [ ] Stream to MinIO, store `origin.storageKey`, `fileName`, `size`
-- [ ] Title = file name without extension (editable later)
-- [ ] Multipart is a CORS "simple" request, so the upload route checks `Origin` against `TRUSTED_ORIGINS` instead of relying on SameSite alone (from the M1 review)
+- [x] `multer` disk storage (temp file in `os.tmpdir()`), `limits: { fileSize: 50MB, files: 1 }`, UTF-8 file names; over the limit → 413
+- [x] Validate: extension `.pdf`, mime `application/pdf`, **magic bytes** `%PDF-` within the first 1 KB (as the PDF spec allows)
+- [x] Stream the temp file to MinIO, store `origin.storageKey` (not returned to clients), `fileName`, `size`, `mime`; storage failure → source row dropped, 502
+- [x] Title = file name without extension, or the optional `title` field
+- [x] Workspace access checked **before** the upload is read; the temp file is deleted when the response closes, on every path
+- [x] Origin check (from the M1 review) — done app-wide, see 4.7
 
 **4.6 Add repo / website**
-- [ ] `POST /api/v1/workspaces/:id/sources` with JSON body (discriminated union on `type`):
-  - `GITHUB_REPO`: `{ url }` → parse `https://github.com/{owner}/{repo}(/tree/{ref})?`; optional `ref`; validate repo exists & is public via GitHub API (`GET /repos/{owner}/{repo}`), check size ≤ config (e.g. 200MB reported size), record `defaultBranch`
-  - `WEBSITE`: `{ url, maxDepth (0–2, default 0), maxPages (1–50, default 10) }` → validate URL with SSRF guard (DNS check only)
-- [ ] PDF uses multipart on the same route (`multipart/form-data` with `file` field + `type=PDF`)
-- [ ] Duplicate check: same repo+ref or same URL in the same workspace → `CONFLICT`
-- [ ] Limit: max sources per workspace (config, default 25)
+- [x] `POST /api/v1/workspaces/:id/sources` with JSON body (discriminated union on `type`):
+  - `GITHUB_REPO`: `{ url, ref? }` → parse `https://github.com/{owner}/{repo}(.git)?(/tree/{ref})?`; GitHub API: exists, public, size ≤ 200 MB; a non-default ref must exist (`GET /repos/{o}/{r}/commits/{ref}`); stores `{ owner, repo, ref, defaultBranch }`. The commit SHA is resolved at ingest time (Phase 6), so a queued or resynced source gets the branch as it is then
+  - `WEBSITE`: `{ url, maxDepth (0–2, default 0), maxPages (1–50, default 10) }` → `assertPublicUrl`; fragment dropped
+- [x] PDF uses multipart on the same route (`file` field, optional `title`)
+- [x] Duplicate (same repo+ref ignoring owner/repo case, same URL, same PDF bytes) → `CONFLICT`, enforced by the unique index
+- [x] Limit: max 25 sources per workspace (workspace row lock before counting; race-tested)
 
 **4.7 Service flow**
-- [ ] `createSource` → insert `Source(status=PENDING, stage=QUEUED, progress=0)` → `inngest.send("source/ingest.requested")` → return source
-- [ ] If event send fails → mark `FAILED` with error "queue unavailable" (don't leave orphans in PENDING)
-- [ ] `listSources(workspaceId)`, `getSource`, `deleteSource` (DB cascade + send `source/deleted` for storage cleanup), `resyncSource` (only if not PROCESSING; sends `ingest.requested` with reason `resync`)
-- [ ] `updateProgress(sourceId, { stage, progress, stats? })` — used by ingestion
-- [ ] `GET /api/v1/workspaces/:workspaceId` gains `counts.sources` by status (moved from 2.6)
-- [ ] Sources router mounted inside the workspace router (`mergeParams`), or `requireAuth` skips when the session is already loaded, so a request doesn't look the session up twice (from the M1 review)
-- [ ] Write paths call `assertWorkspaceAccess` **without** `allowDemoRead`; only read paths pass it (from the M1 review)
-- [ ] Cleanup Inngest functions: `cleanupSourceStorage` (on `source/deleted`), `cleanupWorkspaceStorage` (on `workspace/deleted`; workspaces service sends it on delete)
+- [x] `createSource` → insert `Source(status=PENDING, stage=QUEUED, progress=0)` → `inngest.send("source/ingest.requested")` → return source
+- [x] If event send fails → mark `FAILED` with "Could not queue the source for processing. Try a resync." (no orphans in PENDING)
+- [x] `listSources(workspaceId)` (paginated), `getSource`, `deleteSource` (DB cascade + `source/deleted` for storage cleanup; files deleted inline if the queue is down), `resyncSource` (only READY/FAILED, conditional update so two resyncs can't both start one; 202 with reason `resync`)
+- [x] `setIngestState(sourceId, …)` — used by ingestion; returns false when the source was deleted meanwhile
+- [x] `GET /api/v1/workspaces/:workspaceId` gains `counts.sources` by status
+- [x] `/:workspaceId/sources` router nested in the workspace router (`mergeParams`, no second `requireAuth`); `/api/v1/sources/:sourceId` routes have their own (from the M1 review)
+- [x] Write paths call `assertWorkspaceAccess` **without** `allowDemoRead`; reads pass it (from the M1 review)
+- [x] Cleanup Inngest functions: `cleanupSourceStorage`, `cleanupWorkspaceStorage` (the workspaces service sends `workspace/deleted` on delete)
+- [x] `middlewares/origin.middleware.ts` on all of `/api/v1`: a write (POST/PUT/PATCH/DELETE) with an `Origin` header must come from `APP_URL` or `TRUSTED_ORIGINS` → else 403. Covers multipart (no CORS preflight) and every later route; requests without `Origin` pass (they carry no victim's cookies)
 
 **4.8 Progress stream (SSE)**
-- [ ] `utils/sse.ts`: `openSse(res)` (headers `text/event-stream`, `cache-control: no-cache`, `connection: keep-alive`, flush), `send(event, data)`, heartbeat every 15s, cleanup on `req.close`
-- [ ] `GET /api/v1/sources/:id/events`: poll the source row every 1s (simple, no pub/sub) and send `progress` events when `stage/progress/status` change; send `done` / `failed` and close
-- [ ] Note in code: swap polling for Postgres `LISTEN/NOTIFY` later if needed
+- [x] `utils/sse.ts`: `openSse(req, res)` (headers `text/event-stream`, `cache-control: no-cache`, `x-accel-buffering: no`, flush), `send(event, data)`, heartbeat every 15s, cleanup on client close
+- [x] Open streams are ended by a **drain** hook when shutdown starts (`drainRegistry`, runs right after `server.close()`), so a restart doesn't wait for the forced exit — checked live: exit in ~0.1s with a stream open
+- [x] `GET /api/v1/sources/:id/events`: access checked first (normal JSON 404), then the row is polled every 1s (`setTimeout` chain, no overlapping queries) and `progress` is sent when `status/stage/progress/error` change; `done` / `failed` (or `deleted`) and close
+- [x] Note in code: swap polling for Postgres `LISTEN/NOTIFY` later if needed
+- [x] The request logger logs a stream the client closed as a normal request, not "aborted"
 
 **4.9 Tests**
-- [ ] Upload valid PDF fixture → 201, object exists in MinIO test bucket, event sent (mock `inngest.send`)
-- [ ] Upload non-PDF / fake PDF (wrong magic bytes) → 400; oversize → 413
-- [ ] Add repo: GitHub API mocked (exists / 404 / too big)
-- [ ] Add website: private IP URL → 400
-- [ ] Duplicate source → 409; limit → 409
-- [ ] Other user's workspace → 404
-- [ ] Delete → row gone, cleanup event sent
-- [ ] SSE endpoint emits initial state event
+- [x] Upload valid PDF → 201, object exists in the MinIO test bucket, event sent (`inngest.send` spied); optional title
+- [x] Upload fake PDF (wrong magic bytes) / wrong name / wrong mime / no file → 400; oversize → 413; no temp files left behind
+- [x] Storage failure → 502 and no row
+- [x] Add repo: GitHub client mocked (default branch / `/tree/` ref / 404 / private / too big / unknown ref / not a GitHub URL)
+- [x] Add website: private IP → 400; crawl limits validated
+- [x] Duplicate source → 409 (also two identical concurrent creates); limit → 409 (also four racing creates with the table lock technique)
+- [x] Queue down → source FAILED; delete with queue down → files deleted inline
+- [x] Other user's workspace/source → 404 on every route; demo workspace readable, not writable
+- [x] Delete → row gone, cleanup event sent; resync → 202, 409 while queued or processing
+- [x] SSE endpoint sends the initial state, follows changes to `failed`/`done` and closes; drain ends open streams
+- [x] Origin check → 403 for untrusted, allowed for the app and trusted origins; 401 on every route without a session
+- [x] Storage wrapper against the real bucket; `parseGithubUrl`; cleanup prefix guard; config production checks
 
 **Done when:** sources can be created via API/http files, appear in Inngest dev UI as events, and the stub function marks them READY.
 
@@ -982,7 +992,7 @@ Goal: users add sources to a workspace; PDFs land in MinIO; adding a source enqu
 Goal: a PDF becomes pages → TOC tree → parent/child chunks with context → embeddings → searchable index, with progress and idempotency.
 
 **5.1 Schema**
-- [ ] `SourceChunk`, `TocNode` models
+- [ ] `SourceDocument` (moved from Phase 4), `SourceChunk`, `TocNode` models
 - [ ] Raw SQL migration `chunks_vector_fts`:
   - `ALTER TABLE "SourceChunk" ADD COLUMN embedding vector(1536);`
   - `ADD COLUMN tsv tsvector GENERATED ALWAYS AS (to_tsvector('english', coalesce("searchText",''))) STORED;`
@@ -1197,7 +1207,11 @@ Goal: symbols and relationships (calls, imports, extends, implements) extracted 
 Goal: a URL (and optionally same-site links up to a small limit) becomes clean documents → heading chunks.
 
 **8.1 Install**
-- [ ] `@mozilla/readability`, `linkedom`, `robots-parser`
+- [ ] `@mozilla/readability`, `linkedom`, `robots-parser`, `undici` (for the validating connection `lookup`)
+
+**8.1b Safe fetch** (moved from Phase 4; `assertPublicUrl` / `isPublicIp` already exist in `utils/network.ts`)
+- [ ] `utils/httpFetch.ts`: `safeFetch(url, { timeoutMs, maxBytes, allowedContentTypes })` — http(s) only; undici `Agent` whose `connect.lookup` rejects non-public addresses, so the address actually connected to is checked (DNS rebinding safe); `redirect: 'manual'`, max 5 redirects, each re-checked; abort on timeout and when the body exceeds `maxBytes`; User-Agent `CodeBookBot/0.1 (+repo url)`
+- [ ] Unit tests: blocks `http://127.0.0.1`, `http://169.254.169.254`, a hostname resolving to a private IP, a redirect to a private IP; enforces the size cap and the timeout
 
 **8.2 Crawler** (`adapters/website.ts`)
 - [ ] BFS from start URL, same origin only, `maxDepth`, `maxPages`
@@ -2082,7 +2096,8 @@ One line per phase: `date · phase · commit · notes / deviations`.
 | 2026-10-22 | 1 Auth | 41ad8d2 | better-auth 1.7 (schema CLI is now the `auth` package); `isGuest`/`isSystem` as `input: false` fields (better-auth drops them from sign-up bodies). Mounted through better-call `getRequest`/`setResponse` (direct dep, same version better-auth uses) so `/api/auth` gets a fixed base URL instead of the client's Host / X-Forwarded-Proto, and bodies are read by `express.text` with a 64 KB limit (413, chunked included). Global `x-client-ip` from `req.ip` so better-auth's rate limiter can't be bypassed with a forged X-Forwarded-For. CSRF origin check kept on in tests; refreshed session cookies forwarded from `requireAuth`; better-auth logs go through winston. `BETTER_AUTH_URL` required in production; GitHub id + secret set together. Manual GitHub login verified (user + account rows, session, no errors). 45 tests |
 | 2026-10-22 | 2 Workspaces | 19f1c91 | Settings key `defaultSearchMode` (the plan's `defaultQueryMode: "hybrid"` mixed up search `mode` and `queryMode`). Workspace counts on `GET /:id` moved to Phases 4 and 11, where the sources and conversations tables appear. Keyset pagination with an opaque `(createdAt, id)` cursor in `pagination.helpers.ts`. The per-user limit locks the user row (`SELECT … FOR UPDATE`) before counting; a test holds a table lock so four creates really overlap, and fails without the row lock. Bodies drop unknown fields; `settings` is strict and merged on PATCH under a row lock (concurrent PATCHes keep both changes, tested the same way). Bad cursors fail in the query schema with `details` like other fields. 78 tests |
 | 2026-10-22 | M1 review | ed44cdc | Cross-review of Phases 0–2. Fixed: `TRUST_PROXY=true` refused in production (client-written XFF would bypass the sign-in rate limit); errors after a response started are logged through winston; `paginate()` callers AND the cursor filter instead of spreading it. Tests added: CORS + trusted-origin sign-up, app-level 413/400/404, 401 on every workspace route, demo workspace over HTTP, 503 body. Moved to later phases: nested router/double session lookup and demo write guard (4), better-auth `APIError` mapping (16), cookie flags + email enumeration note (17); typed validated input parked under Later. 91 tests |
-| 2026-10-23 | 3 LLM layer | _this commit_ | AI SDK v7 (`instructions`, `Output.object`, V4 mocks, portable `reasoning`), pinned a week old because pnpm 12 otherwise writes a release-age exclusion list. Groq key has only gpt-oss-120b/20b (+ Qwen preview), 8K tokens/min and 1K requests/day per model, so bulk tasks (contextualize, summarize) route to Gemini Flash-Lite. `gemini-3.7/3.8-flash` never answered on the free tier → Flash is `gemini-3.6-flash`. Embeddings on `gemini-embedding-2` (8192-token input; task prefixes instead of taskType). Judge has no fallback. Own retry loop (SDK retries off): full jitter, retry-after over 5s goes to the fallback, timeouts not retried, caller abort stops. One UsageEvent per call (tokens of rejected structured-output attempts included); no FKs on UsageEvent. Deferred: `stream()` → 11, `ContextCache` → 5, `Prompt` table (prompt-hashes.json + test instead). LLM keys required in production. 145 tests + 8 live (`LIVE_TESTS=1`) |
+| 2026-10-23 | 3 LLM layer | 8d08bad | AI SDK v7 (`instructions`, `Output.object`, V4 mocks, portable `reasoning`), pinned a week old because pnpm 12 otherwise writes a release-age exclusion list. Groq key has only gpt-oss-120b/20b (+ Qwen preview), 8K tokens/min and 1K requests/day per model, so bulk tasks (contextualize, summarize) route to Gemini Flash-Lite. `gemini-3.7/3.8-flash` never answered on the free tier → Flash is `gemini-3.6-flash`. Embeddings on `gemini-embedding-2` (8192-token input; task prefixes instead of taskType). Judge has no fallback. Own retry loop (SDK retries off): full jitter, retry-after over 5s goes to the fallback, timeouts not retried, caller abort stops. One UsageEvent per call (tokens of rejected structured-output attempts included); no FKs on UsageEvent. Deferred: `stream()` → 11, `ContextCache` → 5, `Prompt` table (prompt-hashes.json + test instead). LLM keys required in production. 145 tests + 8 live (`LIVE_TESTS=1`) |
+| 2026-10-23 | 4 Sources & storage | _this commit_ | Inngest SDK v4 (`eventType` + zod, triggers in options, cloud mode by default); `protobufjs` build script declined. One `POST …/sources` route: multipart for PDFs, JSON for repos and websites. PDFs go to a temp file (multer, 50 MB → 413), then magic bytes, sha256, stream to MinIO; workspace access is checked before the upload is read. `dedupeKey` + unique index (not in §7) makes duplicates (same repo+ref, URL, or PDF bytes) a race-free 409. Repo commit SHA resolved at ingest time, not on create. Origin check for writes on all of `/api/v1`, not only uploads. `safeFetch` → Phase 8 (only `assertPublicUrl` now); `SourceDocument` → Phase 5. Drain step added to the shutdown registry so SSE streams end before `server.close()` waits on them. Production requires S3 + Inngest keys and refuses `INNGEST_DEV`. Verified live: upload → MinIO → Inngest run → READY in ~1s over SSE; deletes remove the files. Review fixes: a source deleted mid-upload removes its file (409), SSE streams closed before they open stop polling, a workspace deleted mid-create is a 404, GitHub refs decoded and checked against git's ref rules before any API call. 208 tests + 8 live |
 
 **Later** (ideas parked during the build, not in scope):
 - Typed access to validated input (`res.locals.query` / `req.body` are cast in controllers today), if the casts start drifting from the router schemas

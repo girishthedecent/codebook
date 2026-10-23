@@ -106,11 +106,31 @@ const schema = baseSchema
       });
     }
     if (config.NODE_ENV === 'production') {
-      // Tests mock the providers, so the LLM keys are only needed for real runs.
-      for (const name of ['BETTER_AUTH_URL', 'GROQ_API_KEY', 'GEMINI_API_KEY'] as const) {
+      // Locally these have dev defaults or mocks; a deploy without them would only fail later,
+      // on the first upload, queued job or model call.
+      const required = [
+        'BETTER_AUTH_URL',
+        'GROQ_API_KEY',
+        'GEMINI_API_KEY',
+        'S3_ENDPOINT',
+        'S3_BUCKET',
+        'S3_ACCESS_KEY',
+        'S3_SECRET_KEY',
+        'INNGEST_EVENT_KEY',
+        'INNGEST_SIGNING_KEY',
+      ] as const;
+      for (const name of required) {
         if (!config[name]) {
           ctx.addIssue({ code: 'custom', path: [name], message: 'required in production' });
         }
+      }
+      // Dev mode skips request signing, so anyone could call /api/inngest and run functions.
+      if (config.INNGEST_DEV) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['INNGEST_DEV'],
+          message: 'must be off in production (it turns off request signing)',
+        });
       }
     }
     if (!!config.GITHUB_CLIENT_ID !== !!config.GITHUB_CLIENT_SECRET) {

@@ -11,3 +11,12 @@ export async function resetDb() {
   const names = tables.map((t) => `"public"."${t.tablename}"`).join(', ');
   await prismaClient.$executeRawUnsafe(`TRUNCATE ${names} RESTART IDENTITY CASCADE`);
 }
+
+/** Connections in this database that are waiting on a lock (for race tests). */
+export async function countLockWaiters() {
+  const [row] = await prismaClient.$queryRaw<{ count: number }[]>`
+    SELECT count(*)::int AS count FROM pg_stat_activity
+    WHERE datname = current_database() AND wait_event_type = 'Lock'
+  `;
+  return row?.count ?? 0;
+}

@@ -2,3 +2,5 @@ allowBuilds:
   '@prisma/engines': true
   esbuild: true
   prisma: true
+  # Its postinstall only prints version warnings (pulled in by inngest's OpenTelemetry deps).
+  protobufjs: false

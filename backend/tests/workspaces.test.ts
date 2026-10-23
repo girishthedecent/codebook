@@ -1,10 +1,11 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { appConfig } from '../src/config/app.config.js';
 import prismaClient from '../src/config/db.config.js';
+import { inngest } from '../src/config/inngest.config.js';
 import { assertWorkspaceAccess } from '../src/modules/workspaces/workspace.service.js';
 import { testApp } from './helpers/app.js';
 import { signedInUser } from './helpers/auth.js';
-import { resetDb } from './helpers/db.js';
+import { countLockWaiters, resetDb } from './helpers/db.js';
 
 type User = Awaited<ReturnType<typeof signedInUser>>;
 
@@ -12,9 +13,17 @@ const MISSING_ID = 'cjld2cjxh0000qzrmn831i7rn';
 
 let alice: User;
 
+let send: ReturnType<typeof spyOnSend>;
+const spyOnSend = () => vi.spyOn(inngest, 'send').mockResolvedValue({ ids: [] } as never);
+
 beforeEach(async () => {
   await resetDb();
   alice = await signedInUser('alice@example.com');
+  send = spyOnSend();
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
 });
 
 async function createWorkspace(user: User, body: object = { name: 'Notes' }) {
@@ -27,14 +36,6 @@ async function seedWorkspaces(userId: string, count: number, createdAt?: Date) {
   await prismaClient.workspace.createMany({
     data: Array.from({ length: count }, (_, i) => ({ userId, name: `ws ${i}`, createdAt })),
   });
-}
-
-async function countLockWaiters() {
-  const [row] = await prismaClient.$queryRaw<{ count: number }[]>`
-    SELECT count(*)::int AS count FROM pg_stat_activity
-    WHERE datname = current_database() AND wait_event_type = 'Lock'
-  `;
-  return row?.count ?? 0;
 }
 
 describe('auth', () => {
@@ -257,6 +258,20 @@ describe('delete', () => {
 
     expect((await alice.agent.get(`/api/v1/workspaces/${workspace.id}`)).status).toBe(404);
     expect((await alice.agent.delete(`/api/v1/workspaces/${workspace.id}`)).status).toBe(404);
+  });
+
+  it('queues the cleanup of its stored files', async () => {
+    const workspace = await createWorkspace(alice);
+    await alice.agent.delete(`/api/v1/workspaces/${workspace.id}`);
+
+    expect(send).toHaveBeenCalledOnce();
+    expect(send.mock.calls[0]![0]).toMatchObject({
+      name: 'workspace/deleted',
+      data: {
+        workspaceId: workspace.id,
+        storagePrefix: `users/${alice.userId}/workspaces/${workspace.id}/`,
+      },
+    });
   });
 
   it("goes away with its owner's account", async () => {

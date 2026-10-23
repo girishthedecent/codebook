@@ -1,0 +1,74 @@
+@base = http://localhost:4000
+@origin = http://localhost:4000
+
+### Sign in first (REST Client keeps the session cookie)
+POST {{base}}/api/auth/sign-in/email
+Content-Type: application/json
+Origin: {{origin}}
+
+{ "email": "reader@example.com", "password": "correct-horse-battery" }
+
+### A workspace to add sources to
+# @name workspace
+POST {{base}}/api/v1/workspaces
+Content-Type: application/json
+Origin: {{origin}}
+
+{ "name": "Sources demo" }
+
+###
+@workspaceId = {{workspace.response.body.data.id}}
+
+### Upload a PDF (any PDF up to 50 MB; point the path at one on your disk)
+# @name pdf
+POST {{base}}/api/v1/workspaces/{{workspaceId}}/sources
+Origin: {{origin}}
+Content-Type: multipart/form-data; boundary=CodeBookBoundary
+
+--CodeBookBoundary
+Content-Disposition: form-data; name="title"
+
+My book
+--CodeBookBoundary
+Content-Disposition: form-data; name="file"; filename="book.pdf"
+Content-Type: application/pdf
+
+< ./book.pdf
+--CodeBookBoundary--
+
+###
+@sourceId = {{pdf.response.body.data.id}}
+
+### Add a public GitHub repo (default branch, or /tree/{ref} in the URL, or "ref")
+POST {{base}}/api/v1/workspaces/{{workspaceId}}/sources
+Content-Type: application/json
+Origin: {{origin}}
+
+{ "type": "GITHUB_REPO", "url": "https://github.com/expressjs/express" }
+
+### Add a website (maxDepth 0–2, maxPages 1–50)
+POST {{base}}/api/v1/workspaces/{{workspaceId}}/sources
+Content-Type: application/json
+Origin: {{origin}}
+
+{ "type": "WEBSITE", "url": "https://expressjs.com/en/guide/routing.html", "maxDepth": 0 }
+
+### List the workspace's sources
+GET {{base}}/api/v1/workspaces/{{workspaceId}}/sources
+
+### Workspace with source counts by status
+GET {{base}}/api/v1/workspaces/{{workspaceId}}
+
+### One source
+GET {{base}}/api/v1/sources/{{sourceId}}
+
+### Progress stream (Server-Sent Events; ends after `done` or `failed`)
+GET {{base}}/api/v1/sources/{{sourceId}}/events
+
+### Resync (409 while queued or processing)
+POST {{base}}/api/v1/sources/{{sourceId}}/resync
+Origin: {{origin}}
+
+### Delete (stored files are removed in the background)
+DELETE {{base}}/api/v1/sources/{{sourceId}}
+Origin: {{origin}}

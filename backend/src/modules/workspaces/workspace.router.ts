@@ -5,6 +5,7 @@ import {
   validateRequestBody,
   validateRequestParams,
 } from '../../middlewares/validator.middleware.js';
+import { workspaceSourcesRouter } from '../sources/source.router.js';
 import {
   createWorkspaceHandler,
   deleteWorkspaceHandler,
@@ -42,5 +43,8 @@ workspaceRouter.delete(
   validateRequestParams(workspaceParamsSchema),
   deleteWorkspaceHandler,
 );
+
+// Behind this router's requireAuth; see source.router.ts.
+workspaceRouter.use('/:workspaceId/sources', workspaceSourcesRouter);
 
 export default workspaceRouter;

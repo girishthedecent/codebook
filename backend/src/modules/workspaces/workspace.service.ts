@@ -9,6 +9,8 @@ import {
   listWorkspaces,
   updateWorkspace,
 } from './workspace.repository.js';
+import { countSourcesByStatus } from '../sources/source.repository.js';
+import { queueStorageCleanup, workspacePrefix } from '../sources/source.storage.js';
 import { templateSettings } from './workspace.templates.js';
 
 /**
@@ -48,7 +50,8 @@ export async function listWorkspacesService(userId: string, page: PaginationQuer
 }
 
 export async function getWorkspaceService(userId: string, workspaceId: string) {
-  return assertWorkspaceAccess(userId, workspaceId);
+  const workspace = await assertWorkspaceAccess(userId, workspaceId);
+  return { workspace, counts: { sources: await countSourcesByStatus(workspaceId) } };
 }
 
 export async function updateWorkspaceService(
@@ -65,4 +68,10 @@ export async function deleteWorkspaceService(userId: string, workspaceId: string
   if (!(await deleteWorkspace(userId, workspaceId))) {
     throw new NotFoundError('Workspace not found');
   }
+  // The rows went with the workspace (cascade); its stored files are deleted in the background.
+  await queueStorageCleanup({
+    kind: 'workspace',
+    workspaceId,
+    storagePrefix: workspacePrefix(userId, workspaceId),
+  });
 }

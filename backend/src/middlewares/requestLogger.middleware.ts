@@ -19,7 +19,9 @@ export function requestLoggerMiddleware(req: Request, res: Response, next: NextF
     'close',
     AsyncLocalStorage.bind(() => {
       const durationMs = Math.round(Number(process.hrtime.bigint() - start) / 1e6);
-      if (!res.writableFinished) {
+      // An event stream normally ends with the client leaving; that isn't worth a warning.
+      const isStream = String(res.getHeader('content-type')).startsWith('text/event-stream');
+      if (!res.writableFinished && !isStream) {
         logger.warn(`${req.method} ${path} aborted by client`, { durationMs });
         return;
       }

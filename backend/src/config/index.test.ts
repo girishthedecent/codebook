@@ -7,6 +7,12 @@ const base = {
   BETTER_AUTH_URL: 'https://api.example.com',
   GROQ_API_KEY: 'groq-key',
   GEMINI_API_KEY: 'gemini-key',
+  S3_ENDPOINT: 'https://s3.example.com',
+  S3_BUCKET: 'codebook',
+  S3_ACCESS_KEY: 'access',
+  S3_SECRET_KEY: 'secret',
+  INNGEST_EVENT_KEY: 'event-key',
+  INNGEST_SIGNING_KEY: 'signing-key',
 };
 
 describe('parseServerConfig', () => {
@@ -37,10 +43,16 @@ describe('parseServerConfig', () => {
     );
   });
 
-  it('requires the LLM keys in production only', () => {
-    const { GROQ_API_KEY: _, GEMINI_API_KEY: __, ...withoutKeys } = base;
-    expect(() => parseServerConfig(withoutKeys)).toThrow(/GROQ_API_KEY[\s\S]*GEMINI_API_KEY/);
+  it('requires provider, storage and queue keys in production only', () => {
+    const { GROQ_API_KEY: _, S3_BUCKET: __, INNGEST_SIGNING_KEY: ___, ...withoutKeys } = base;
+    expect(() => parseServerConfig(withoutKeys)).toThrow(
+      /GROQ_API_KEY[\s\S]*S3_BUCKET[\s\S]*INNGEST_SIGNING_KEY/,
+    );
     expect(() => parseServerConfig({ ...withoutKeys, NODE_ENV: 'development' })).not.toThrow();
+  });
+
+  it('refuses the Inngest dev mode in production', () => {
+    expect(() => parseServerConfig({ ...base, INNGEST_DEV: '1' })).toThrow(/INNGEST_DEV/);
   });
 
   it('rejects URLs without the right scheme', () => {
@@ -103,6 +115,7 @@ describe('parseServerConfig', () => {
   it('splits TRUSTED_ORIGINS and parses flags', () => {
     const config = parseServerConfig({
       ...base,
+      NODE_ENV: 'development',
       TRUSTED_ORIGINS: 'http://a.test, http://b.test,',
       S3_FORCE_PATH_STYLE: 'true',
       INNGEST_DEV: '1',
