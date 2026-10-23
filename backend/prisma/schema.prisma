@@ -11,15 +11,15 @@ datasource db {
 
 // Auth tables follow the shape better-auth expects (regenerate with `pnpm dlx auth generate`).
 model User {
-  id            String    @id
+  id            String      @id
   name          String
   email         String
-  emailVerified Boolean   @default(false)
+  emailVerified Boolean     @default(false)
   image         String?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  isGuest       Boolean   @default(false)
-  isSystem      Boolean   @default(false)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  isGuest       Boolean     @default(false)
+  isSystem      Boolean     @default(false)
   sessions      Session[]
   accounts      Account[]
   workspaces    Workspace[]
@@ -95,4 +95,43 @@ model Workspace {
   updatedAt   DateTime          @updatedAt
 
   @@index([userId, createdAt])
+}
+
+enum UsageType {
+  LLM
+  EMBEDDING
+  RERANK
+  WEB_SEARCH
+  INGEST
+}
+
+// One row per model call. An append-only log, so no foreign keys: rows outlive the
+// workspace they were spent on and cost history stays complete.
+model UsageEvent {
+  id           String    @id @default(cuid())
+  userId       String?
+  workspaceId  String?
+  type         UsageType
+  task         String
+  provider     String
+  model        String
+  tokensIn     Int
+  tokensOut    Int
+  tokensCached Int       @default(0)
+  costUsd      Decimal   @db.Decimal(12, 8)
+  latencyMs    Int
+  ok           Boolean
+  error        String?
+  fallbackUsed Boolean   @default(false)
+  createdAt    DateTime  @default(now())
+
+  @@index([userId, createdAt])
+  @@index([type, createdAt])
+}
+
+// Read and written with raw SQL (see llm/embeddings.ts): Prisma can't map vector columns.
+model EmbeddingCache {
+  key       String                      @id
+  embedding Unsupported("vector(1536)")
+  createdAt DateTime                    @default(now())
 }

@@ -69,7 +69,7 @@ const baseSchema = z.object({
   GITHUB_CLIENT_SECRET: optional,
   TRUSTED_ORIGINS: originList,
 
-  // Providers and storage become required in the phases that use them.
+  // Providers and storage become required (in production) in the phases that use them.
   GITHUB_TOKEN: optional,
 
   S3_ENDPOINT: optional,
@@ -105,12 +105,13 @@ const schema = baseSchema
         message: 'true trusts client-supplied X-Forwarded-For; use a hop count or proxy IPs',
       });
     }
-    if (config.NODE_ENV === 'production' && !config.BETTER_AUTH_URL) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['BETTER_AUTH_URL'],
-        message: 'required in production',
-      });
+    if (config.NODE_ENV === 'production') {
+      // Tests mock the providers, so the LLM keys are only needed for real runs.
+      for (const name of ['BETTER_AUTH_URL', 'GROQ_API_KEY', 'GEMINI_API_KEY'] as const) {
+        if (!config[name]) {
+          ctx.addIssue({ code: 'custom', path: [name], message: 'required in production' });
+        }
+      }
     }
     if (!!config.GITHUB_CLIENT_ID !== !!config.GITHUB_CLIENT_SECRET) {
       ctx.addIssue({

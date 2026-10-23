@@ -20,4 +20,20 @@ export const appConfig = {
   workspaces: {
     maxPerUser: 20,
   },
+  llm: {
+    retry: {
+      // Retries per model before moving to the fallback.
+      maxRetries: 2,
+      baseDelayMs: 250,
+      maxDelayMs: 2_000,
+      // A longer retry-after means the minute's quota is gone; the fallback answers sooner.
+      maxRetryAfterMs: 5_000,
+    },
+    embeddings: {
+      batchSize: 100,
+      concurrency: 2,
+    },
+    // How much of a prompt debug logs show.
+    logPreviewChars: 500,
+  },
 } as const;

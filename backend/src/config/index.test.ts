@@ -5,6 +5,8 @@ const base = {
   DATABASE_URL: 'postgresql://u:p@localhost:5432/db',
   BETTER_AUTH_SECRET: 'x'.repeat(32),
   BETTER_AUTH_URL: 'https://api.example.com',
+  GROQ_API_KEY: 'groq-key',
+  GEMINI_API_KEY: 'gemini-key',
 };
 
 describe('parseServerConfig', () => {
@@ -33,6 +35,12 @@ describe('parseServerConfig', () => {
     expect(parseServerConfig({ ...withoutUrl, NODE_ENV: 'development' }).BETTER_AUTH_URL).toBe(
       'http://localhost:4000',
     );
+  });
+
+  it('requires the LLM keys in production only', () => {
+    const { GROQ_API_KEY: _, GEMINI_API_KEY: __, ...withoutKeys } = base;
+    expect(() => parseServerConfig(withoutKeys)).toThrow(/GROQ_API_KEY[\s\S]*GEMINI_API_KEY/);
+    expect(() => parseServerConfig({ ...withoutKeys, NODE_ENV: 'development' })).not.toThrow();
   });
 
   it('rejects URLs without the right scheme', () => {
@@ -71,8 +79,8 @@ describe('parseServerConfig', () => {
   });
 
   it('treats empty values as unset', () => {
-    const config = parseServerConfig({ ...base, GROQ_API_KEY: '', LOG_TO_FILE: '', PORT: '' });
-    expect(config.GROQ_API_KEY).toBeUndefined();
+    const config = parseServerConfig({ ...base, TAVILY_API_KEY: '', LOG_TO_FILE: '', PORT: '' });
+    expect(config.TAVILY_API_KEY).toBeUndefined();
     expect(config.LOG_TO_FILE).toBe(false);
     expect(config.PORT).toBe(4000);
   });

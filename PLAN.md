@@ -89,8 +89,8 @@ Out of scope (for now): frontend (planned later), CLI, MCP server, tracing tools
 | Auth | better-auth (email/password + GitHub OAuth), cookie sessions |
 | File storage | MinIO in dev via `@aws-sdk/client-s3`; S3 / R2 / Supabase Storage in prod by env change only |
 | LLM SDK | Vercel AI SDK (`ai`) — library only, no Vercel hosting |
-| LLMs | **Groq**: agent, answers, study tools, cheap tasks. **Gemini**: embeddings, eval judge, long-context experiment. Fallback between them. |
-| Embeddings | Gemini `gemini-embedding-001`, output dimensionality **1536**, L2-normalized |
+| LLMs | **Groq**: agent, answers, study tools, cheap tasks. **Gemini**: embeddings, eval judge, long-context experiment, bulk tasks (contextualize, summarize). Fallback between them (none for judge and embeddings). Routing table in Phase 3.3. |
+| Embeddings | Gemini `gemini-embedding-2`, output dimensionality **1536**, L2-normalized (changed from `gemini-embedding-001` in Phase 3 planning: 001 truncates input at 2048 tokens, 2 allows 8192) |
 | Reranker | Local `bge-reranker-base` (ONNX) via `@huggingface/transformers` (transformers.js) |
 | Web search | Tavily |
 | Code parsing | `web-tree-sitter` + WASM grammars (TypeScript, TSX, JavaScript, Python first) |
@@ -239,8 +239,11 @@ codebook/
    │  ├─ llm/
    │  │  ├─ providers.ts        # groq + google instances
    │  │  ├─ models.ts           # task -> model routing table
-   │  │  ├─ client.ts           # generate/stream/object/embed with retry+fallback+usage
+   │  │  ├─ client.ts           # generate/object (stream in Phase 11) with retry+fallback+usage
+   │  │  ├─ retry.ts            # backoff + jitter, retry-after cap, which errors retry
+   │  │  ├─ usage.repository.ts # UsageEvent writes
    │  │  ├─ embeddings.ts       # batch embed + normalize + cache
+   │  │  ├─ embeddingCache.repository.ts # raw SQL for the vector cache
    │  │  ├─ reranker.ts         # local transformers.js cross-encoder
    │  │  ├─ pricing.ts          # list prices per model for cost reporting
    │  │  └─ prompts/
@@ -542,7 +545,7 @@ Indexes: `(sourceId, name)`, `(sourceId, qualifiedName)` unique.
 | error | String? | |
 | model / promptVersion | String | |
 
-**Prompt** (optional DB mirror of code prompts, for linking runs)
+**Prompt** (optional DB mirror of code prompts, for linking runs; deferred in Phase 3 — `EvalRun.promptVersions` plus the committed `prompt-hashes.json` cover it; add only if Phase 10/14 needs joins)
 | field | type |
 |---|---|
 | id, name, version, hash, template, createdAt | unique `(name, version)` |
@@ -557,7 +560,7 @@ Indexes: `(sourceId, name)`, `(sourceId, qualifiedName)` unique.
 | task | String | `answer`, `contextualize`, `embed`, `judge`, ... |
 | provider / model | String | |
 | tokensIn / tokensOut / tokensCached | Int | |
-| costUsd | Decimal | |
+| costUsd | Decimal(12, 8) | single calls cost fractions of a cent |
 | latencyMs | Int | |
 | ok | Boolean | |
 | error | String? | |
@@ -567,11 +570,11 @@ Indexes: `(sourceId, name)`, `(sourceId, qualifiedName)` unique.
 **EmbeddingCache**
 | field | type | notes |
 |---|---|---|
-| key | String @id | sha256(model + dims + text) |
+| key | String @id | sha256(model \| dims \| kind \| text), kind = document or query |
 | embedding | Unsupported("vector(1536)") | |
 | createdAt | DateTime | |
 
-**ContextCache** (contextual retrieval results)
+**ContextCache** (contextual retrieval results; created in Phase 5)
 | field | type |
 |---|---|
 | key String @id (sha256(model + promptVersion + docHash + chunkHash)), context String, createdAt |
@@ -811,64 +814,91 @@ Goal: users manage their own workspaces; nobody can touch someone else's.
 
 Goal: one internal API for every model call, with task-based routing, retries, cross-provider fallback, versioned prompts, and usage/cost logging. Everything else calls this layer — never a provider directly.
 
-**Accounts needed:** Groq (console.groq.com) → `GROQ_API_KEY`; Google AI Studio → `GEMINI_API_KEY`. Check both consoles' current model lists and free-tier limits and record them in §3 / `models.ts` comments.
+**Accounts needed:** Groq (console.groq.com) → `GROQ_API_KEY`; Google AI Studio → `GEMINI_API_KEY`.
+
+**Checked 2026-10-23** (planning, before the build):
+- AI SDK is **v7** (`ai` 7.0.143, `@ai-sdk/groq` 4.0.63, `@ai-sdk/google` 4.0.99, peer `zod ^4.1.8`; pinned a week old, see 3.1). v7 names used below: `instructions` (not `system`), `onEnd` (not `onFinish`), `generateText` + `Output.object()` (`generateObject` is deprecated), `isStepCount` (not `stepCountIs`), mocks `MockLanguageModelV4` / `MockEmbeddingModelV4`, portable `reasoning: 'low' | 'medium' | …` setting, `usage.inputTokenDetails.cacheReadTokens`. v7 rejects `system` messages inside `messages` by default (user text can't inject a system prompt).
+- Groq models on our key: `openai/gpt-oss-120b`, `openai/gpt-oss-20b`, `qwen/qwen3.8-27b` (preview). Llama models are enterprise-only now. Free limits (from response headers): **8K tokens/min, 1K requests/day, ~200K tokens/day, per model**, counting tokens actually used (a large `max_completion_tokens` isn't reserved) — so 429s are a normal path and fallback matters.
+- Gemini: `gemini-3.6-flash`, `gemini-3.5-flash-lite`, `gemini-embedding-2` (8192-token input, auto-normalized, task prefixes instead of `taskType`) all have a free tier. `gemini-3.7-flash` / `3.8-flash` are listed but never answered on the free tier (no response in 90s), so Flash is 3.6 (same price). Pin exact IDs, never `-latest` aliases (they move and break eval comparisons).
+- The SDK's own retry waits up to 60s on `retry-after` and has no jitter → we run our own loop with SDK `maxRetries: 0`.
 
 **3.1 Install**
-- [ ] `ai`, `@ai-sdk/groq`, `@ai-sdk/google`
+- [x] `ai`, `@ai-sdk/groq`, `@ai-sdk/google` (exact versions, peer ranges checked). Versions at least a few days old: pnpm 12 refuses fresher ones unless it writes an exclusion list into `pnpm-workspace.yaml`
 
 **3.2 Providers**
-- [ ] `llm/providers.ts`: `createGroq({ apiKey })`, `createGoogleGenerativeAI({ apiKey })`; export typed `providers`
+- [x] `llm/providers.ts`: `createGroq({ apiKey })`, `createGoogle({ apiKey })`; exports `languageModel(ref)` / `embeddingModel(ref)`
+- [x] `GROQ_API_KEY` / `GEMINI_API_KEY` required in production (tests mock the providers)
 
 **3.3 Task routing**
-- [ ] `llm/models.ts`: task enum `answer | agent | study | cheap | contextualize | summarize | memory | rewrite | judge | longContext | embed`
-- [ ] Routing table: task → `{ primary: { provider, model }, fallback?: { provider, model }, maxOutputTokens, temperature }`
-  - `agent`/`answer`/`study`: Groq strong model (e.g. `openai/gpt-oss-120b`), fallback Gemini Flash
-  - `cheap`/`contextualize`/`summarize`/`memory`/`rewrite`: Groq small model (e.g. `llama-3.1-8b-instant`), fallback Gemini Flash-Lite
-  - `judge`: Gemini Flash, fallback a Groq model of a **different family** than the answer model
-  - `longContext`: Gemini Flash (large context)
-  - `embed`: Gemini `gemini-embedding-001` (no fallback — mixing embedding models breaks the index)
-- [ ] Routing overridable per call (`{ modelOverride }`) — evals use this for model comparison
-- [ ] Exact model IDs verified against provider docs at build time
+- [x] `llm/models.ts`: task enum `answer | agent | study | cheap | contextualize | summarize | memory | rewrite | judge | longContext | embed`
+- [x] Routing table: task → `{ primary: { provider, model }, fallback?: { provider, model }, maxOutputTokens, temperature?, reasoning, timeoutMs }`
+
+  | Task | Primary | Fallback | reasoning | timeout |
+  |---|---|---|---|---|
+  | `agent`, `answer`, `study` | Groq `openai/gpt-oss-120b` | `gemini-3.6-flash` | medium | 60s |
+  | `cheap`, `rewrite`, `memory` | Groq `openai/gpt-oss-20b` | `gemini-3.5-flash-lite` | low | 20s |
+  | `contextualize`, `summarize` | `gemini-3.5-flash-lite` | Groq `openai/gpt-oss-20b` | low | 30s |
+  | `judge` | `gemini-3.6-flash` | none | medium | 60s |
+  | `longContext` | `gemini-3.6-flash` | none | low | 90s |
+  | `embed` | `gemini-embedding-2` @ 1536 | none | – | 30s |
+
+  - Bulk tasks (`contextualize`, `summarize`) start on Gemini: a book is ~1M+ tokens of contextualization, far past Groq's per-day limit, and Gemini caches the repeated document prefix
+  - Groq limits are per model, so the big and small Groq models split the traffic
+  - `judge` has **no fallback**: a judge that changes model mid-run makes the run's scores incomparable; retry, then fail the case
+  - `embed` has no fallback: mixing embedding models breaks the index
+- [x] Routing overridable per call (`{ modelOverride }`, tried alone without fallback) — evals use this for model comparison
+- [x] Free-tier limits noted in `models.ts` comments
 
 **3.4 Pricing**
-- [ ] `llm/pricing.ts`: list price per 1M input/output/cached tokens per model (from provider pricing pages, dated comment). Free tier means actual spend is $0, but we compute **list-price cost** for reporting
-- [ ] `estimateCost(model, usage)` → Decimal
+- [x] `llm/pricing.ts`: list price per 1M input/output/cached tokens per model (from provider pricing pages, dated comment). Free tier means actual spend is $0, but we compute **list-price cost** for reporting. Reasoning tokens are billed as output; unknown models (eval overrides) cost 0 with a warning
+- [x] `estimateCost(model, usage)` → `Prisma.Decimal`
 
-**3.5 Client**
-- [ ] `llm/client.ts` exports: `generate({ task, system, messages|prompt, tools?, ... , ctx })`, `stream({ ... })`, `generateObject({ task, schema, ... })`, `embed(texts, { ctx })`
-- [ ] `ctx` = `{ userId?, workspaceId?, correlationId?, tag? }` for usage logging
-- [ ] Retry policy: on 429/5xx/timeouts → exponential backoff with jitter (max 2 retries, respect `retry-after`); then fallback model if configured; then throw `UPSTREAM_ERROR`
-- [ ] Timeouts per task (config): e.g. cheap 20s, answer 60s, judge 60s
-- [ ] Every call (success or failure) writes a `UsageEvent` (tokens in/out/cached, cost, latency, provider, model, fallbackUsed, ok, error)
-- [ ] For streams: log usage in `onFinish`
-- [ ] Never log full prompts at info level (debug only, truncated)
+**3.5 Retry** (`llm/retry.ts`, pure, unit-tested on its own)
+- [x] 429 / 5xx / network errors → up to 2 retries, full-jitter exponential backoff (base and cap in `appConfig.llm.retry`)
+- [x] `retry-after` respected when ≤ 5s (config); longer → skip the wait and go to the fallback
+- [x] Timeout (our own per-attempt timer, merged with the caller's signal) → no retry on the same model, go to the fallback
+- [x] Other errors (400, 401, structured output didn't validate) → no retry, go to the fallback
+- [x] Caller abort (client disconnected) → stop at once, no fallback, no further request
 
-**3.6 Prompts**
-- [ ] `llm/prompts/registry.ts`: `definePrompt({ name, version, template: (vars) => string })`; `getPrompt(name)` returns `{ name, version, hash, render }`
-- [ ] Version string `name@vN`; content hash stored alongside to detect edits without version bump (warn in dev)
+**3.6 Client** (`llm/client.ts`)
+- [x] Exports `generate({ task, instructions, messages | prompt, tools?, stopWhen?, modelOverride?, abortSignal?, ctx })` and `generateObject({ task, schema, … })` (ours, built on `generateText` + `Output.object()`); both return a `call` with provider, model, tokens, cost, latency, fallbackUsed (evals read cost from it)
+- [x] `ctx` = `{ userId?, workspaceId? }` for usage logging (the logger already adds `correlationId` from AsyncLocalStorage)
+- [x] Flow: primary with retries → fallback with retries → `UpstreamError('LLM', { task })` (raw provider error goes to the log only)
+- [x] Every call (success or failure) writes **one** `UsageEvent` (tokens in/out/cached, cost, latency, provider + model that answered or last failed, fallbackUsed, ok, error) through `llm/usage.repository.ts`; a failed usage write is logged and never fails the call. `UsageEvent` has no foreign keys: it's an append-only log that outlives workspaces
+- [x] Multi-step tool calls: if a step fails, the fallback restarts the call from the beginning (fine for read-only tools; Phase 11's agent loop decides its own handling). Usage covers all steps
+- [x] Never log full prompts at info level (debug only, truncated)
+- [ ] `stream()` is built in **Phase 11** with the SSE route (fallback is only possible before the first token; usage logged in `onEnd`)
+
+**3.7 Prompts**
+- [x] `llm/prompts/registry.ts`: `definePrompt({ name, version, text })` with `{{var}}` placeholders (checked at compile time) returns `{ id: 'name@vN', hash, render(vars) }`; prompts are imported directly, and `prompts/index.ts` lists them all for the hash check
+- [x] A committed `prompt-hashes.json` maps `name@vN` → content hash; a unit test **fails** when a prompt's text changes without a version bump, or a new version isn't in the file
 - [ ] Prompt files created as each phase needs them (contextualize, answer system prompt, rewrite, hyde, decompose, summarize, memory-extract, study-*, judge-*)
 - [ ] Prompt structure rule for caching: **stable content first** (system rules, tool definitions, profile), **variable content last** (history, retrieved text, question) — providers cache identical prefixes automatically; record `tokensCached` when reported
 
-**3.7 Embeddings**
-- [ ] `llm/embeddings.ts`: `embedTexts(texts, { taskType: "RETRIEVAL_DOCUMENT" | "RETRIEVAL_QUERY" })` — pass Gemini `outputDimensionality: 1536` and task type via provider options
-- [ ] L2-normalize every vector (required for non-default Gemini dimensions)
-- [ ] Batching: max N texts per request (config), concurrency limit (config, default 2), backoff on 429
-- [ ] `EmbeddingCache` table: look up by `sha256(model|dims|taskType|text)` before calling; write after
-- [ ] Migration `usage_and_caches` (UsageEvent, EmbeddingCache, ContextCache, Prompt)
+**3.8 Embeddings**
+- [x] `llm/embeddings.ts`: `embedTexts(texts, { kind: 'document' | 'query', title?, ctx })` — `gemini-embedding-2` at 1536 dimensions; the task is set by text prefix (`title: {title} | text: …` for documents, `title: none` without one; `task: search result | query: …` for queries). `task: code retrieval | query: …` exists for code search, left for Phase 9/10 evals to decide
+- [x] L2-normalize every vector (the model already does at 1536; we keep the invariant and test it)
+- [x] Batching: 100 texts per request, 2 batches in flight (config); each batch retried on its own and cached as soon as it succeeds, so a retry after a failure only pays for what's left
+- [x] `EmbeddingCache` table: look up by `sha256(model|dims|kind|text)` before calling (`key = ANY(…)`); write after (`ON CONFLICT DO NOTHING`); raw SQL for the `vector(1536)` column (`llm/embeddingCache.repository.ts`)
+- [x] Gemini doesn't report embedding token counts → estimated at ~4 characters per token (commented)
+- [x] Migration `usage_and_embedding_cache`: `UsageType` enum (all of §7.1), `UsageEvent`, `EmbeddingCache`. `ContextCache` comes with its first user in Phase 5; the `Prompt` table is deferred (see §7)
 
-**3.8 Mocks for tests**
-- [ ] `tests/helpers/llm-mock.ts`: AI SDK `MockLanguageModel` / `MockEmbeddingModel` (from `ai/test`) wired through the routing table via a `setTestModels()` hook
-- [ ] Deterministic fake embeddings (hash → vector, normalized) so retrieval tests are stable
+**3.9 Mocks for tests**
+- [x] `tests/helpers/llm-mock.ts`: `MockLanguageModelV4` / `MockEmbeddingModelV4` (from `ai/test`), swapped in with `vi.mock('../src/llm/providers.js', () => import('./helpers/llm-mock.js'))` (no test-only hook in production code); `scriptedModel` / `hangingModel` / `apiError` helpers
+- [x] Deterministic fake embeddings (hash → vector, deliberately not unit length so normalization is tested)
+- [x] Small retry delays from config, so tests use real timers (fake timers only for the 60s timeout test)
 
-**3.9 Tests**
-- [ ] Routing picks correct model per task; override works
-- [ ] Retry then fallback: primary mock throws 429 twice → fallback used → `UsageEvent.fallbackUsed = true`
-- [ ] All providers fail → `UPSTREAM_ERROR`
-- [ ] UsageEvent written on success and failure, cost computed
-- [ ] Embedding cache hit avoids provider call; vectors normalized (norm ≈ 1)
-- [ ] `*.live.test.ts` (LIVE_TESTS=1): one real Groq call, one real Gemini call, one real embedding (dims = 1536)
+**3.10 Tests**
+- [x] Routing picks correct model per task; override works and doesn't fall back
+- [x] Retry then fallback: primary mock keeps returning 429 → 3 attempts → fallback used → `UsageEvent.fallbackUsed = true`; one 429 then success → no fallback
+- [x] `retry-after` above the cap → fallback without waiting; timeout → no same-model retry; caller abort → no fallback; 400 → straight to the fallback
+- [x] All providers fail → `UPSTREAM_ERROR`; judge has no fallback
+- [x] UsageEvent written on success and failure, cost computed
+- [x] Prompt hash lock fails on an edit without a version bump
+- [x] Embedding cache hit avoids provider call; vectors normalized (norm ≈ 1); documents and queries cached separately; batches of 100; finished batches kept when a later one fails
+- [x] `tests/llm.live.test.ts` (LIVE_TESTS=1, 9 calls): Groq text, Groq tool call on both gpt-oss models, Groq structured output, Gemini text, Gemini structured output, embeddings (dims = 1536, norm ≈ 1, related passage ranks first), usage rows written
 
-**Done when:** live smoke test passes with your keys; unit tests green.
+**Done when:** live smoke test passes with your keys; unit tests green; `UsageEvent` rows visible.
 
 ---
 
@@ -1006,8 +1036,8 @@ Goal: a PDF becomes pages → TOC tree → parent/child chunks with context → 
 
 **5.6 Contextual retrieval**
 - [ ] Prompt `contextualize@v1`: given document title + heading path + parent text (truncated) + chunk → "1–2 sentences situating this chunk within the document, for search retrieval. Output only the context."
-- [ ] Task `contextualize` (Groq small model)
-- [ ] Cache via `ContextCache` (key = model + prompt version + parent hash + chunk hash)
+- [ ] Task `contextualize` (Gemini Flash-Lite, Groq fallback — see Phase 3.3)
+- [ ] `ContextCache` table + migration (deferred from Phase 3); cache key = model + prompt version + parent hash + chunk hash
 - [ ] Batch: N chunks concurrently (config), respect rate limits; on persistent failure for a chunk → leave `context = null` (don't fail the whole source)
 - [ ] Toggle `config.contextualRetrieval` (on by default) — evals compare on/off
 - [ ] `searchText` = `context + "\n" + headingPath.join(" > ") + "\n" + content`
@@ -1207,7 +1237,7 @@ Goal: `search(workspaceId, query, options)` returning the best, cited chunks —
 - [ ] `queryMode`: `none | rewrite | hyde | decompose` (default from config)
 
 **9.2 Vector search**
-- [ ] Embed query with `RETRIEVAL_QUERY` task type (cached)
+- [ ] Embed query with `embedTexts([q], { kind: 'query' })` (query prefix, cached)
 - [ ] SQL: `SELECT ... , 1 - (embedding <=> $q) AS score FROM "SourceChunk" WHERE "workspaceId" = $w AND kind = 'CHILD' AND <filters> ORDER BY embedding <=> $q LIMIT $k`
 - [ ] Set `SET LOCAL hnsw.ef_search = <config>` (e.g. 80) inside a transaction for recall
 - [ ] Check with `EXPLAIN` that HNSW index is used with filters (if filter selectivity breaks index use, over-fetch then filter; document the decision)
@@ -1383,7 +1413,8 @@ Goal: conversations where an agent with 9 tools answers questions, streams steps
 - [ ] Token budget check before calling the model (`maxInputTokens` per task); trim history first, then tool results
 
 **11.7 Agent loop** (`chat/agent.ts`)
-- [ ] AI SDK `streamText` with tools, `stopWhen: stepCountIs(config.maxAgentSteps)` (e.g. 8), per-step timeout, total token cap (abort if exceeded)
+- [ ] `stream()` in `llm/client.ts` (deferred from Phase 3): AI SDK `streamText`, same routing/retry; fallback only before the first token; usage logged in `onEnd`
+- [ ] Agent uses `stream()` with tools, `stopWhen: isStepCount(config.maxAgentSteps)` (e.g. 8), per-step timeout (`timeout: { stepMs }`), total token cap (abort if exceeded)
 - [ ] Abort on client disconnect (`AbortController` tied to `req.on("close")`)
 - [ ] If max steps hit without final answer → force a final step with `toolChoice: "none"` asking to answer from what was gathered
 - [ ] Track: tool calls (name, args, ms, result size), retrieval timings, first-token time
@@ -1704,7 +1735,7 @@ Goal: secure, documented, demo-ready backend.
 |---|---|---|---|
 | 1 | Eval corpus: 1 book/doc PDF + 1 public repo (pinned commit) + 1 docs page, license-safe | Phase 10 | Must stay fixed so scores are comparable over time |
 | 2 | Demo workspace content | Phase 16 | You'll add the books later; can reuse the eval corpus |
-| 3 | Exact Groq/Gemini model IDs | Phase 3 | Check consoles at build time; free tiers and model lists change |
+| 3 | Exact Groq/Gemini model IDs | Phase 3 | **Decided 2026-10-23**: routing table in Phase 3.3 (IDs checked against both `/models` endpoints) |
 | 4 | Extra `simple` tsvector for code identifiers | Phase 9/10 | Decide from eval numbers |
 | 5 | Admin access model for eval/monitoring APIs | Phase 14 | Default: `ADMIN_EMAILS` env |
 | 6 | Guest auth: better-auth anonymous plugin vs signed cookie | Phase 16 | Check plugin in installed version |
@@ -1857,21 +1888,23 @@ Each phase lists: **Entry** · **Build order** · **Risks & mitigations** · **P
 - **Commit:** `feat(workspaces): CRUD, templates and ownership checks`. **→ M1 cross-review.**
 
 #### Phase 3 — LLM layer
-- **Entry:** `GROQ_API_KEY` and `GEMINI_API_KEY` present (both verified with 200).
+- **Entry:** `GROQ_API_KEY` and `GEMINI_API_KEY` present (both verified with 200). Model IDs and Groq limits already checked (2026-10-23, see Phase 3).
 - **Build order:**
-  1. Install `ai`, `@ai-sdk/groq` and `@ai-sdk/google`.
-  2. **First**, list the real model IDs from both providers' `/models` endpoints, then write the routing table with verified IDs, noting free-tier limits in comments.
-  3. `providers.ts` → `models.ts` → `pricing.ts` → `client.ts` (retry, fallback, timeouts, `UsageEvent`).
-  4. Prompt registry.
-  5. `embeddings.ts` (1536 dimensions, normalization, batching, cache), plus a migration for `UsageEvent`, the caches and `Prompt`.
-  6. Mocks (`ai/test`) and unit tests, then one live test file.
+  1. Install `ai`, `@ai-sdk/groq` and `@ai-sdk/google` (exact versions).
+  2. Prisma: `UsageType`, `UsageEvent`, `EmbeddingCache` → migration `usage_and_embedding_cache` on the dev and test DBs.
+  3. `providers.ts` → `models.ts` → `pricing.ts` → `retry.ts` + its tests.
+  4. `usage.repository.ts` → `client.ts` (routing, retry, fallback, timeouts, `UsageEvent`) + mocked tests.
+  5. Prompt registry + hash-lock test.
+  6. `embeddings.ts` (prefixes, 1536 dimensions, normalization, batching, cache) + tests.
+  7. One live test file.
 - **Risks & mitigations:**
 
   | Risk | Mitigation |
   |---|---|
   | The chosen Groq model's tool calling is unreliable | Live-test a tool call for each candidate model before locking the routing table |
-  | The Gemini dimensionality option is named differently | Check the `@ai-sdk/google` docs; the live test asserts length 1536 |
-  | AI SDK API names differ from this plan | The docs win; update this file |
+  | Groq's 8K tokens/min makes chat fall back often | Expected; fallback is tested, the fallback rate is visible in `UsageEvent`; revisit routing with real token counts in Phase 11 |
+  | Embedding prefixes differ from the docs we read | Check the Gemini embeddings page at build time; the live test asserts length 1536 |
+  | AI SDK API names differ from this plan | The docs shipped inside the `ai` package win; update this file |
   | 429s during live tests | Minimal live calls (one each), backoff |
 - **Proof:** unit tests (routing, retry then fallback, usage rows, cache hit, norm ≈ 1) · `LIVE_TESTS=1`: a real Groq text call and tool call, a real Gemini text call, a real embedding of length 1536 · `UsageEvent` rows visible.
 - **Commit:** `feat(llm): provider routing, fallback, prompts, embeddings and usage logging`
@@ -2048,7 +2081,8 @@ One line per phase: `date · phase · commit · notes / deviations`.
 | 2026-10-22 | 0 Setup | 77eb5ad | Prisma 7 needs `prisma.config.ts` + `@prisma/adapter-pg`/`pg`; TypeScript 6.0 (typescript-eslint limit); `minio/mc` image gone → init uses `minio/minio`; vitest `fileParallelism: false`; `db:seed` deferred to when a seed exists. Production layout: `config/` (serverConfig, logger/db configs), `middlewares/*.middleware.ts`, `utils/errors` classes, `routers/v1`, `{ success, message, data }` responses with `code` + `correlationId` on errors, winston JSON logs (ISO UTC, correlation id, rotating files only with `LOG_TO_FILE`), `/api/v1` prefix, health split into `/live` and `/ready` (503 when DB down), `TRUST_PROXY`. `docker-compose.yml` lives in `backend/` (its services are backend-only). Prisma 7 `migrate dev` no longer runs generate → `db:migrate` chains `prisma generate`. `start` sets NODE_ENV=production + source maps; stricter env URLs/port/origins; aborted requests logged with their correlation id; correlation id on preflights + exposed to CORS; test DB guard + pinned test env; type-aware ESLint; CI runs format check + build |
 | 2026-10-22 | 1 Auth | 41ad8d2 | better-auth 1.7 (schema CLI is now the `auth` package); `isGuest`/`isSystem` as `input: false` fields (better-auth drops them from sign-up bodies). Mounted through better-call `getRequest`/`setResponse` (direct dep, same version better-auth uses) so `/api/auth` gets a fixed base URL instead of the client's Host / X-Forwarded-Proto, and bodies are read by `express.text` with a 64 KB limit (413, chunked included). Global `x-client-ip` from `req.ip` so better-auth's rate limiter can't be bypassed with a forged X-Forwarded-For. CSRF origin check kept on in tests; refreshed session cookies forwarded from `requireAuth`; better-auth logs go through winston. `BETTER_AUTH_URL` required in production; GitHub id + secret set together. Manual GitHub login verified (user + account rows, session, no errors). 45 tests |
 | 2026-10-22 | 2 Workspaces | 19f1c91 | Settings key `defaultSearchMode` (the plan's `defaultQueryMode: "hybrid"` mixed up search `mode` and `queryMode`). Workspace counts on `GET /:id` moved to Phases 4 and 11, where the sources and conversations tables appear. Keyset pagination with an opaque `(createdAt, id)` cursor in `pagination.helpers.ts`. The per-user limit locks the user row (`SELECT … FOR UPDATE`) before counting; a test holds a table lock so four creates really overlap, and fails without the row lock. Bodies drop unknown fields; `settings` is strict and merged on PATCH under a row lock (concurrent PATCHes keep both changes, tested the same way). Bad cursors fail in the query schema with `details` like other fields. 78 tests |
-| 2026-10-22 | M1 review | _this commit_ | Cross-review of Phases 0–2. Fixed: `TRUST_PROXY=true` refused in production (client-written XFF would bypass the sign-in rate limit); errors after a response started are logged through winston; `paginate()` callers AND the cursor filter instead of spreading it. Tests added: CORS + trusted-origin sign-up, app-level 413/400/404, 401 on every workspace route, demo workspace over HTTP, 503 body. Moved to later phases: nested router/double session lookup and demo write guard (4), better-auth `APIError` mapping (16), cookie flags + email enumeration note (17); typed validated input parked under Later. 91 tests |
+| 2026-10-22 | M1 review | ed44cdc | Cross-review of Phases 0–2. Fixed: `TRUST_PROXY=true` refused in production (client-written XFF would bypass the sign-in rate limit); errors after a response started are logged through winston; `paginate()` callers AND the cursor filter instead of spreading it. Tests added: CORS + trusted-origin sign-up, app-level 413/400/404, 401 on every workspace route, demo workspace over HTTP, 503 body. Moved to later phases: nested router/double session lookup and demo write guard (4), better-auth `APIError` mapping (16), cookie flags + email enumeration note (17); typed validated input parked under Later. 91 tests |
+| 2026-10-23 | 3 LLM layer | _this commit_ | AI SDK v7 (`instructions`, `Output.object`, V4 mocks, portable `reasoning`), pinned a week old because pnpm 12 otherwise writes a release-age exclusion list. Groq key has only gpt-oss-120b/20b (+ Qwen preview), 8K tokens/min and 1K requests/day per model, so bulk tasks (contextualize, summarize) route to Gemini Flash-Lite. `gemini-3.7/3.8-flash` never answered on the free tier → Flash is `gemini-3.6-flash`. Embeddings on `gemini-embedding-2` (8192-token input; task prefixes instead of taskType). Judge has no fallback. Own retry loop (SDK retries off): full jitter, retry-after over 5s goes to the fallback, timeouts not retried, caller abort stops. One UsageEvent per call (tokens of rejected structured-output attempts included); no FKs on UsageEvent. Deferred: `stream()` → 11, `ContextCache` → 5, `Prompt` table (prompt-hashes.json + test instead). LLM keys required in production. 145 tests + 8 live (`LIVE_TESTS=1`) |
 
 **Later** (ideas parked during the build, not in scope):
 - Typed access to validated input (`res.locals.query` / `req.body` are cast in controllers today), if the casts start drifting from the router schemas
