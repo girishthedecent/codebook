@@ -148,6 +148,14 @@ describe('PDF upload', () => {
     expect((await uploadPdf(alice, minimalPdf(), { contentType: 'text/plain' })).status).toBe(400);
   });
 
+  it('answers a malformed multipart body with 400, not 500', async () => {
+    const res = await alice.agent
+      .post(sourcesPath())
+      .set('Content-Type', 'multipart/form-data; boundary=nope')
+      .send('--nope\r\nContent-Disposition: form-data; name="file"; filename="a.pdf"\r\n');
+    expect(res.status).toBe(400);
+  });
+
   it('requires the file field', async () => {
     const res = await alice.agent.post(sourcesPath()).field('title', 'no file');
     expect(res.status).toBe(400);
@@ -458,6 +466,29 @@ describe('resync', () => {
     expect(res.status).toBe(202);
     expect(bodyOf(res)).toMatchObject({ status: 'PENDING' });
     expect(send.mock.calls[0]![0]).toMatchObject({ data: { sourceId: id, reason: 'resync' } });
+  });
+
+  it('recovers a source stuck in PENDING (its event was never sent)', async () => {
+    const { id } = bodyOf(await addRepo(alice));
+    const stale = new Date(Date.now() - appConfig.sources.stalePendingMs - 1_000);
+    await prismaClient.$executeRaw`UPDATE "Source" SET "updatedAt" = ${stale} WHERE id = ${id}`;
+
+    const res = await alice.agent.post(`/api/v1/sources/${id}/resync`);
+    expect(res.status).toBe(202);
+  });
+
+  it('tells the user to re-upload a PDF whose upload never finished', async () => {
+    const { id } = bodyOf(await uploadPdf(alice));
+    await prismaClient.$executeRaw`
+      UPDATE "Source" SET origin = jsonb_set(origin, '{storageKey}', 'null') WHERE id = ${id}
+    `;
+
+    const res = await alice.agent.post(`/api/v1/sources/${id}/resync`);
+    expect(res.status).toBe(409);
+    expect(res.body).toMatchObject({ message: /upload it again/ });
+    expect(await prismaClient.source.findUnique({ where: { id } })).toMatchObject({
+      status: 'FAILED',
+    });
   });
 
   it('refuses while the source is queued or processing', async () => {

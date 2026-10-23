@@ -27,6 +27,7 @@ export function useTestEnv() {
 
   // Pin settings that tests assert on, whatever the local .env says.
   process.env.TRUST_PROXY = 'false';
+  process.env.APP_URL = 'http://localhost:4000';
   process.env.BETTER_AUTH_URL = 'http://localhost:4000';
   process.env.TRUSTED_ORIGINS = 'http://localhost:3000';
   process.env.LOG_TO_FILE = 'false';

@@ -28,6 +28,8 @@ export const appConfig = {
     website: { maxDepth: 2, defaultDepth: 0, maxPages: 50, defaultPages: 10 },
     // How often the progress stream re-reads the source row.
     progressPollMs: 1_000,
+    // A source still PENDING after this never got its ingest event and may be resynced.
+    stalePendingMs: 10 * 60 * 1000,
   },
   sse: {
     heartbeatMs: 15_000,

@@ -27,6 +27,7 @@ import {
   toProgress,
 } from './source.dto.js';
 import {
+  countSourcesByStatus,
   createSource,
   deleteSource,
   findSource,
@@ -220,13 +221,30 @@ export async function deleteSourceService(userId: string, sourceId: string) {
 }
 
 export async function resyncSourceService(userId: string, sourceId: string) {
-  if (!(await findSourceForUser(userId, sourceId))) throw new NotFoundError('Source not found');
-  if (!(await requeueSource(sourceId))) {
+  const found = await findSourceForUser(userId, sourceId);
+  if (!found) throw new NotFoundError('Source not found');
+
+  // A PDF whose upload never finished has nothing to ingest; resyncing can't fix that.
+  if (found.type === 'PDF' && !(found.origin as PdfOrigin).storageKey) {
+    await updateSourceIfExists(sourceId, {
+      status: 'FAILED',
+      error: 'The upload did not finish. Delete this source and upload the file again.',
+    });
+    throw new ConflictError('The upload did not finish. Delete this source and upload it again.');
+  }
+
+  const staleBefore = new Date(Date.now() - appConfig.sources.stalePendingMs);
+  if (!(await requeueSource(sourceId, staleBefore))) {
     throw new ConflictError('This source is already queued or being processed');
   }
   const source = await findSource(sourceId);
   if (!source) throw new NotFoundError('Source not found');
   return queueIngest(source, 'resync');
+}
+
+/** Source counts by status, for the workspace view. */
+export async function countSourcesService(workspaceId: string) {
+  return countSourcesByStatus(workspaceId);
 }
 
 // ---- progress ---------------------------------------------------------------------------

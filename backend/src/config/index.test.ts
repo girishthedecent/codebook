@@ -51,6 +51,13 @@ describe('parseServerConfig', () => {
     expect(() => parseServerConfig({ ...withoutKeys, NODE_ENV: 'development' })).not.toThrow();
   });
 
+  it('rejects storage and queue URLs without a scheme', () => {
+    expect(() => parseServerConfig({ ...base, S3_ENDPOINT: 'minio:9000' })).toThrow(/S3_ENDPOINT/);
+    expect(() =>
+      parseServerConfig({ ...base, NODE_ENV: 'development', INNGEST_BASE_URL: 'localhost:8288' }),
+    ).toThrow(/INNGEST_BASE_URL/);
+  });
+
   it('refuses the Inngest dev mode in production', () => {
     expect(() => parseServerConfig({ ...base, INNGEST_DEV: '1' })).toThrow(/INNGEST_DEV/);
   });

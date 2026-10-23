@@ -4,7 +4,7 @@ import multer from 'multer';
 import { appConfig } from '../../config/app.config.js';
 import logger from '../../config/logger.config.js';
 import { getAuthUser } from '../../middlewares/auth.middleware.js';
-import { BadRequestError, PayloadTooLargeError } from '../../utils/errors/app.error.js';
+import { AppError, BadRequestError, PayloadTooLargeError } from '../../utils/errors/app.error.js';
 import type { WorkspaceParams } from '../workspaces/workspace.dto.js';
 import { assertWorkspaceAccess } from '../workspaces/workspace.service.js';
 
@@ -34,11 +34,14 @@ export function receivePdf(req: Request, res: Response, next: NextFunction) {
   upload(req, res, (error: unknown) => {
     if (req.file) {
       const { path } = req.file;
-      res.on('close', () => {
+      const removeTempFile = () => {
         rm(path, { force: true }).catch((err: unknown) =>
           logger.warn('Could not delete upload temp file', { error: err, path }),
         );
-      });
+      };
+      res.on('close', removeTempFile);
+      // The client may have left while the file was still being written; 'close' has fired.
+      if (res.closed || res.socket?.destroyed) removeTempFile();
     }
     if (error instanceof multer.MulterError) {
       if (error.code === 'LIMIT_FILE_SIZE') {
@@ -46,7 +49,10 @@ export function receivePdf(req: Request, res: Response, next: NextFunction) {
       }
       return next(new BadRequestError(error.message));
     }
-    if (error) return next(error);
+    if (error instanceof AppError) return next(error);
+    // busboy's own errors (no boundary, truncated body, client gone mid-upload) are plain
+    // Errors; they're the client's problem, not a 500.
+    if (error) return next(new BadRequestError('Malformed upload'));
     if (!req.file) return next(new BadRequestError('Attach the PDF in a "file" field'));
     next();
   });

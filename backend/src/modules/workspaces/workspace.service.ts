@@ -9,7 +9,7 @@ import {
   listWorkspaces,
   updateWorkspace,
 } from './workspace.repository.js';
-import { countSourcesByStatus } from '../sources/source.repository.js';
+import { countSourcesService } from '../sources/source.service.js';
 import { queueStorageCleanup, workspacePrefix } from '../sources/source.storage.js';
 import { templateSettings } from './workspace.templates.js';
 
@@ -51,7 +51,7 @@ export async function listWorkspacesService(userId: string, page: PaginationQuer
 
 export async function getWorkspaceService(userId: string, workspaceId: string) {
   const workspace = await assertWorkspaceAccess(userId, workspaceId);
-  return { workspace, counts: { sources: await countSourcesByStatus(workspaceId) } };
+  return { workspace, counts: { sources: await countSourcesService(workspaceId) } };
 }
 
 export async function updateWorkspaceService(

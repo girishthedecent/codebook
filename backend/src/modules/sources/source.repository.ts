@@ -82,12 +82,20 @@ export async function deleteSource(sourceId: string) {
 }
 
 /**
- * Puts the source back in the queue unless an ingest is already queued or running.
- * Conditional on the status in one statement, so two resyncs can't both start one.
+ * Puts the source back in the queue unless an ingest is already queued or running. A source
+ * PENDING since before `staleBefore` counts as stuck (its event was never sent, e.g. the
+ * server died mid-create) and can be queued again. Conditional in one statement, so two
+ * resyncs can't both start one.
  */
-export async function requeueSource(sourceId: string) {
+export async function requeueSource(sourceId: string, staleBefore: Date) {
   const { count } = await prismaClient.source.updateMany({
-    where: { id: sourceId, status: { in: ['READY', 'FAILED'] } },
+    where: {
+      id: sourceId,
+      OR: [
+        { status: { in: ['READY', 'FAILED'] } },
+        { status: 'PENDING', updatedAt: { lt: staleBefore } },
+      ],
+    },
     data: { status: 'PENDING', stage: 'QUEUED', progress: 0, error: null },
   });
   return count > 0;

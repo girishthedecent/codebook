@@ -11,8 +11,11 @@ export type SseStream = {
 };
 
 const openStreams = new Set<SseStream>();
+let draining = false;
 
 drainRegistry.register(async () => {
+  // Also covers requests still on their way to openSse (e.g. checking access).
+  draining = true;
   for (const stream of openStreams) stream.close();
 });
 
@@ -57,6 +60,6 @@ export function openSse(req: Request, res: Response): SseStream {
   // The client went away. If it left before we got here (while access was checked), 'close'
   // has already fired, so check now too or the stream would poll for nobody.
   req.on('close', () => stream.close());
-  if (!res.socket || res.socket.destroyed) stream.close();
+  if (draining || !res.socket || res.socket.destroyed) stream.close();
   return stream;
 }

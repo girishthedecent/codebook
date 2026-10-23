@@ -72,7 +72,7 @@ const baseSchema = z.object({
   // Providers and storage become required (in production) in the phases that use them.
   GITHUB_TOKEN: optional,
 
-  S3_ENDPOINT: optional,
+  S3_ENDPOINT: httpUrl.optional(),
   S3_REGION: z.string().default('us-east-1'),
   S3_BUCKET: optional,
   S3_ACCESS_KEY: optional,
@@ -80,7 +80,7 @@ const baseSchema = z.object({
   S3_FORCE_PATH_STYLE: z.stringbool().default(false),
 
   INNGEST_DEV: z.stringbool().default(false),
-  INNGEST_BASE_URL: optional,
+  INNGEST_BASE_URL: httpUrl.optional(),
   INNGEST_EVENT_KEY: optional,
   INNGEST_SIGNING_KEY: optional,
 

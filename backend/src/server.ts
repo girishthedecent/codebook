@@ -37,7 +37,7 @@ function shutdown(signal: string) {
     const ok = await shutdownRegistry.run();
     process.exit(ok ? 0 : 1);
   });
-  // After close(), so no new stream can open once the old ones are ended.
+  // After close(): no new connections, and streams opened from here on close at once.
   void drainRegistry.run();
 }
 

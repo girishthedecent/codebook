@@ -2,6 +2,7 @@ import { request as httpRequest } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import express from 'express';
 import { describe, expect, it } from 'vitest';
+import { drainRegistry } from './helpers/shutdown.helpers.js';
 import { openSse, type SseStream } from './sse.js';
 
 // A real server and socket: the cases here are about when the connection closes.
@@ -67,5 +68,24 @@ describe('openSse', () => {
       },
     );
     expect(stream?.closed).toBe(true);
+  });
+
+  // Last in the file: once drained, every stream in this process closes at once.
+  it('closes streams that open after shutdown started', async () => {
+    await drainRegistry.run();
+    let stream!: SseStream;
+    await withServer(
+      (req, res) => {
+        stream = openSse(req, res);
+      },
+      (port) =>
+        new Promise<void>((resolve) => {
+          httpRequest({ port, path: '/stream' }, (res) => {
+            res.resume();
+            res.on('end', () => resolve());
+          }).end();
+        }),
+    );
+    expect(stream.closed).toBe(true);
   });
 });
