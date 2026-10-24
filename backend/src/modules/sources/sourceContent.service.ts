@@ -1,4 +1,5 @@
 import { appConfig } from '../../config/app.config.js';
+import { countLines } from '../ingestion/code/lines.js';
 import { BadRequestError, NotFoundError } from '../../utils/errors/app.error.js';
 import type { ListFilesQuery, SourceContentQuery } from './source.dto.js';
 import { getSourceService } from './source.service.js';
@@ -46,9 +47,12 @@ export async function getContentService(
   const source = await getSourceService(userId, sourceId);
 
   if (query.path !== undefined) {
-    // A book is one document of \f-joined pages; its "lines" would mean nothing.
-    if (source.type !== 'GITHUB_REPO') {
-      throw new BadRequestError('Line ranges are only available for repository files');
+    // A book is one document of \f-joined pages; its "lines" would mean nothing. Repository
+    // files and web pages (by their URL) are read by lines.
+    if (source.type === 'PDF') {
+      throw new BadRequestError(
+        'Line ranges are only available for repository files and web pages',
+      );
     }
     return fileLines(sourceId, query.path, query.lineStart ?? 1, query.lineEnd);
   }
@@ -65,7 +69,7 @@ export async function getContentService(
   return { tocNode, text: text.replaceAll('\f', '\n') };
 }
 
-/** Lines `from`…`to` of a repository file (1-based, inclusive), at most `maxLines` of them. */
+/** Lines `from`…`to` of a file or page (1-based, inclusive), at most `maxLines` of them. */
 async function fileLines(sourceId: string, path: string, from: number, to: number | undefined) {
   const file = await findFile(sourceId, path);
   if (!file) throw new NotFoundError('File not found');
@@ -73,7 +77,8 @@ async function fileLines(sourceId: string, path: string, from: number, to: numbe
     throw new NotFoundError(`This file wasn't indexed (${file.skippedReason})`);
   }
 
-  const lineCount = file.lineCount ?? 0;
+  // Web pages store no line count.
+  const lineCount = file.lineCount ?? countLines(file.content);
   if (from > Math.max(lineCount, 1)) {
     throw new NotFoundError(`The file has ${lineCount} lines`);
   }

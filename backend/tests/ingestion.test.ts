@@ -250,6 +250,7 @@ describe('ingesting a PDF', () => {
 
   it('leaves the source alone when a newer run owns the draft', async () => {
     const sourceId = await pdfSource();
+    const queued = new Date(Date.now() - 1_000);
     useModels({
       [CONTEXT_MODEL]: promptModel(() => {
         // A second run takes over while the first is contextualizing.
@@ -265,7 +266,7 @@ describe('ingesting a PDF', () => {
     expect(result).toMatchObject({ outcome: 'stopped' });
     expect(await chunkIds(sourceId)).toEqual([]);
     // The newer run's draft survives the stale run's failure handler too.
-    await failIngestService(sourceId, 'stale-run', new Date());
+    await failIngestService(sourceId, 'stale-run', queued);
     expect(await sourceRow(sourceId)).toMatchObject({ status: 'PROCESSING' });
     expect(await prismaClient.ingestDraft.count()).toBe(1);
   });
@@ -279,6 +280,24 @@ describe('ingesting a PDF', () => {
     await failIngestService(sourceId, 'older-run', queued);
 
     expect(await sourceRow(sourceId)).toMatchObject({ status: 'READY', error: null });
+  });
+
+  it("still fails a run when the only other draft is older than it (a cancelled run's)", async () => {
+    const sourceId = await pdfSource();
+    await prismaClient.source.update({ where: { id: sourceId }, data: { status: 'PROCESSING' } });
+    await prismaClient.ingestDraft.create({
+      data: {
+        sourceId,
+        runId: 'cancelled-run',
+        data: {},
+        updatedAt: new Date(Date.now() - 60_000),
+      },
+    });
+
+    await failIngestService(sourceId, 'new-run', new Date());
+
+    expect(await sourceRow(sourceId)).toMatchObject({ status: 'FAILED' });
+    expect(await prismaClient.ingestDraft.count()).toBe(0);
   });
 
   it('fails PDFs without text or that cannot be read, without calling a model', async () => {

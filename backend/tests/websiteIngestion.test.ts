@@ -17,14 +17,16 @@ import { signedInUser } from './helpers/auth.js';
 import { resetDb } from './helpers/db.js';
 import { contextReply, ingest } from './helpers/ingestion.js';
 import { fakeEmbeddingModel, promptModel, useModels } from './helpers/llm-mock.js';
-import { CODE_BLOCK, CODE_LINES, site } from './helpers/site.js';
+import { CODE_BLOCK, CODE_LINES, HOME_MARKER, site } from './helpers/site.js';
 
 vi.mock('../src/llm/providers.js', () => import('./helpers/llm-mock.js'));
 vi.mock('../src/utils/pacer.js', () => import('./helpers/no-pacing.js'));
 
 let base: string;
 let workspaceId: string;
+let alice: Awaited<ReturnType<typeof signedInUser>>;
 let doEmbed: MockInstance<typeof fakeEmbeddingModel.doEmbed>;
+let prompts: string[];
 
 beforeAll(async () => {
   allowTestAddresses(['127.0.0.1']);
@@ -39,11 +41,15 @@ afterAll(async () => {
 beforeEach(async () => {
   await resetDb();
   site.reset();
-  const alice = await signedInUser('alice@example.com');
+  alice = await signedInUser('alice@example.com');
   const res = await alice.agent.post('/api/v1/workspaces').send({ name: 'Docs' });
   workspaceId = (res.body as { data: { id: string } }).data.id;
+  prompts = [];
   useModels({
-    [textRoutes.contextualize.primary.model]: promptModel((prompt) => contextReply(prompt)),
+    [textRoutes.contextualize.primary.model]: promptModel((prompt) => {
+      prompts.push(prompt);
+      return contextReply(prompt);
+    }),
   });
   doEmbed = vi.spyOn(fakeEmbeddingModel, 'doEmbed');
 });
@@ -146,6 +152,18 @@ describe('ingesting a website', () => {
     expect(holding[0]!.headingPath).toContain('Configuring');
   });
 
+  it('serves a page by its URL through /content', async () => {
+    const sourceId = await createWebsiteSource('/guide', 0);
+    await ingest(sourceId);
+
+    const res = await alice.agent
+      .get(`/api/v1/sources/${sourceId}/content`)
+      .query({ path: `${base}/guide`, lineStart: 1, lineEnd: 400 });
+    expect(res.status).toBe(200);
+    const { lines } = (res.body as { data: { lines: { text: string }[] } }).data;
+    expect(lines.map((line) => line.text).join('\n')).toContain(CODE_LINES[0]!);
+  });
+
   it('skips a resync when no page changed', async () => {
     const sourceId = await createWebsiteSource('/', 1);
     await ingest(sourceId);
@@ -165,6 +183,31 @@ describe('ingesting a website', () => {
     });
     expect(after).toEqual(before);
     expect(await sourceRow(sourceId)).toMatchObject({ status: 'READY' });
+  });
+
+  it('re-indexes a changed site and caches the contexts of pages that did not change', async () => {
+    const sourceId = await createWebsiteSource('/', 1);
+    await ingest(sourceId);
+    expect(prompts.some((prompt) => prompt.includes(HOME_MARKER))).toBe(true);
+    prompts.length = 0;
+
+    site.replace('/guide', 'Guide', '<h1>Guide</h1><p>The guide now says something new.</p>');
+    site.replace('/about', 'About', null);
+    const { result } = await ingest(sourceId);
+
+    expect(result).not.toMatchObject({ outcome: 'skipped' });
+    expect(result).toMatchObject({ outcome: 'done' });
+    expect((await documentsOf(sourceId)).map((doc) => doc.path)).toEqual([
+      `${base}/`,
+      `${base}/guide`,
+    ]);
+    const children = await childrenOf(sourceId);
+    expect(
+      children.some((child) => child.content.includes('The guide now says something new')),
+    ).toBe(true);
+    expect(children.some((child) => child.content.includes('Installing'))).toBe(false);
+    expect(prompts.length).toBeGreaterThan(0);
+    expect(prompts.some((prompt) => prompt.includes(HOME_MARKER))).toBe(false);
   });
 
   it.each([

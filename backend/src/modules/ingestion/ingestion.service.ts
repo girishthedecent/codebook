@@ -172,15 +172,16 @@ export async function embedStep(sourceId: string, runId: string, step: number) {
 export async function indexStep(sourceId: string, runId: string) {
   const draft = await loadDraft(sourceId, runId);
   if (!draft) return { outcome: 'stopped' as const };
-  if (!(await setIngestState(sourceId, { stage: 'INDEXING', progress: 95 }))) {
-    return { outcome: 'gone' as const };
-  }
 
+  // Still the EMBEDDING stage, so running out of quota here gets the embedding message.
   const children = await indexedChildren(draft);
   await embedTexts(
     [...children.values()].map((child) => child.searchText),
     { kind: 'document', title: draft.title, ctx: callContext(draft) },
   );
+  if (!(await setIngestState(sourceId, { stage: 'INDEXING', progress: 95 }))) {
+    return { outcome: 'gone' as const };
+  }
   const graph = draft.repo ? await loadGraph(sourceId) : null;
 
   const contextual = appConfig.ingestion.contextualRetrieval;

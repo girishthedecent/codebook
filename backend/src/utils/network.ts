@@ -76,19 +76,23 @@ export async function assertPublicUrl(raw: string) {
 
   // IPv6 literals come wrapped in brackets: http://[::1]/
   const host = url.hostname.replace(/^\[(.*)\]$/, '$1');
-  let addresses: string[];
+  let addresses: string[] = [];
   if (isIP(host)) {
     addresses = [host];
   } else {
     try {
       addresses = (await lookup(host, { all: true, verbatim: true })).map((entry) => entry.address);
     } catch {
-      throw new BadRequestError(`Could not resolve ${host}`);
+      // Same answer as a private host: telling them apart would reveal internal host names.
     }
   }
 
   if (addresses.length === 0 || !addresses.every(isPublicIp)) {
-    throw new BadRequestError('URL points to a private or reserved network address');
+    throw new BadRequestError('URL host is unknown or on a private or reserved network');
+  }
+  // The crawler only connects to the standard ports.
+  if (url.port !== '' && url.port !== '80' && url.port !== '443') {
+    throw new BadRequestError('Only URLs on the standard ports (80, 443) are supported');
   }
   return url;
 }

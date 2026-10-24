@@ -226,4 +226,76 @@ describe('code graph', () => {
     expect(new Set(names).size).toBe(names.length);
     expect(await prismaClient.ingestDraft.count()).toBe(0);
   });
+
+  it('drops the symbols and edges of a removed file on a resync', async () => {
+    const { 'src/cycle/b.ts': _removed, ...rest } = GRAPH_FILES;
+    serve(rest, 'b'.repeat(40));
+    await ingest(sourceId);
+
+    const symbols = await prismaClient.codeSymbol.findMany({ where: { sourceId } });
+    expect(symbols.filter((s) => s.filePath === 'src/cycle/b.ts')).toEqual([]);
+
+    const ids = new Set(symbols.map((s) => s.id));
+    const edges = await prismaClient.codeEdge.findMany({ where: { sourceId } });
+    for (const edge of edges) {
+      expect(ids.has(edge.fromSymbolId)).toBe(true);
+      if (edge.toSymbolId) expect(ids.has(edge.toSymbolId)).toBe(true);
+    }
+
+    const a = symbols.find((s) => s.qualifiedName === 'src/cycle/a.ts#a')!;
+    const call = edges.find((e) => e.type === 'CALLS' && e.fromSymbolId === a.id)!;
+    expect(call).toMatchObject({ toSymbolId: null, toName: 'b' });
+
+    // Same as indexing those files from scratch.
+    const fresh = await createRepoSource(workspaceId, 'dev');
+    await ingest(fresh);
+    expect(await prismaClient.codeEdge.count({ where: { sourceId: fresh } })).toBe(edges.length);
+    expect(await prismaClient.codeSymbol.count({ where: { sourceId: fresh } })).toBe(
+      symbols.length,
+    );
+  });
+
+  it('keeps the old graph when a resync fails', async () => {
+    const before = await prismaClient.codeSymbol.count({ where: { sourceId } });
+    vi.mocked(resolveCommit).mockResolvedValue('no-ref');
+    const { result } = await ingest(sourceId);
+
+    expect(result).toMatchObject({ outcome: 'failed' });
+    expect(await prismaClient.codeSymbol.count({ where: { sourceId } })).toBe(before);
+    const source = await prismaClient.source.findUniqueOrThrow({ where: { id: sourceId } });
+    expect(source.status).toBe('FAILED');
+    expect(source.error).toMatch(/no longer exists/);
+  });
+
+  it("lets another signed-in user read a demo workspace's graph", async () => {
+    const bob = await signedInUser('bob@example.com');
+    const url = `/api/v1/sources/${sourceId}/graph/symbols?q=UserRepository`;
+    expect((await bob.agent.get(url)).status).toBe(404);
+
+    await prismaClient.workspace.update({ where: { id: workspaceId }, data: { isDemo: true } });
+
+    const res = await bob.agent.get(url);
+    expect(res.status).toBe(200);
+    expect(data<Symbol[]>(res)[0]!.qualifiedName).toBe(
+      'src/repositories/userRepository.ts#UserRepository',
+    );
+  });
+
+  it('deletes every row of the source with its workspace', async () => {
+    expect(await prismaClient.sourceDocument.count({ where: { sourceId } })).toBeGreaterThan(0);
+    expect(await prismaClient.sourceChunk.count({ where: { sourceId } })).toBeGreaterThan(0);
+    expect(await prismaClient.codeSymbol.count({ where: { sourceId } })).toBeGreaterThan(0);
+    expect(await prismaClient.codeEdge.count({ where: { sourceId } })).toBeGreaterThan(0);
+
+    const res = await alice.delete(`/api/v1/workspaces/${workspaceId}`);
+    expect(res.status).toBeLessThan(300);
+
+    const where = { where: { sourceId } };
+    expect(await prismaClient.sourceDocument.count(where)).toBe(0);
+    expect(await prismaClient.tocNode.count(where)).toBe(0);
+    expect(await prismaClient.sourceChunk.count(where)).toBe(0);
+    expect(await prismaClient.codeSymbol.count(where)).toBe(0);
+    expect(await prismaClient.codeEdge.count(where)).toBe(0);
+    expect(await prismaClient.ingestDraft.count(where)).toBe(0);
+  });
 });

@@ -81,7 +81,15 @@ describe('assertPublicUrl', () => {
   it('rejects a host that does not resolve', async () => {
     vi.mocked(lookup).mockRejectedValue(Object.assign(new Error('nope'), { code: 'ENOTFOUND' }));
     await expect(assertPublicUrl('https://no-such-host.example')).rejects.toThrow(
-      /Could not resolve/,
+      /unknown or on a private/,
     );
+  });
+
+  it('rejects ports the crawler would refuse', async () => {
+    resolveTo('93.184.215.14');
+    await expect(assertPublicUrl('https://example.com:8443/docs')).rejects.toThrow(
+      /standard ports/,
+    );
+    await expect(assertPublicUrl('https://example.com:443/docs')).resolves.toBeInstanceOf(URL);
   });
 });

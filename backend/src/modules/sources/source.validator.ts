@@ -4,6 +4,14 @@ import { paginationQuerySchema } from '../../utils/helpers/pagination.helpers.js
 
 const { website } = appConfig.sources;
 
+/** Query text: Postgres rejects NUL in text, so it is a 400 here rather than a 500 there. */
+export const text = (max: number) =>
+  z
+    .string()
+    .min(1)
+    .max(max)
+    .refine((value) => !value.includes('\0'), 'Must not contain NUL characters');
+
 const httpUrl = z.url({ protocol: /^https?$/, message: 'Must be an http(s) URL' }).max(2_000);
 
 const repoSourceSchema = z.object({
@@ -45,7 +53,7 @@ const pathCursorSchema = z
   .max(6_000)
   .transform((value, ctx) => {
     const path = Buffer.from(value, 'base64url').toString('utf8');
-    if (!path) {
+    if (!path || path.includes('\0')) {
       ctx.addIssue({ code: 'custom', message: 'Invalid cursor' });
       return z.NEVER;
     }
@@ -56,18 +64,19 @@ export const listFilesQuerySchema = z.object({
   cursor: pathCursorSchema.optional(),
   limit: paginationQuerySchema.shape.limit,
   // Only files under this path, e.g. "src/"; matched literally.
-  prefix: z.string().min(1).max(1_000).optional(),
+  prefix: text(1_000).optional(),
 });
 
-const line = z.coerce.number().int().min(1);
+// Postgres int4: larger numbers would fail in SQL instead of here.
+const line = z.coerce.number().int().min(1).max(2_000_000_000);
 
 // One way to pick the text: a physical page of a PDF, a TOC section, or lines of a
 // repository file.
 export const sourceContentQuerySchema = z
   .object({
-    page: z.coerce.number().int().min(1).optional(),
+    page: line.optional(),
     tocNodeId: z.uuid().optional(),
-    path: z.string().min(1).max(1_000).optional(),
+    path: text(1_000).optional(),
     lineStart: line.optional(),
     lineEnd: line.optional(),
   })

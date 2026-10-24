@@ -15,6 +15,8 @@ const html = (title: string, body: string) =>
   `<!doctype html><html><head><title>${title}</title></head><body>` +
   `<nav><a href="/">Home</a></nav><main>${body}</main><footer>Footer text</footer></body></html>`;
 
+export const HOME_MARKER = 'Welcome to the landing page.';
+
 const escape = (text: string) => text.replace(/&/g, '&amp;').replace(/</g, '&lt;');
 
 type Page = { type: string; body: string };
@@ -27,7 +29,7 @@ const pages: Record<string, Page> = {
   '/robots.txt': { type: 'text/plain', body: 'User-agent: *\nDisallow: /private\n' },
   '/': page(
     'Fixture Docs',
-    `<h1>Fixture Docs</h1><p>${filler}</p>
+    `<h1>Fixture Docs</h1><p>${filler} ${HOME_MARKER}</p>
        <ul>
          <li><a href="/guide">Guide</a></li>
          <li><a href="/private/secret">Secret</a></li>
@@ -51,6 +53,9 @@ const pages: Record<string, Page> = {
   '/data.bin': { type: 'application/octet-stream', body: 'not a web page' },
 };
 
+// Per-test replacements for pages; null takes a page down.
+const overrides = new Map<string, Page | null>();
+
 let server: Server | undefined;
 const hits = new Map<string, number>();
 
@@ -64,7 +69,7 @@ export const site = {
         res.writeHead(302, { Location: '/guide' }).end();
         return;
       }
-      const found = pages[path];
+      const found = overrides.has(path) ? overrides.get(path) : pages[path];
       if (!found) {
         res.writeHead(404, { 'Content-Type': 'text/plain' }).end('Not found');
         return;
@@ -85,6 +90,11 @@ export const site = {
   },
   reset() {
     hits.clear();
+    overrides.clear();
+  },
+  /** Serves `body` as an HTML page at `path`, or a 404 when `body` is null. */
+  replace(path: string, title: string, body: string | null) {
+    overrides.set(path, body === null ? null : page(title, body));
   },
   requests: (path: string) => hits.get(path) ?? 0,
 };

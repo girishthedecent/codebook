@@ -339,6 +339,8 @@ model CodeSymbol {
   @@unique([sourceId, qualifiedName])
   @@index([sourceId, name])
   @@index([documentId])
+  // Deleting chunks sets this to null; without the index each delete scans every symbol.
+  @@index([chunkId])
 }
 
 model CodeEdge {

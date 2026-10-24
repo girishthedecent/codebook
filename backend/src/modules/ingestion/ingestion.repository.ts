@@ -168,7 +168,8 @@ export async function writeIndex(input: IndexInput): Promise<'done' | 'gone' | '
           lastIngestedAt: new Date(),
         },
       });
-      await tx.ingestDraft.delete({ where: { sourceId } });
+      // This run's draft only: one saved by a newer run since the check above stays.
+      await tx.ingestDraft.deleteMany({ where: { sourceId, runId } });
       return 'done';
     },
     { timeout: appConfig.ingestion.indexTimeoutMs, maxWait: 10_000 },
@@ -192,8 +193,13 @@ export async function failIngest(
     `;
     if (!source) return null;
     if (source.lastIngestedAt && source.lastIngestedAt > queuedAt) return null;
-    const draft = await tx.ingestDraft.findUnique({ where: { sourceId }, select: { runId: true } });
-    if (draft && draft.runId !== runId) return null;
+    const draft = await tx.ingestDraft.findUnique({
+      where: { sourceId },
+      select: { runId: true, updatedAt: true },
+    });
+    // Another run's draft only counts when it was written after this run was queued: a draft
+    // left by a run that was cancelled (no onFailure) must not silence this failure.
+    if (draft && draft.runId !== runId && draft.updatedAt > queuedAt) return null;
 
     await tx.source.update({
       where: { id: sourceId },
