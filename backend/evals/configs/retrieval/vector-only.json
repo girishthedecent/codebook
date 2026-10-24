@@ -1,0 +1,9 @@
+{
+  "name": "vector-only",
+  "description": "Vector search alone.",
+  "search": {
+    "mode": "vector",
+    "rerank": false,
+    "topK": 20
+  }
+}

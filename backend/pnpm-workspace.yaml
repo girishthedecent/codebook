@@ -8,3 +8,5 @@ allowBuilds:
   tree-sitter-javascript: false
   tree-sitter-python: false
   tree-sitter-typescript: false
+  # The CPU runtime ships in the package; its postinstall only fetches GPU (CUDA) binaries.
+  onnxruntime-node: false

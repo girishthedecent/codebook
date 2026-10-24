@@ -10,7 +10,7 @@ import type { Draft, DraftGraph, IndexedChild } from './ingestion.types.js';
 export async function findIngestSource(sourceId: string) {
   return prismaClient.source.findUnique({
     where: { id: sourceId },
-    include: { workspace: { select: { userId: true } } },
+    include: { workspace: { select: { userId: true, settings: true } } },
   });
 }
 

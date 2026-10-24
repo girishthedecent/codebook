@@ -1,4 +1,7 @@
 {
   "contextualize@v1": "30b655458a14204c",
-  "contextualize-code@v1": "e7ae30f2b2b75dcb"
+  "contextualize-code@v1": "e7ae30f2b2b75dcb",
+  "rewrite@v1": "111e93e1408efa1f",
+  "hyde@v1": "d4a6e18b72bd70f1",
+  "decompose@v1": "17bace7a6d1813b3"
 }

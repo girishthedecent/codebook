@@ -1,0 +1,31 @@
+{
+  "dataset": "core",
+  "sources": [
+    {
+      "sourceKey": "book",
+      "type": "PDF",
+      "title": "Designing Data-Intensive Applications",
+      "location": { "file": "ddia.pdf" },
+      "variants": ["context"]
+    },
+    {
+      "sourceKey": "repo",
+      "type": "GITHUB_REPO",
+      "title": "expressjs/express@1c6f1b0fe4000977b9a7b4f34097e4d527dd9824",
+      "location": {
+        "url": "https://github.com/expressjs/express",
+        "ref": "1c6f1b0fe4000977b9a7b4f34097e4d527dd9824"
+      }
+    },
+    {
+      "sourceKey": "docs",
+      "type": "WEBSITE",
+      "title": "Routing · Express.js",
+      "location": {
+        "url": "https://expressjs.com/en/guide/routing.html",
+        "maxDepth": 0,
+        "maxPages": 1
+      }
+    }
+  ]
+}

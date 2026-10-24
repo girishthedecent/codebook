@@ -1,0 +1,11 @@
+{
+  "name": "hybrid-rerank-rewrite",
+  "description": "Hybrid + rerank on a model-rewritten question.",
+  "search": {
+    "mode": "hybrid",
+    "rerank": true,
+    "queryMode": "rewrite",
+    "topK": 20
+  },
+  "gapMs": 4000
+}

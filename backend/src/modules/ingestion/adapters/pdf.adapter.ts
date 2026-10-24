@@ -43,7 +43,7 @@ export async function preparePdf(
 
   await ctx.stage('CHUNKING', 10);
   const content = pages.join('\f');
-  const contentHash = ingestHash(source.title, [content]);
+  const contentHash = ingestHash(source.title, [content], ctx.contextual);
   if (ctx.unchanged(contentHash)) return { outcome: 'unchanged' };
 
   const plan = chunkDocument(content, toc);

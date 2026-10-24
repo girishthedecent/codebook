@@ -2,3 +2,5 @@ dist
 coverage
 src/generated
 pnpm-lock.yaml
+evals/reports
+.cache

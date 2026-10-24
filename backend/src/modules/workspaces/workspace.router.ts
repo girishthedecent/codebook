@@ -5,6 +5,8 @@ import {
   validateRequestBody,
   validateRequestParams,
 } from '../../middlewares/validator.middleware.js';
+import { searchHandler } from '../retrieval/retrieval.controller.js';
+import { searchBodySchema } from '../retrieval/retrieval.validator.js';
 import { workspaceSourcesRouter } from '../sources/source.router.js';
 import {
   createWorkspaceHandler,
@@ -42,6 +44,13 @@ workspaceRouter.delete(
   '/:workspaceId',
   validateRequestParams(workspaceParamsSchema),
   deleteWorkspaceHandler,
+);
+
+workspaceRouter.post(
+  '/:workspaceId/search',
+  validateRequestParams(workspaceParamsSchema),
+  validateRequestBody(searchBodySchema),
+  searchHandler,
 );
 
 // Behind this router's requireAuth; see source.router.ts.

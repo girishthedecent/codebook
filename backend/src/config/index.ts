@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { isIP } from 'node:net';
 import { z } from 'zod';
+import { appConfig } from './app.config.js';
 
 const optional = z.string().optional();
 
@@ -88,7 +89,15 @@ const baseSchema = z.object({
   GEMINI_API_KEY: optional,
   TAVILY_API_KEY: optional,
 
-  RERANKER_MODEL: z.string().default('Xenova/bge-reranker-base'),
+  // bge-reranker-base scores a little better but takes ~23s for 20 chunks on a 4-core CPU;
+  // MiniLM takes ~2s. Evals compare the two.
+  RERANKER_MODEL: z
+    .string()
+    .default('Xenova/ms-marco-MiniLM-L-6-v2')
+    .refine(
+      (model) => model in appConfig.retrieval.reranker.thresholds,
+      'needs score thresholds in appConfig.retrieval.reranker',
+    ),
   RERANKER_CACHE_DIR: z.string().default('.cache/models'),
 
   LIVE_TESTS: z.stringbool().default(false),

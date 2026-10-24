@@ -20,6 +20,9 @@ type EmbedOptions = {
   title?: string;
   abortSignal?: AbortSignal;
   ctx?: CallContext;
+  // Search embeds a HyDE passage as a document, but a user is waiting on it: count it
+  // against the quota without waiting for room.
+  waitForQuota?: boolean;
 };
 
 // The free tier counts texts, not requests: 100 a minute for everyone. Ingestion
@@ -72,8 +75,9 @@ async function embedMissing(entries: [key: string, input: string][], options: Em
 
   const embedBatch = async (batch: [string, string][]) => {
     const values = batch.map(([, input]) => input);
-    if (options.kind === 'document') await quota.take(values.length);
-    else quota.record(values.length);
+    if (options.kind === 'document' && options.waitForQuota !== false) {
+      await quota.take(values.length);
+    } else quota.record(values.length);
     const { embeddings, usage } = await withRetry(
       (signal) =>
         embedMany({

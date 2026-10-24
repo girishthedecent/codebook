@@ -92,6 +92,9 @@ export type Draft = {
   userId: string;
   workspaceId: string;
   contentHash: string;
+  // Contextual retrieval for this run (the workspace setting at prepare time). Missing in
+  // older drafts: then the app default.
+  contextual?: boolean;
   documents: DraftDocument[];
 };
 

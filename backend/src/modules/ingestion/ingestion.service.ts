@@ -5,7 +5,12 @@ import type { AdapterContext, AdapterResult } from './adapters/adapter.js';
 import { preparePdf } from './adapters/pdf.adapter.js';
 import { prepareRepo } from './adapters/repo.adapter.js';
 import { prepareWebsite } from './adapters/website.adapter.js';
-import { contextUnitsFor, unitsPerStep } from './contextUnits.js';
+import {
+  contextUnitsFor,
+  contextualRetrievalFor,
+  isContextual,
+  unitsPerStep,
+} from './contextUnits.js';
 import { contextualizePack, contextualizeParent } from './contextualizer.js';
 import { indexedChildren } from './indexedChildren.js';
 import {
@@ -50,7 +55,9 @@ export async function prepareSource(sourceId: string, runId: string): Promise<Pr
   if (!source) return { outcome: 'gone' };
 
   const stats = source.stats as { missingContexts?: number };
+  const contextual = contextualRetrievalFor(source.workspace.settings);
   const ctx: AdapterContext = {
+    contextual,
     stage: (stage: IngestStage, progress: number) => setIngestState(sourceId, { stage, progress }),
     unchanged: (contentHash) =>
       source.contentHash === contentHash &&
@@ -85,11 +92,11 @@ export async function prepareSource(sourceId: string, runId: string): Promise<Pr
     userId: source.workspace.userId,
     workspaceId: source.workspaceId,
     contentHash: result.contentHash,
+    contextual,
     documents: result.documents,
   };
   if (!(await saveDraft(sourceId, runId, draft, result.graph))) return { outcome: 'gone' };
 
-  const contextual = appConfig.ingestion.contextualRetrieval;
   const children = draft.documents.reduce((sum, doc) => sum + doc.children.length, 0);
   return {
     outcome: 'draft',
@@ -184,8 +191,7 @@ export async function indexStep(sourceId: string, runId: string) {
   }
   const graph = draft.repo ? await loadGraph(sourceId) : null;
 
-  const contextual = appConfig.ingestion.contextualRetrieval;
-  const missingContexts = contextual
+  const missingContexts = isContextual(draft)
     ? [...children.values()].filter((child) => child.context === null).length
     : 0;
   const documents = draft.documents;

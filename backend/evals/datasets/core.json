@@ -1,0 +1,1080 @@
+[
+  {
+    "id": "book-001",
+    "type": "BOOK",
+    "split": "DEV",
+    "question": "Why would an LSM-based key-value store add a Bloom filter, and which kind of lookup does it speed up?",
+    "expectedAnswer": "Looking up a key that doesn't exist would otherwise mean checking the memtable and every segment down to the oldest; a Bloom filter cheaply says a key is absent and skips those disk reads.",
+    "expectedRefs": [
+      {
+        "sourceKey": "book",
+        "pageStart": 99,
+        "pageEnd": 99
+      }
+    ],
+    "tags": ["storage", "lsm-tree", "bloom-filter"],
+    "reviewed": true
+  },
+  {
+    "id": "book-002",
+    "type": "BOOK",
+    "split": "DEV",
+    "question": "In a Bitcask-style log with an in-memory hash index, what workload fits best and how is disk space reclaimed when the log only grows?",
+    "expectedAnswer": "It suits many updates to a modest number of keys that all fit in RAM; the log is cut into segments that are compacted (keeping only the latest value per key) and merged in the background.",
+    "expectedRefs": [
+      {
+        "sourceKey": "book",
+        "pageStart": 93,
+        "pageEnd": 93
+      }
+    ],
+    "tags": ["storage", "hash-index", "compaction"],
+    "reviewed": true
+  },
+  {
+    "id": "book-003",
+    "type": "BOOK",
+    "split": "DEV",
+    "question": "Why does storing a table by column instead of by row help analytic queries, and how do you rebuild a single record from that layout?",
+    "expectedAnswer": "Values of each column are stored together (e.g. one file per column) so a query reads only the columns it needs; every column file keeps rows in the same order, so the nth entry of each column forms row n.",
+    "expectedRefs": [
+      {
+        "sourceKey": "book",
+        "pageStart": 115,
+        "pageEnd": 116
+      }
+    ],
+    "tags": ["storage", "column-store", "analytics"],
+    "reviewed": true
+  },
+  {
+    "id": "book-004",
+    "type": "BOOK",
+    "split": "HELDOUT",
+    "question": "Why did Twitter move from querying timelines at read time to precomputing them, and what do they do for accounts with huge follower counts?",
+    "expectedAnswer": "Timeline reads vastly outnumber tweet writes, so doing the fan-out at write time into per-user timeline caches is cheaper; celebrity tweets are excluded from that fan-out and merged in when the timeline is read.",
+    "expectedRefs": [
+      {
+        "sourceKey": "book",
+        "pageStart": 32,
+        "pageEnd": 33
+      }
+    ],
+    "tags": ["scalability", "fan-out", "load"],
+    "reviewed": true
+  },
+  {
+    "id": "book-005",
+    "type": "BOOK",
+    "split": "DEV",
+    "question": "In Thrift or Protocol Buffers, which parts of a field can I change when evolving the schema without breaking old data?",
+    "expectedAnswer": "You can rename a field, since encoded data refers to fields only by tag number, but never change a field's tag; new fields need new tag numbers and must be optional or have a default so old data stays readable.",
+    "expectedRefs": [
+      {
+        "sourceKey": "book",
+        "pageStart": 138,
+        "pageEnd": 139
+      }
+    ],
+    "tags": ["encoding", "protobuf", "schema-evolution"],
+    "reviewed": true
+  },
+  {
+    "id": "book-006",
+    "type": "BOOK",
+    "split": "DEV",
+    "question": "If an application reading Avro data expects a slightly different record layout than the one the data was encoded with, how does decoding still work?",
+    "expectedAnswer": "The two schemas only need to be compatible: Avro compares them side by side, matches fields by name, ignores writer fields the reader lacks and fills reader-only fields with their defaults.",
+    "expectedRefs": [
+      {
+        "sourceKey": "book",
+        "pageStart": 142,
+        "pageEnd": 142
+      }
+    ],
+    "tags": ["encoding", "avro", "schema-evolution"],
+    "reviewed": true
+  },
+  {
+    "id": "book-007",
+    "type": "BOOK",
+    "split": "DEV",
+    "question": "With leader-follower replication, how can a system make sure users always see the changes they just made themselves?",
+    "expectedAnswer": "Provide read-your-writes consistency, for example by reading data the user may have edited from the leader, or by tracking the timestamp of the user's last write and only serving reads from replicas caught up to it.",
+    "expectedRefs": [
+      {
+        "sourceKey": "book",
+        "pageStart": 178,
+        "pageEnd": 179
+      }
+    ],
+    "tags": ["replication", "replication-lag", "consistency"],
+    "reviewed": true
+  },
+  {
+    "id": "book-008",
+    "type": "BOOK",
+    "split": "HELDOUT",
+    "question": "In leaderless replication, what relation between w, r and n makes reads return up-to-date values, and how many failed nodes does n=5, w=3, r=3 tolerate?",
+    "expectedAnswer": "When w + r > n, at least one of the nodes read has the latest successful write; with five replicas and w = r = 3 the system can tolerate two unavailable nodes.",
+    "expectedRefs": [
+      {
+        "sourceKey": "book",
+        "pageStart": 195,
+        "pageEnd": 196
+      }
+    ],
+    "tags": ["replication", "quorum", "leaderless"],
+    "reviewed": true
+  },
+  {
+    "id": "book-009",
+    "type": "BOOK",
+    "split": "DEV",
+    "question": "What is a sloppy quorum, and why doesn't it guarantee reading the latest value even when w + r > n?",
+    "expectedAnswer": "During a network problem writes are accepted by reachable nodes outside the key's usual home nodes and handed back later (hinted handoff), so a read of r home nodes can miss the newest value until that handoff finishes.",
+    "expectedRefs": [
+      {
+        "sourceKey": "book",
+        "pageStart": 199,
+        "pageEnd": 200
+      }
+    ],
+    "tags": ["replication", "sloppy-quorum", "hinted-handoff"],
+    "reviewed": true
+  },
+  {
+    "id": "book-010",
+    "type": "BOOK",
+    "split": "DEV",
+    "question": "What do you give up by partitioning on a hash of the key instead of on key ranges?",
+    "expectedAnswer": "Efficient range queries: adjacent keys end up scattered over all partitions, so a range scan has to hit every partition or isn't supported at all.",
+    "expectedRefs": [
+      {
+        "sourceKey": "book",
+        "pageStart": 218,
+        "pageEnd": 218
+      }
+    ],
+    "tags": ["partitioning", "hashing", "range-queries"],
+    "reviewed": true
+  },
+  {
+    "id": "book-011",
+    "type": "BOOK",
+    "split": "DEV",
+    "question": "Why is placing each key on node number hash(key) modulo the node count a poor idea when the cluster grows, and what do databases do instead?",
+    "expectedAnswer": "Changing the node count moves most keys to different nodes; instead create many more partitions than nodes and move whole partitions between nodes when the cluster changes.",
+    "expectedRefs": [
+      {
+        "sourceKey": "book",
+        "pageStart": 223,
+        "pageEnd": 224
+      }
+    ],
+    "tags": ["partitioning", "rebalancing"],
+    "reviewed": true
+  },
+  {
+    "id": "book-012",
+    "type": "BOOK",
+    "split": "HELDOUT",
+    "question": "How does a log-based message broker keep track of which messages a consumer has already processed?",
+    "expectedAnswer": "Consumers read each partition in order, so the broker only stores each consumer's offset periodically; anything below it is done, and after a failure another consumer resumes from the last recorded offset, possibly reprocessing a few messages.",
+    "expectedRefs": [
+      {
+        "sourceKey": "book",
+        "pageStart": 457,
+        "pageEnd": 457
+      }
+    ],
+    "tags": ["streams", "message-broker", "offsets"],
+    "reviewed": true
+  },
+  {
+    "id": "book-013",
+    "type": "BOOK",
+    "split": "DEV",
+    "question": "What does the read committed isolation level actually protect a transaction against?",
+    "expectedAnswer": "Readers only see committed data (no dirty reads), and writers only overwrite committed data (no dirty writes).",
+    "expectedRefs": [
+      {
+        "sourceKey": "book",
+        "pageStart": 247,
+        "pageEnd": 247
+      }
+    ],
+    "tags": ["transactions", "isolation", "read-committed"],
+    "reviewed": true
+  },
+  {
+    "id": "book-014",
+    "type": "BOOK",
+    "split": "DEV",
+    "question": "Why can two on-call doctors both go off call under snapshot isolation, and what is this anomaly called?",
+    "expectedAnswer": "Each transaction checks that at least two doctors are on call in its own snapshot, then updates a different row, so both commit and nobody is left on call; this is write skew, which needs serializable isolation or explicit row locks to prevent.",
+    "expectedRefs": [
+      {
+        "sourceKey": "book",
+        "pageStart": 260,
+        "pageEnd": 261
+      }
+    ],
+    "tags": ["transactions", "write-skew", "snapshot-isolation"],
+    "reviewed": true
+  },
+  {
+    "id": "book-015",
+    "type": "BOOK",
+    "split": "DEV",
+    "question": "Does serializable snapshot isolation block conflicting transactions up front, and under what conditions does its approach struggle?",
+    "expectedAnswer": "It is optimistic: transactions run without blocking and are checked at commit, aborting if serializability was violated; under high contention many transactions abort and retries make things worse.",
+    "expectedRefs": [
+      {
+        "sourceKey": "book",
+        "pageStart": 274,
+        "pageEnd": 275
+      }
+    ],
+    "tags": ["transactions", "ssi", "concurrency-control"],
+    "reviewed": true
+  },
+  {
+    "id": "book-016",
+    "type": "BOOK",
+    "split": "HELDOUT",
+    "question": "How do fencing tokens stop a client that paused past its lease expiry from corrupting shared storage?",
+    "expectedAnswer": "Every lease grant comes with an increasing number that the client sends with each write; storage rejects writes carrying a lower token than one it has already seen, so the stale client's write is refused.",
+    "expectedRefs": [
+      {
+        "sourceKey": "book",
+        "pageStart": 316,
+        "pageEnd": 317
+      }
+    ],
+    "tags": ["distributed-systems", "locks", "fencing"],
+    "reviewed": true
+  },
+  {
+    "id": "book-017",
+    "type": "BOOK",
+    "split": "DEV",
+    "question": "Why should timeouts and durations be measured with a monotonic clock rather than the time-of-day clock?",
+    "expectedAnswer": "The time-of-day clock can be reset by NTP and jump backwards, while a monotonic clock always moves forward, so differences between two readings are meaningful even though its absolute value isn't.",
+    "expectedRefs": [
+      {
+        "sourceKey": "book",
+        "pageStart": 302,
+        "pageEnd": 303
+      }
+    ],
+    "tags": ["distributed-systems", "clocks", "time"],
+    "reviewed": true
+  },
+  {
+    "id": "book-018",
+    "type": "BOOK",
+    "split": "DEV",
+    "question": "In two-phase commit, what happens to a participant that voted yes when the coordinator crashes before sending the decision?",
+    "expectedAnswer": "It is stuck in doubt: it can neither commit nor abort on its own, even after a timeout, and must wait for the coordinator to recover and tell it the outcome.",
+    "expectedRefs": [
+      {
+        "sourceKey": "book",
+        "pageStart": 371,
+        "pageEnd": 371
+      }
+    ],
+    "tags": ["consensus", "two-phase-commit", "atomic-commit"],
+    "reviewed": true
+  },
+  {
+    "id": "book-019",
+    "type": "BOOK",
+    "split": "DEV",
+    "question": "How can Lamport timestamps order events across nodes so that an effect is never ordered before its cause?",
+    "expectedAnswer": "Each timestamp is a (counter, node ID) pair; every node and client passes along the largest counter it has seen, and a node receiving a larger one bumps its own counter up to it, with node ID breaking ties.",
+    "expectedRefs": [
+      {
+        "sourceKey": "book",
+        "pageStart": 358,
+        "pageEnd": 359
+      }
+    ],
+    "tags": ["consensus", "ordering", "lamport-timestamps"],
+    "reviewed": true
+  },
+  {
+    "id": "book-020",
+    "type": "BOOK",
+    "split": "HELDOUT",
+    "question": "In a MapReduce job combining user profile records with clickstream events, how does the reducer see each user's profile next to that user's events without querying a database?",
+    "expectedAnswer": "Mappers emit both datasets keyed by user ID, the framework sorts and groups them so each reducer call gets one user's record (first, via secondary sort) followed by that user's events, and the reducer joins them with little memory and no network calls.",
+    "expectedRefs": [
+      {
+        "sourceKey": "book",
+        "pageStart": 415,
+        "pageEnd": 416
+      }
+    ],
+    "tags": ["batch", "mapreduce", "joins"],
+    "reviewed": true
+  },
+  {
+    "id": "code-001",
+    "type": "CODE",
+    "split": "DEV",
+    "question": "If I redirect with just a URL and no status, which status code does Express use?",
+    "expectedAnswer": "It defaults to 302; a status is only taken from the first argument when two arguments are passed.",
+    "expectedRefs": [
+      {
+        "sourceKey": "repo",
+        "path": "lib/response.js",
+        "lineStart": 815,
+        "lineEnd": 824
+      }
+    ],
+    "tags": ["response", "redirect"],
+    "reviewed": true
+  },
+  {
+    "id": "code-002",
+    "type": "CODE",
+    "split": "DEV",
+    "question": "What values are accepted when setting a response status code, and what happens with a bad one?",
+    "expectedAnswer": "Only integers from 100 to 999; a non-integer throws a TypeError and an out-of-range number throws a RangeError.",
+    "expectedRefs": [
+      {
+        "sourceKey": "repo",
+        "path": "lib/response.js",
+        "lineStart": 65,
+        "lineEnd": 77
+      }
+    ],
+    "tags": ["response", "status", "validation"],
+    "reviewed": true
+  },
+  {
+    "id": "code-003",
+    "type": "CODE",
+    "split": "DEV",
+    "question": "What happens when I pass a plain JavaScript object to res.send?",
+    "expectedAnswer": "res.send hands objects (other than null and binary views) to res.json, which serializes them and sends JSON.",
+    "expectedRefs": [
+      {
+        "sourceKey": "repo",
+        "path": "lib/response.js",
+        "lineStart": 146,
+        "lineEnd": 158
+      }
+    ],
+    "tags": ["response", "send", "json"],
+    "reviewed": true
+  },
+  {
+    "id": "code-004",
+    "type": "CODE",
+    "split": "HELDOUT",
+    "question": "Does Express write a body when it answers a HEAD request through res.send?",
+    "expectedAnswer": "No; for HEAD it calls end() without the body, otherwise it ends the response with the chunk and encoding.",
+    "expectedRefs": [
+      {
+        "sourceKey": "repo",
+        "path": "lib/response.js",
+        "lineStart": 213,
+        "lineEnd": 219
+      }
+    ],
+    "tags": ["response", "send", "head"],
+    "reviewed": true
+  },
+  {
+    "id": "code-005",
+    "type": "CODE",
+    "split": "DEV",
+    "question": "How is the JSONP callback parameter cleaned up before being used in the response?",
+    "expectedAnswer": "Every character except square brackets, word characters, dollar signs and dots is stripped from the callback name, and the response becomes text/javascript.",
+    "expectedRefs": [
+      {
+        "sourceKey": "repo",
+        "path": "lib/response.js",
+        "lineStart": 284,
+        "lineEnd": 290
+      }
+    ],
+    "tags": ["response", "jsonp", "security"],
+    "reviewed": true
+  },
+  {
+    "id": "code-006",
+    "type": "CODE",
+    "split": "DEV",
+    "question": "Why is there an empty comment at the start of JSONP responses?",
+    "expectedAnswer": "The /**/ prefix is a security mitigation against the Rosetta Flash JSONP attack; the typeof check only reduces client errors.",
+    "expectedRefs": [
+      {
+        "sourceKey": "repo",
+        "path": "lib/response.js",
+        "lineStart": 302,
+        "lineEnd": 304
+      }
+    ],
+    "tags": ["response", "jsonp", "security"],
+    "reviewed": true
+  },
+  {
+    "id": "code-007",
+    "type": "CODE",
+    "split": "DEV",
+    "question": "What goes wrong if I call sendFile with a relative path and no options?",
+    "expectedAnswer": "It throws a TypeError saying the path must be absolute or a root must be specified.",
+    "expectedRefs": [
+      {
+        "sourceKey": "repo",
+        "path": "lib/response.js",
+        "lineStart": 396,
+        "lineEnd": 398
+      }
+    ],
+    "tags": ["response", "sendFile", "validation"],
+    "reviewed": true
+  },
+  {
+    "id": "code-008",
+    "type": "CODE",
+    "split": "HELDOUT",
+    "question": "How does a file download get the file name the browser should save it as?",
+    "expectedAnswer": "res.download sets a Content-Disposition attachment header built from the base name of the given filename or path, and ignores any Content-Disposition passed in the header options.",
+    "expectedRefs": [
+      {
+        "sourceKey": "repo",
+        "path": "lib/response.js",
+        "lineStart": 459,
+        "lineEnd": 473
+      }
+    ],
+    "tags": ["response", "download", "headers"],
+    "reviewed": true
+  },
+  {
+    "id": "code-009",
+    "type": "CODE",
+    "split": "DEV",
+    "question": "How are object values and signed values encoded when setting a cookie?",
+    "expectedAnswer": "Objects are stored as 'j:' followed by their JSON; signed cookies are prefixed 's:' and signed with req.secret, which must be set by cookieParser or an error is thrown.",
+    "expectedRefs": [
+      {
+        "sourceKey": "repo",
+        "path": "lib/response.js",
+        "lineStart": 753,
+        "lineEnd": 763
+      }
+    ],
+    "tags": ["response", "cookie", "signing"],
+    "reviewed": true
+  },
+  {
+    "id": "code-010",
+    "type": "CODE",
+    "split": "DEV",
+    "question": "How does clearing a cookie actually remove it?",
+    "expectedAnswer": "clearCookie sets the cookie to an empty value with path '/' by default and an expiry date in 1970 (new Date(1)), dropping any maxAge.",
+    "expectedRefs": [
+      {
+        "sourceKey": "repo",
+        "path": "lib/response.js",
+        "lineStart": 715,
+        "lineEnd": 722
+      }
+    ],
+    "tags": ["response", "cookie"],
+    "reviewed": true
+  },
+  {
+    "id": "code-011",
+    "type": "CODE",
+    "split": "DEV",
+    "question": "In the error pages example, how does Express tell an error handler apart from normal middleware?",
+    "expectedAnswer": "Error-handling middleware takes four arguments (err, req, res, next); the example's last app.use with that signature sets the status from err.status or 500 and renders the 500 page.",
+    "expectedRefs": [
+      {
+        "sourceKey": "repo",
+        "path": "examples/error-pages/index.js",
+        "lineStart": 79,
+        "lineEnd": 97
+      }
+    ],
+    "tags": ["examples", "error-handling", "middleware"],
+    "reviewed": true
+  },
+  {
+    "id": "code-012",
+    "type": "CODE",
+    "split": "HELDOUT",
+    "question": "How does Express work out the client's IP address when the app sits behind a proxy?",
+    "expectedAnswer": "req.ip calls proxy-addr with the compiled 'trust proxy fn' setting, so forwarded addresses are only used when the proxy is trusted.",
+    "expectedRefs": [
+      {
+        "sourceKey": "repo",
+        "path": "lib/request.js",
+        "lineStart": 340,
+        "lineEnd": 343
+      }
+    ],
+    "tags": ["request", "proxy", "ip"],
+    "reviewed": true
+  },
+  {
+    "id": "code-013",
+    "type": "CODE",
+    "split": "DEV",
+    "question": "For which kinds of requests can the request be considered fresh for caching?",
+    "expectedAnswer": "Only GET, HEAD or QUERY requests whose response status is 2xx or 304; then the fresh module compares the request headers with the response ETag and Last-Modified.",
+    "expectedRefs": [
+      {
+        "sourceKey": "repo",
+        "path": "lib/request.js",
+        "lineStart": 469,
+        "lineEnd": 486
+      }
+    ],
+    "tags": ["request", "caching", "fresh"],
+    "reviewed": true
+  },
+  {
+    "id": "code-014",
+    "type": "CODE",
+    "split": "DEV",
+    "question": "How is the port stripped from the host when the Host header holds an IPv6 address?",
+    "expectedAnswer": "req.hostname skips past the closing bracket of an IPv6 literal before looking for the port colon, then cuts the host there.",
+    "expectedRefs": [
+      {
+        "sourceKey": "repo",
+        "path": "lib/request.js",
+        "lineStart": 444,
+        "lineEnd": 458
+      }
+    ],
+    "tags": ["request", "hostname", "ipv6"],
+    "reviewed": true
+  },
+  {
+    "id": "code-015",
+    "type": "CODE",
+    "split": "DEV",
+    "question": "With the default settings, what does req.subdomains contain for a request to a host with several subdomains, such as a.b.example.com?",
+    "expectedAnswer": "The host's dot-separated parts reversed with the first 'subdomain offset' parts (2 by default) dropped, so ['b', 'a']; an IP address host yields just that address.",
+    "expectedRefs": [
+      {
+        "sourceKey": "repo",
+        "path": "lib/request.js",
+        "lineStart": 383,
+        "lineEnd": 394
+      }
+    ],
+    "tags": ["request", "subdomains"],
+    "reviewed": true
+  },
+  {
+    "id": "code-016",
+    "type": "CODE",
+    "split": "HELDOUT",
+    "question": "What settings does a new Express application start with?",
+    "expectedAnswer": "x-powered-by is enabled, etag is weak, env comes from NODE_ENV (default development), the query parser is simple, subdomain offset is 2 and trust proxy is off; view cache is enabled in production.",
+    "expectedRefs": [
+      {
+        "sourceKey": "repo",
+        "path": "lib/application.js",
+        "lineStart": 93,
+        "lineEnd": 140
+      }
+    ],
+    "tags": ["application", "settings", "defaults"],
+    "reviewed": true
+  },
+  {
+    "id": "code-017",
+    "type": "CODE",
+    "split": "DEV",
+    "question": "What happens if I call app.use without passing any middleware?",
+    "expectedAnswer": "It throws a TypeError saying app.use() requires a middleware function.",
+    "expectedRefs": [
+      {
+        "sourceKey": "repo",
+        "path": "lib/application.js",
+        "lineStart": 210,
+        "lineEnd": 214
+      }
+    ],
+    "tags": ["application", "middleware", "validation"],
+    "reviewed": true
+  },
+  {
+    "id": "code-018",
+    "type": "CODE",
+    "split": "DEV",
+    "question": "Which query string parsers can I choose, and what does the extended one use?",
+    "expectedAnswer": "'simple' (or true) uses Node's querystring.parse, 'extended' uses qs.parse with allowPrototypes (via parseExtendedQueryString), false turns query parsing off, and a function is used as is.",
+    "expectedRefs": [
+      {
+        "sourceKey": "repo",
+        "path": "lib/utils.js",
+        "lineStart": 162,
+        "lineEnd": 184
+      },
+      {
+        "sourceKey": "repo",
+        "path": "lib/utils.js",
+        "lineStart": 267,
+        "lineEnd": 271
+      }
+    ],
+    "tags": ["utils", "query-parser", "settings"],
+    "reviewed": true
+  },
+  {
+    "id": "code-019",
+    "type": "CODE",
+    "split": "DEV",
+    "question": "What error do I get when rendering a template that doesn't exist?",
+    "expectedAnswer": "An error 'Failed to lookup view \"name\" in views directory ...' listing the view directories, passed to the render callback.",
+    "expectedRefs": [
+      {
+        "sourceKey": "repo",
+        "path": "lib/application.js",
+        "lineStart": 558,
+        "lineEnd": 565
+      }
+    ],
+    "tags": ["application", "views", "errors"],
+    "reviewed": true
+  },
+  {
+    "id": "code-020",
+    "type": "CODE",
+    "split": "HELDOUT",
+    "question": "If a view file isn't found directly, where else does Express look for it?",
+    "expectedAnswer": "It tries <name>.<ext> in the directory first, then falls back to <name>/index.<ext>.",
+    "expectedRefs": [
+      {
+        "sourceKey": "repo",
+        "path": "lib/view.js",
+        "lineStart": 169,
+        "lineEnd": 187
+      }
+    ],
+    "tags": ["views", "lookup"],
+    "reviewed": true
+  },
+  {
+    "id": "multi-001",
+    "type": "MULTI_HOP",
+    "split": "DEV",
+    "question": "How do LSM-tree engines and B-trees each protect recent writes against a crash?",
+    "expectedAnswer": "An LSM-tree appends every write to a separate on-disk log so the in-memory memtable can be rebuilt; a B-tree writes each change to a write-ahead log before modifying pages, and replays it to restore a consistent tree.",
+    "expectedRefs": [
+      {
+        "sourceKey": "book",
+        "pageStart": 98,
+        "pageEnd": 98
+      },
+      {
+        "sourceKey": "book",
+        "pageStart": 102,
+        "pageEnd": 102
+      }
+    ],
+    "tags": ["storage", "crash-recovery", "wal"],
+    "reviewed": true
+  },
+  {
+    "id": "multi-002",
+    "type": "MULTI_HOP",
+    "split": "DEV",
+    "question": "Why is a row-level logical replication log a good basis for change data capture, and how does CDC keep something like a search index in step with the database?",
+    "expectedAnswer": "A logical log describes row changes independently of the storage engine, so outside programs can parse it; CDC streams those changes and applies them to the search index in the same order they were written, making the index effectively a follower of the database.",
+    "expectedRefs": [
+      {
+        "sourceKey": "book",
+        "pageStart": 175,
+        "pageEnd": 176
+      },
+      {
+        "sourceKey": "book",
+        "pageStart": 461,
+        "pageEnd": 461
+      }
+    ],
+    "tags": ["replication", "cdc", "streams"],
+    "reviewed": true
+  },
+  {
+    "id": "multi-003",
+    "type": "MULTI_HOP",
+    "split": "DEV",
+    "question": "In a Dynamo-style leaderless store, how does a replica that was offline catch up on the writes it missed, and where do writes go while the key's usual replicas are unreachable?",
+    "expectedAnswer": "Missed writes are repaired when a read notices a stale replica and writes the newer value back, or by a background anti-entropy process that compares replicas; during an outage a sloppy quorum lets other reachable nodes accept the writes and hand them back to the home nodes later (hinted handoff).",
+    "expectedRefs": [
+      {
+        "sourceKey": "book",
+        "pageStart": 194,
+        "pageEnd": 195
+      },
+      {
+        "sourceKey": "book",
+        "pageStart": 199,
+        "pageEnd": 200
+      }
+    ],
+    "tags": ["replication", "read-repair", "hinted-handoff", "leaderless"],
+    "reviewed": true
+  },
+  {
+    "id": "multi-004",
+    "type": "MULTI_HOP",
+    "split": "HELDOUT",
+    "question": "Is the consistency promised by ACID something the database enforces on its own, and what does the CAP theorem say a linearizable system must give up when replicas lose contact with each other?",
+    "expectedAnswer": "No: ACID consistency means application invariants holding, which mostly depends on the application writing correct transactions (the database only checks a few constraints); under CAP, a system that must stay linearizable makes disconnected replicas unavailable during a network partition.",
+    "expectedRefs": [
+      {
+        "sourceKey": "book",
+        "pageStart": 239,
+        "pageEnd": 239
+      },
+      {
+        "sourceKey": "book",
+        "pageStart": 349,
+        "pageEnd": 349
+      }
+    ],
+    "tags": ["transactions", "consistency", "cap", "linearizability"],
+    "reviewed": true
+  },
+  {
+    "id": "multi-005",
+    "type": "MULTI_HOP",
+    "split": "DEV",
+    "question": "When a handler calls res.json, what code path ends up writing the response?",
+    "expectedAnswer": "res.json stringifies the value using the app's json replacer/spaces/escape settings, sets Content-Type to application/json if unset, then calls res.send, which sets Content-Length and ETag, handles freshness and ends the response.",
+    "expectedRefs": [
+      {
+        "sourceKey": "repo",
+        "path": "lib/response.js",
+        "lineStart": 236,
+        "lineEnd": 250
+      },
+      {
+        "sourceKey": "repo",
+        "path": "lib/response.js",
+        "lineStart": 161,
+        "lineEnd": 222
+      }
+    ],
+    "tags": ["response", "json", "send", "flow"],
+    "reviewed": true
+  },
+  {
+    "id": "multi-006",
+    "type": "MULTI_HOP",
+    "split": "DEV",
+    "question": "How does a redirect decide which body to send back to the client?",
+    "expectedAnswer": "res.redirect sets the Location header through res.location (URL-encoded), then uses res.format, which picks text, html or the empty default based on the Accept header via req.accepts.",
+    "expectedRefs": [
+      {
+        "sourceKey": "repo",
+        "path": "lib/response.js",
+        "lineStart": 838,
+        "lineEnd": 856
+      },
+      {
+        "sourceKey": "repo",
+        "path": "lib/response.js",
+        "lineStart": 574,
+        "lineEnd": 599
+      },
+      {
+        "sourceKey": "repo",
+        "path": "lib/request.js",
+        "lineStart": 127,
+        "lineEnd": 130
+      }
+    ],
+    "tags": ["response", "redirect", "content-negotiation", "flow"],
+    "reviewed": true
+  },
+  {
+    "id": "multi-007",
+    "type": "MULTI_HOP",
+    "split": "DEV",
+    "question": "Trace what happens when a route calls res.render without a callback.",
+    "expectedAnswer": "res.render merges res.locals and uses a default callback that sends the HTML or calls next(err); it calls app.render, which builds or reuses a cached View and renders it through tryRender, and View.render calls the engine and makes the callback async.",
+    "expectedRefs": [
+      {
+        "sourceKey": "repo",
+        "path": "lib/response.js",
+        "lineStart": 897,
+        "lineEnd": 921
+      },
+      {
+        "sourceKey": "repo",
+        "path": "lib/application.js",
+        "lineStart": 522,
+        "lineEnd": 575
+      },
+      {
+        "sourceKey": "repo",
+        "path": "lib/view.js",
+        "lineStart": 133,
+        "lineEnd": 159
+      }
+    ],
+    "tags": ["views", "render", "flow"],
+    "reviewed": true
+  },
+  {
+    "id": "multi-008",
+    "type": "MULTI_HOP",
+    "split": "HELDOUT",
+    "question": "How does the etag setting end up affecting the ETag header on responses?",
+    "expectedAnswer": "app.set('etag', ...) compiles the value with compileETag into the 'etag fn' setting (weak ETags by default); res.send calls that function on the body to set an ETag when none is set.",
+    "expectedRefs": [
+      {
+        "sourceKey": "repo",
+        "path": "lib/application.js",
+        "lineStart": 363,
+        "lineEnd": 366
+      },
+      {
+        "sourceKey": "repo",
+        "path": "lib/utils.js",
+        "lineStart": 130,
+        "lineEnd": 152
+      },
+      {
+        "sourceKey": "repo",
+        "path": "lib/response.js",
+        "lineStart": 161,
+        "lineEnd": 193
+      }
+    ],
+    "tags": ["etag", "settings", "caching", "flow"],
+    "reviewed": true
+  },
+  {
+    "id": "multi-009",
+    "type": "MULTI_HOP",
+    "split": "DEV",
+    "question": "How does res.download eventually stream the file, and what happens to errors if I pass no callback?",
+    "expectedAnswer": "res.download sets a Content-Disposition attachment header and calls res.sendFile with the resolved path; sendFile creates a send stream and the sendfile helper wires its events and pipes it into the response. Without a callback, a directory error calls next() and other errors except aborted or write errors go to next(err).",
+    "expectedRefs": [
+      {
+        "sourceKey": "repo",
+        "path": "lib/response.js",
+        "lineStart": 459,
+        "lineEnd": 485
+      },
+      {
+        "sourceKey": "repo",
+        "path": "lib/response.js",
+        "lineStart": 396,
+        "lineEnd": 416
+      },
+      {
+        "sourceKey": "repo",
+        "path": "lib/response.js",
+        "lineStart": 990,
+        "lineEnd": 1011
+      }
+    ],
+    "tags": ["response", "download", "sendFile", "flow"],
+    "reviewed": true
+  },
+  {
+    "id": "multi-010",
+    "type": "MULTI_HOP",
+    "split": "DEV",
+    "question": "How does turning on trust proxy change what req.protocol returns?",
+    "expectedAnswer": "Setting 'trust proxy' compiles a trust function with compileTrust into 'trust proxy fn'; req.protocol checks the socket address against it and, when trusted, uses the first value of X-Forwarded-Proto instead of the socket's TLS state.",
+    "expectedRefs": [
+      {
+        "sourceKey": "repo",
+        "path": "lib/application.js",
+        "lineStart": 370,
+        "lineEnd": 379
+      },
+      {
+        "sourceKey": "repo",
+        "path": "lib/utils.js",
+        "lineStart": 194,
+        "lineEnd": 214
+      },
+      {
+        "sourceKey": "repo",
+        "path": "lib/request.js",
+        "lineStart": 297,
+        "lineEnd": 315
+      }
+    ],
+    "tags": ["proxy", "settings", "request", "flow"],
+    "reviewed": true
+  },
+  {
+    "id": "cross-001",
+    "type": "CROSS_SOURCE",
+    "split": "DEV",
+    "question": "The routing guide says one method handles every HTTP verb for a path. How is that implemented?",
+    "expectedAnswer": "app.all creates the route for the path and registers the same handlers for every method in the methods list.",
+    "expectedRefs": [
+      {
+        "sourceKey": "docs",
+        "url": "https://expressjs.com/en/guide/routing/",
+        "heading": "Route methods"
+      },
+      {
+        "sourceKey": "repo",
+        "path": "lib/application.js",
+        "lineStart": 494,
+        "lineEnd": 503
+      }
+    ],
+    "tags": ["routing", "app.all"],
+    "reviewed": true
+  },
+  {
+    "id": "cross-002",
+    "type": "CROSS_SOURCE",
+    "split": "DEV",
+    "question": "The guide chains .get().post().put() on app.route('/book'). What does app.route actually return?",
+    "expectedAnswer": "It returns this.router.route(path), a Route instance from the router, whose verb methods can be chained.",
+    "expectedRefs": [
+      {
+        "sourceKey": "docs",
+        "url": "https://expressjs.com/en/guide/routing/",
+        "heading": "app.route()"
+      },
+      {
+        "sourceKey": "repo",
+        "path": "lib/application.js",
+        "lineStart": 256,
+        "lineEnd": 258
+      }
+    ],
+    "tags": ["routing", "app.route"],
+    "reviewed": true
+  },
+  {
+    "id": "cross-003",
+    "type": "CROSS_SOURCE",
+    "split": "DEV",
+    "question": "The docs list a response method that sets the status and sends its text. What body does it send exactly?",
+    "expectedAnswer": "res.sendStatus sends the standard status message from the statuses package, or the number as a string if there is none, as text/plain.",
+    "expectedRefs": [
+      {
+        "sourceKey": "docs",
+        "url": "https://expressjs.com/en/guide/routing/",
+        "heading": "Response methods"
+      },
+      {
+        "sourceKey": "repo",
+        "path": "lib/response.js",
+        "lineStart": 325,
+        "lineEnd": 332
+      }
+    ],
+    "tags": ["routing", "response", "sendStatus"],
+    "reviewed": true
+  },
+  {
+    "id": "cross-004",
+    "type": "CROSS_SOURCE",
+    "split": "HELDOUT",
+    "question": "The routing guide mounts a router module with app.use('/birds', birds). How does app.use work out the mount path, and what does it do with a router that isn't a full Express app?",
+    "expectedAnswer": "If the first argument isn't a function (looking inside arrays), it is taken as the path, otherwise the path defaults to '/'; each remaining handler that isn't an Express app is passed to the app router's use() with that path.",
+    "expectedRefs": [
+      {
+        "sourceKey": "docs",
+        "url": "https://expressjs.com/en/guide/routing/",
+        "heading": "express.Router"
+      },
+      {
+        "sourceKey": "repo",
+        "path": "lib/application.js",
+        "lineStart": 190,
+        "lineEnd": 223
+      }
+    ],
+    "tags": ["routing", "router", "app.use", "mounting"],
+    "reviewed": true
+  },
+  {
+    "id": "cross-005",
+    "type": "CROSS_SOURCE",
+    "split": "DEV",
+    "question": "The guide defines GET routes with app.get. How are app.get and the other verb methods created, and why can app.get also read settings?",
+    "expectedAnswer": "Express loops over Node's lowercased HTTP method list and defines app[method] to create a route and register handlers; app.get with a single argument returns that setting instead.",
+    "expectedRefs": [
+      {
+        "sourceKey": "docs",
+        "url": "https://expressjs.com/en/guide/routing/",
+        "heading": "Route methods"
+      },
+      {
+        "sourceKey": "repo",
+        "path": "lib/application.js",
+        "lineStart": 471,
+        "lineEnd": 482
+      }
+    ],
+    "tags": ["routing", "methods", "settings"],
+    "reviewed": true
+  },
+  {
+    "id": "none-001",
+    "type": "NO_ANSWER",
+    "split": "DEV",
+    "question": "Which HNSW index parameters, like M and ef_construction, trade recall against build time for vector similarity search?",
+    "expectedAnswer": "The book does not cover HNSW or vector index tuning.",
+    "expectedRefs": [],
+    "tags": ["vector-search", "indexing"],
+    "reviewed": true
+  },
+  {
+    "id": "none-002",
+    "type": "NO_ANSWER",
+    "split": "DEV",
+    "question": "How does a GraphQL server batch resolver calls to avoid the N+1 query problem against the database?",
+    "expectedAnswer": "The book does not discuss GraphQL or resolver batching.",
+    "expectedRefs": [],
+    "tags": ["graphql", "query-performance"],
+    "reviewed": true
+  },
+  {
+    "id": "none-003",
+    "type": "NO_ANSWER",
+    "split": "DEV",
+    "question": "How do I accept WebSocket upgrade requests on an Express app?",
+    "expectedAnswer": "Neither the indexed Express code nor the routing guide covers WebSockets.",
+    "expectedRefs": [],
+    "tags": ["websocket", "no-answer"],
+    "reviewed": true
+  },
+  {
+    "id": "none-004",
+    "type": "NO_ANSWER",
+    "split": "HELDOUT",
+    "question": "Which headers does Express send back for a CORS preflight request?",
+    "expectedAnswer": "Express itself doesn't handle CORS; nothing in the indexed code or the routing guide covers it.",
+    "expectedRefs": [],
+    "tags": ["cors", "no-answer"],
+    "reviewed": true
+  },
+  {
+    "id": "none-005",
+    "type": "NO_ANSWER",
+    "split": "DEV",
+    "question": "How do I turn on gzip compression for Express responses?",
+    "expectedAnswer": "Compression isn't part of the indexed Express code or the routing guide.",
+    "expectedRefs": [],
+    "tags": ["compression", "no-answer"],
+    "reviewed": true
+  }
+]

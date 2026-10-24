@@ -17,3 +17,4 @@ coverage/
 backend/evals/corpus/
 backend/evals/reports/*
 !backend/evals/reports/latest.md
+!backend/evals/reports/latest-heldout.md

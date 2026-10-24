@@ -1,0 +1,31 @@
+@base = http://localhost:4000
+@origin = http://localhost:4000
+
+### Sign in first (REST Client keeps the session cookie)
+POST {{base}}/api/auth/sign-in/email
+Content-Type: application/json
+Origin: {{origin}}
+
+{ "email": "reader@example.com", "password": "correct-horse-battery" }
+
+### Hybrid search with reranking (debug output shows each stage's timing)
+@workspaceId = replace-with-a-workspace-id
+POST {{base}}/api/v1/workspaces/{{workspaceId}}/search
+Content-Type: application/json
+Origin: {{origin}}
+
+{ "query": "how does res.send pick the Content-Type", "topK": 8 }
+
+### Keyword only, PDFs only
+POST {{base}}/api/v1/workspaces/{{workspaceId}}/search
+Content-Type: application/json
+Origin: {{origin}}
+
+{ "query": "leader election in single-leader replication", "mode": "keyword", "sourceTypes": ["PDF"] }
+
+### Split the question into sub-queries first
+POST {{base}}/api/v1/workspaces/{{workspaceId}}/search
+Content-Type: application/json
+Origin: {{origin}}
+
+{ "query": "how do express routers and app.route differ", "queryMode": "decompose" }

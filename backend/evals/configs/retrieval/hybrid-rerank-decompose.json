@@ -1,0 +1,11 @@
+{
+  "name": "hybrid-rerank-decompose",
+  "description": "Hybrid + rerank over up to three sub-questions.",
+  "search": {
+    "mode": "hybrid",
+    "rerank": true,
+    "queryMode": "decompose",
+    "topK": 20
+  },
+  "gapMs": 4000
+}

@@ -1,0 +1,9 @@
+{
+  "name": "hybrid",
+  "description": "Vector and keyword lists fused with RRF.",
+  "search": {
+    "mode": "hybrid",
+    "rerank": false,
+    "topK": 20
+  }
+}

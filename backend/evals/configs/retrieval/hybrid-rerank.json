@@ -1,0 +1,9 @@
+{
+  "name": "hybrid-rerank",
+  "description": "Hybrid, then the default local reranker (MiniLM).",
+  "search": {
+    "mode": "hybrid",
+    "rerank": true,
+    "topK": 20
+  }
+}

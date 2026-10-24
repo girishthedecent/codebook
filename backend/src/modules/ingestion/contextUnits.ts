@@ -24,6 +24,20 @@ type ContextUnit = { kind: 'parent'; group: ParentGroup } | { kind: 'pack'; pack
 
 export const isRepo = (draft: Draft) => draft.sourceType === 'GITHUB_REPO';
 
+/**
+ * Whether a workspace's sources get contextual retrieval: the app default unless the
+ * workspace settings say otherwise. Only the eval corpus script sets it (to compare search
+ * with and without contexts); it isn't part of the settings API, as flipping it re-indexes.
+ */
+export function contextualRetrievalFor(settings: unknown) {
+  const value = (settings as { contextualRetrieval?: unknown } | null)?.contextualRetrieval;
+  return typeof value === 'boolean' ? value : appConfig.ingestion.contextualRetrieval;
+}
+
+/** The setting as this run's prepare step saw it. */
+export const isContextual = (draft: Draft) =>
+  draft.contextual ?? appConfig.ingestion.contextualRetrieval;
+
 export function unitsPerStep(draft: Draft) {
   const { packsPerStep, parentsPerStep } = appConfig.ingestion.contextualize;
   return isRepo(draft) ? packsPerStep : parentsPerStep;
@@ -91,7 +105,7 @@ function codePacks(draft: Draft): CodePack[] {
 /** Each child's context cache key, by child id; empty when contextual retrieval is off. */
 export function contextKeysFor(draft: Draft) {
   const keys = new Map<string, string>();
-  if (!appConfig.ingestion.contextualRetrieval) return keys;
+  if (!isContextual(draft)) return keys;
   if (isRepo(draft)) {
     for (const doc of draft.documents) {
       const file = { path: doc.path, outline: doc.outline ?? '' };

@@ -1,0 +1,10 @@
+{
+  "name": "hybrid-rerank-bge",
+  "description": "Hybrid, then the larger bge-reranker-base (about 10x slower on CPU).",
+  "search": {
+    "mode": "hybrid",
+    "rerank": true,
+    "rerankerModel": "Xenova/bge-reranker-base",
+    "topK": 20
+  }
+}

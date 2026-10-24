@@ -38,7 +38,7 @@ export async function prepareRepo(
   if (commit === 'no-ref') return fail(`Branch, tag or commit "${ref}" no longer exists`);
 
   // A commit never changes, so an unchanged hash means nothing needs downloading.
-  const contentHash = repoIngestHash(source.title, commit.sha);
+  const contentHash = repoIngestHash(source.title, commit.sha, ctx.contextual);
   if (ctx.unchanged(contentHash)) return { outcome: 'unchanged' };
 
   let archive;

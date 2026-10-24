@@ -119,6 +119,47 @@ export const appConfig = {
     maxWalkRows: 20_000,
     maxCandidates: 20,
   },
+  retrieval: {
+    // Taken from each list (per query), fused, and the best rerankK go to the reranker.
+    candidateK: 30,
+    rerankK: 20,
+    defaultTopK: 8,
+    maxTopK: 20,
+    rrfK: 60,
+    // Off by default: on the DEV evals MiniLM added a little recall@10 (0.960 → 0.984) but
+    // made the first result worse on code (MRR 0.946 → 0.839), for ~2s of CPU per search.
+    rerankByDefault: false,
+    // How much a keyword list counts in the fusion next to a vector list. From the DEV evals:
+    // at 1 keyword matches on common words pulled hybrid below vector alone (see
+    // evals/CHANGELOG.md).
+    keywordWeight: 0.25,
+    // HNSW only kicks in on large workspaces; smaller ones get an exact scan.
+    efSearch: 80,
+    // Without the reranker, a best cosine similarity below this marks the search weak. Set
+    // from the DEV evals (gemini-embedding-2): answerable questions' best match scored
+    // 0.67-0.84, questions with no answer 0.61-0.67. Depends on the embedding model.
+    weakVectorScore: 0.65,
+    // Parent sections handed to a model, by their token counts.
+    maxContextTokens: 6_000,
+    maxQueryChars: 1_000,
+    maxSourceIds: 25,
+    reranker: {
+      batchSize: 8,
+      // Query and passage together, the models' input limit.
+      maxTokens: 512,
+      // Each model scores on its own scale: below min a result is dropped, a best score
+      // below weak marks the search weak. Tuned on the evals.
+      thresholds: {
+        'Xenova/bge-reranker-base': { min: 0.02, weak: 0.2 },
+        'Xenova/ms-marco-MiniLM-L-6-v2': { min: 0.01, weak: 0.1 },
+      } as Record<string, { min: number; weak: number }>,
+    },
+    queryModes: {
+      maxSubQueries: 3,
+      // Generated texts kept in memory, so repeated questions (an eval matrix) pay once.
+      memoSize: 500,
+    },
+  },
   github: {
     apiUrl: 'https://api.github.com',
     timeoutMs: 10_000,

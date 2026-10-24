@@ -97,6 +97,12 @@ describe('embedTexts', () => {
     expect(quota.take).not.toHaveBeenCalled();
   });
 
+  it('counts a document for search against the quota without waiting', async () => {
+    await embedTexts(['a passage that would answer'], { kind: 'document', waitForQuota: false });
+    expect(quota.record).toHaveBeenCalledWith(1);
+    expect(quota.take).not.toHaveBeenCalled();
+  });
+
   it('uses batches that fit in the per-minute window', () => {
     const { batchSize, documentsPerMinute } = appConfig.llm.embeddings;
     expect(batchSize).toBeLessThanOrEqual(documentsPerMinute);

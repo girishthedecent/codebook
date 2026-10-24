@@ -1,0 +1,11 @@
+{
+  "name": "hybrid-rerank-nocontext",
+  "description": "Hybrid + rerank on a corpus indexed without contextual notes (repo and docs only).",
+  "corpus": "nocontext",
+  "search": {
+    "mode": "hybrid",
+    "rerank": true,
+    "topK": 20
+  },
+  "caseTypes": ["CODE", "CROSS_SOURCE"]
+}

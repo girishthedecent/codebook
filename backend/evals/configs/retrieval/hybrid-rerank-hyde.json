@@ -1,0 +1,11 @@
+{
+  "name": "hybrid-rerank-hyde",
+  "description": "Hybrid + rerank; vector search uses a hypothetical answer.",
+  "search": {
+    "mode": "hybrid",
+    "rerank": true,
+    "queryMode": "hyde",
+    "topK": 20
+  },
+  "gapMs": 4000
+}

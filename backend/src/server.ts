@@ -1,7 +1,9 @@
 import { createServer } from 'node:http';
 import { createApp } from './app.js';
+import { appConfig } from './config/app.config.js';
 import { serverConfig } from './config/index.js';
 import logger from './config/logger.config.js';
+import { warmUpReranker } from './llm/reranker.js';
 import { drainRegistry, shutdownRegistry } from './utils/helpers/shutdown.helpers.js';
 import { bucketReachable } from './utils/storage.js';
 
@@ -14,6 +16,11 @@ server.on('listening', () => {
   void bucketReachable().then((ok) => {
     if (!ok) logger.warn('Storage bucket is not reachable; uploads will fail');
   });
+  // Loading the model takes seconds (minutes on the first download); searches before it is
+  // ready wait for the same load. Without reranking by default it loads on first use.
+  if (serverConfig.NODE_ENV !== 'test' && appConfig.retrieval.rerankByDefault) {
+    void warmUpReranker();
+  }
 });
 server.on('error', (err) => {
   logger.error('Server failed to start', { error: err });

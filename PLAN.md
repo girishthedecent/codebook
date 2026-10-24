@@ -1391,63 +1391,93 @@ Goal: a URL (and optionally same-site links up to a small limit) becomes clean d
 
 Goal: `search(workspaceId, query, options)` returning the best, cited chunks — vector + keyword fused with RRF, reranked locally, thresholded, expanded to parents — with selectable query modes.
 
-**9.1 Retrieval API (internal)**
-- [ ] `retrieval.service.ts`: `search({ userId, workspaceId, query, sourceIds?, sourceTypes?, pathPrefix?, mode, topK, rerank, expandParents, queryMode })` → `{ results: RetrievedChunk[], debug }`
-- [ ] `RetrievedChunk`: `{ chunkId, parentId, sourceId, sourceTitle, sourceType, documentPath, headingPath, symbolName, pageStart, pageEnd, lineStart, lineEnd, content, parentContent?, scores: { vector?, keyword?, rrf?, rerank? } }`
-- [ ] `mode`: `vector | keyword | hybrid` (default hybrid)
-- [ ] `queryMode`: `none | rewrite | hyde | decompose` (default from config)
+**Checked 2026-10-24** (planning, Phases 9 + 10 planned together):
+- pgvector in the container is **0.8.7** → iterative index scans: `SET LOCAL hnsw.iterative_scan = relaxed_order` keeps scanning the HNSW graph until enough rows pass the `workspaceId` / source filters, so no over-fetch-then-filter. Relaxed order → re-sort by distance in the outer query
+- `websearch_to_tsquery` ANDs every word: a natural question ("how does express handle errors in async routes") matched **1** chunk in the dev DB, the OR form 416 → keyword search ORs the query's lexemes (stop words already dropped by the `english` config) and lets `ts_rank_cd` reward chunks that match more of them
+- Every indexed child has a parent (PDF 924/924, repo 212/212, web 19/19) → parent expansion never has to fall back to the child alone, but the code handles it
+- `@huggingface/transformers@4.3.1` (published 2026-10-06) pulls `onnxruntime-node@1.30.0` (~300 MB unpacked: CPU binaries for every platform) and `sharp` (images; unused). onnxruntime-node's postinstall only fetches GPU binaries → both stay off in `allowBuilds`; check the CPU backend loads without them. `Xenova/bge-reranker-base` quantized ONNX is ~280 MB, downloaded once into `.cache/models` (gitignored). The user approved the download (2026-10-24)
+- The `rewrite` route (gpt-oss-20b → Flash-Lite) serves all three query modes
+- Plan reviewed once (14 findings folded in: `set_config` instead of `SET` with parameters, no re-stemming, internal-only context switch, pinned cache titles, false-weak rate, pre-threshold ranking, per-model thresholds, tainted runs, demo search without query modes, pinned contracts)
 
-**9.2 Vector search**
-- [ ] Embed query with `embedTexts([q], { kind: 'query' })` (query prefix, cached)
-- [ ] SQL: `SELECT ... , 1 - (embedding <=> $q) AS score FROM "SourceChunk" WHERE "workspaceId" = $w AND kind = 'CHILD' AND <filters> ORDER BY embedding <=> $q LIMIT $k`
-- [ ] Set `SET LOCAL hnsw.ef_search = <config>` (e.g. 80) inside a transaction for recall
-- [ ] Check with `EXPLAIN` that HNSW index is used with filters (if filter selectivity breaks index use, over-fetch then filter; document the decision)
+**Found during the build** (2026-10-24, all with tests):
+- Built in parallel by me (search core, endpoint) and three agents (reranker, query modes, tests), each agent on its own test database; contracts pinned in `retrieval.types.ts` first, so nobody waited
+- `bge-reranker-base` takes **~23s for 20 chunks** on a 4-core CPU (MiniLM-L-6 ~2.3s; both rank an obviously relevant passage first, 0.997 / 0.999) and starved the event loop in an eval run (DB connection timeouts) → **default reranker is `Xenova/ms-marco-MiniLM-L-6-v2`**, bge kept as an eval config. `RERANKER_MODEL` must have thresholds in `appConfig` (checked at startup); the two models score on different scales (unrelated passages ~0.2 vs ~0.035)
+- onnxruntime-node's postinstall only fetches GPU binaries → off in `allowBuilds`; `sharp` has no install script, nothing to turn off. transformers.js truncation cuts the end of the pair (closing separator included) → docs are shortened by token count before tokenizing, the query never
+- A failed model load is retried after 5 minutes (an interrupted first download shouldn't turn reranking off for the process's life); a failed run returns null for that search only
+- A decomposed question runs up to four vector searches, each a transaction holding a pooled connection → they run one after another (~40 ms each), keyword queries in parallel
+- The weak check without rerank uses question embeddings only: a HyDE passage (embedded as a document) scores on a higher scale
+- RRF takes per-list weights (`keywordWeight`), tuned in Phase 10
+- Real searches: express "how does res.send pick the Content-Type header" → `res.type` (488–514) and the `res.send` content-type switch (134–165) in the top 3; DDIA "what happens when the leader fails" → "Handling node outages" p173 in the top 3 without rerank. Query embedding ~2s (Gemini), vector 40–90 ms, keyword ~16 ms in SQL
+- `EXPLAIN`: at this size Postgres scans the workspace's rows exactly (top-N heapsort, 12 ms on DDIA) instead of HNSW; GIN is used for keyword search on larger workspaces, a seq scan with the filter on ours (16 ms)
+- Code review (fresh reviewer): no high findings; fixed pool fan-out, the startup check, load retry, HyDE weak scale
+
+**Contracts** (pinned before the parallel build, so the three builders never wait on each other):
+- `search(options): Promise<SearchResult>` and its types live in `retrieval/retrieval.types.ts`, written first; the eval runner and the query modes only import from there
+- `expandQuery(question, queryMode, { history?, modelOverride?, ctx }) → { vectorQueries: { text, kind: EmbedKind }[], keywordQueries: string[], rerankQuery, generated: string[], error?, fallbackUsed }` (`queryModes.ts`, fork A); `none` → one of each from the question. `search()` runs every vector and keyword query and fuses all lists in one RRF
+- `rerank(query, docs: string[]) → number[] | null` (`llm/reranker.ts`, fork A; `null` = unavailable); the doc text is built by `rerankText(chunk)` in `retrieval/` (mine): breadcrumb line, context note, then content, cut to fit
+- Evals: a chunk's `sourceId` maps to a `sourceKey` through the corpus workspace's sources (stored on `EvalRun.config`); a web chunk's `documentPath` is its final URL, and `ref.url` is compared after the same normalization (`web/crawler.ts`'s)
+- `search()` takes `modelOverride` for the query-mode call; evals pass the route's primary, so a run never mixes in the fallback model
+
+**9.1 Retrieval API (internal)**
+- [x] `modules/retrieval/retrieval.service.ts`: `search({ userId, workspaceId, query, history?, sourceIds?, sourceTypes?, pathPrefix?, mode, queryMode, rerank, topK, expandParents })` → `{ results, parents, debug }`. `userId` is for usage rows; access is checked by the caller (endpoint, agent tool) — the SQL filters by `workspaceId` itself
+- [x] `results: RetrievedChunk[]` — ranked **children**, what evals score and citations point at: `{ chunkId, parentId, sourceId, sourceTitle, sourceType, documentPath, headingPath, symbolName, pageStart, pageEnd, lineStart, lineEnd, content, scores: { vector?, keyword?, rrf?, rerank? } }`
+- [x] `parents: ContextBlock[]` — what a model reads: `{ parentId, sourceId, sourceTitle, documentPath, headingPath, content, childIds, score }`, deduped and token-capped (9.7). Replaces the per-child `parentContent?` of the first draft, which repeated a parent once per child
+- [x] `mode`: `vector | keyword | hybrid` (default hybrid) · `queryMode`: `none | rewrite | hyde | decompose` (default `none`; the workspace setting `defaultSearchMode` picks `mode`)
+- [x] `debug`: `{ weak, ranked, rerank: 'used' | 'off' | 'unavailable', queryModeError?, fallbackUsed, timings: { queryMode?, embed, vector, keyword, rerank, parents, total }, candidates: { vector, keyword, fused }, queries }` — `ranked` is the chunk ids in final order **before** the threshold (evals score it, so recall never silently measures the threshold); one log line per search with the timings
+- [x] Tunables in `appConfig.retrieval`: `candidateK` 30, `rerankK` 20, `topK` default 8 / max 20, `rrfK` 60, `efSearch` 80, `weakVectorScore`, `maxContextTokens` 6,000, and `reranker.thresholds[model].{min, weak}` **per reranker model** (bge and MiniLM score on different scales); thresholds start loose, tuned in Phase 10
+
+**9.2 Vector search** (`retrieval.repository.ts`, raw SQL)
+- [x] Embed the query with `embedTexts([q], { kind: 'query' })` (query prefix, embedding cache, counted but never waits on the quota)
+- [x] In one interactive transaction: `SELECT set_config('hnsw.ef_search', $1, true)` and `set_config('hnsw.iterative_scan', 'relaxed_order', true)` (`SET` takes no bind parameters), then a `MATERIALIZED` CTE `ORDER BY embedding <=> $q LIMIT candidateK` with `workspaceId`, `kind = 'CHILD'`, `embedding IS NOT NULL` and the filters, re-sorted by distance outside (pgvector's pattern for relaxed order); similarity = `1 - distance`
+- [x] Filters: `sourceIds` (`= ANY`), `sourceTypes` (join `Source`), `pathPrefix` (on the document path, `LIKE` with escaped wildcards like `searchSymbols`)
+- [x] `EXPLAIN` on the dev DB, recorded in the build notes. Probe (2026-10-24): at this size (≤ ~2K children per workspace) Postgres picks an **exact** scan of the workspace's rows over HNSW (12 ms on DDIA's 924), which also gives exact results; the HNSW settings only matter once a workspace is large, and stay for then
 
 **9.3 Keyword search**
-- [ ] SQL: `websearch_to_tsquery('english', $q)` against `tsv`, rank with `ts_rank_cd`, same filters, `LIMIT $k`
-- [ ] Query preprocessing: also split identifiers in the query (`findByEmail` → `find by email`) and OR them in
-- [ ] Decide on extra `simple`-config tsvector for exact code tokens (stemming can hurt identifiers): measure in Phase 10, add column if it helps
+- [x] OR query from the lexemes: `replace(plainto_tsquery('english', q)::text, ' & ', ' | ')::tsquery` — cast straight to `tsquery`, never back through `to_tsquery` (that would stem the stems again); the identifier-split words go through `plainto_tsquery` the same way and are ORed in (`findByEmail` → `find by email`, reusing `code/identifiers.ts`); empty tsquery (only stop words) → no keyword list
+- [x] `ts_rank_cd(tsv, query)` order, same filters, `LIMIT candidateK`; GIN index used (`EXPLAIN`)
+- [x] An extra `simple`-config tsvector for exact code tokens stays a Phase 10 question: only if the CODE cases show stemming hurts
 
 **9.4 Fusion**
-- [ ] `rrf(lists, k = 60)` → score = Σ 1/(k + rank); stable tie-break by vector score
-- [ ] Pull `candidateK` (e.g. 30) from each list, fuse, keep top `rerankK` (e.g. 20)
-- [ ] Unit tests for RRF with hand-made lists
+- [x] `fusion.ts`: `rrf(lists, k)` → Σ 1/(k + rank) per chunk, tie-break by vector score then chunk id (stable)
+- [x] `candidateK` from each list → fuse → top `rerankK` go to the reranker (or straight to the threshold when `rerank` is off)
+- [x] Unit tests with hand-made lists (overlap, one list empty, ties)
 
 **9.5 Local reranker**
-- [ ] Install `@huggingface/transformers`
-- [ ] `llm/reranker.ts`: lazy-load `AutoTokenizer` + `AutoModelForSequenceClassification` for `RERANKER_MODEL` (ONNX, quantized), cache dir from env; singleton; warm-up on server start (non-blocking)
-- [ ] `rerank(query, docs[], { topN })` → scores (sigmoid of logits), sorted; batch size config; truncate docs to model max length (512 tokens) — truncate **content**, keep the breadcrumb line
-- [ ] Log rerank latency; record `UsageEvent` type `RERANK` (cost 0)
-- [ ] Fallback: if model fails to load → skip rerank (log warning), keep RRF order
-- [ ] Unit test (live-tagged): obviously relevant doc ranks above irrelevant
+- [x] Install `@huggingface/transformers@4.3.1` (pinned; `onnxruntime-node` and `sharp` builds off; `git diff pnpm-workspace.yaml` shows only those two lines)
+- [x] `llm/reranker.ts`: lazy-load tokenizer + `AutoModelForSequenceClassification` for `RERANKER_MODEL`, `dtype: 'q8'`, cache dir from env; one shared load promise; warm-up from `server.ts` after listen when `rerankByDefault` is on (never blocks startup or tests)
+- [x] `rerank(query, docs, { signal? })` → scores in input order: sigmoid of the logit, batched (`appConfig.retrieval.reranker.batchSize`), pairs truncated to 512 tokens — the doc text is a breadcrumb line (source title › heading path or file path › symbol) then the context note and the content, and the **content** is what gets cut
+- [x] One `UsageEvent` per rerank call (type `RERANK`, provider `local`, cost 0, latency); load failure → warning once, later searches skip rerank (RRF order, `debug.rerank = 'unavailable'`) and the load is tried again after 5 minutes, not on every search
+- [x] Tests mock the module (`vi.mock`, like the providers); one live test: an obviously relevant passage scores above an unrelated one
+- [x] `RERANKER_MODEL` stays configurable: Phase 10 compares `bge-reranker-base` with `Xenova/ms-marco-MiniLM-L-6-v2` (~23 MB, ~5× faster on CPU) and the default follows the numbers
 
-**9.6 Threshold & weak-retrieval signal**
-- [ ] After rerank: drop results below `minRerankScore` (config); keep top `finalK` (e.g. 5–8)
-- [ ] Return `debug.weak = true` when best score < `weakScore` or < N results survive → agent uses this to retry (rewrite / different tool / web search)
+**9.6 Threshold & weak signal**
+- [x] With rerank: drop results below the model's `min`, keep `topK`; `weak` when nothing survives or the best score < its `weak` score (one strong hit is a good answer, not a weak one)
+- [x] Without rerank: keep the fused top `topK`; `weak` from the best vector similarity (< `weakVectorScore`); keyword-only → `weak` when the keyword list is empty
+- [x] The agent (Phase 11) retries on `weak` (rewrite / another tool / web search); NO_ANSWER eval cases score it
 
 **9.7 Parent expansion (small-to-big)**
-- [ ] For final children: load parents; dedupe (two children of same parent → one parent block, keep best score); cap total tokens (`maxContextTokens`, e.g. 6,000) by dropping lowest-scored blocks
-- [ ] Return both child (for precise citation lines/pages) and parent content (for reading)
+- [x] Load the parents of the final children in one query; one block per parent (best child score, all its child ids), ordered by score; add blocks until `maxContextTokens` (parent `tokenCount`), always at least one; a child without a parent becomes its own block
+- [x] Off with `expandParents: false` (evals compare)
 
-**9.8 Query modes**
-- [ ] `rewrite@v1` (cheap model): conversation-aware standalone query + keywords → used for both searches
-- [ ] `hyde@v1` (cheap model): write a short hypothetical passage/code that would answer → embed that for vector search (keyword search keeps original query)
-- [ ] `decompose@v1` (cheap model, structured output): split into ≤ 3 sub-queries → run search per sub-query in parallel → merge via RRF → rerank against **original** query
-- [ ] Each mode cached per (query, mode, prompt version) for the request lifetime
+**9.8 Query modes** (`retrieval/queryModes.ts`, prompts in `llm/prompts/`, hashes pinned)
+- [x] `rewrite@v1`: history-aware standalone question + key terms (structured output) → both searches use it
+- [x] `hyde@v1`: a short passage or code snippet that would answer → embedded as a **document** for vector search (it imitates one); keyword search keeps the original question
+- [x] `decompose@v1` (structured, ≤ 3 sub-queries): vector + keyword per sub-query in parallel → all lists into one RRF → rerank against the **original** question
+- [x] Model failure → search goes on with the original question (`debug.queryModeError`); each generated text in `debug.queries`
+- [x] Small in-process memo per (mode, prompt id, question, history hash), capped at 500 entries, so an eval matrix pays for each generation once
 
 **9.9 Debug endpoint**
-- [ ] `POST /api/v1/workspaces/:id/search` `{ query, mode?, queryMode?, rerank?, topK?, sourceIds? }` → results + debug (timings per stage, candidate counts, scores) — used by you and by evals
+- [x] `POST /api/v1/workspaces/:workspaceId/search` `{ query, mode?, queryMode?, rerank?, topK?, sourceIds?, sourceTypes?, pathPrefix?, expandParents? }` → `{ results, parents, debug }`; `assertWorkspaceAccess(..., { allowDemoRead: true })` (search only reads), but on someone else's demo workspace only `queryMode: none` (no LLM spend on a shared workspace; per-user search limits come in Phase 15); body validated with zod (`text()` rejects NUL, query ≤ 1,000 chars, ≤ 25 source ids); `http/search.http`
 
 **9.10 Tests**
-- [ ] Seed fixture chunks with deterministic fake embeddings where expected matches are known
-- [ ] Workspace isolation: never returns chunks from another workspace (critical test)
-- [ ] Filters (sourceIds, type, pathPrefix) work
-- [ ] Keyword finds exact identifier that vector misses (fixture designed for it); hybrid returns both
-- [ ] Parent expansion dedupes and respects token cap
-- [ ] Threshold drops low scores; `weak` flag set
-- [ ] Decompose merges sub-query results
+- [x] Fixture chunks seeded with deterministic fake vectors (the query's vector is known), plus real `tsv` from their search text
+- [x] **Workspace isolation**: a better match in another user's workspace never comes back, in every mode and query mode (critical)
+- [x] Filters: `sourceIds`, `sourceTypes`, `pathPrefix` (with `%` / `_` in the prefix)
+- [x] Keyword finds an exact identifier the vectors miss; hybrid returns both; a long natural question still gets keyword hits (OR query)
+- [x] RRF order, threshold drops low scores, `weak` cases, parent dedupe + token cap, rerank unavailable → RRF order
+- [x] Query modes with a mocked model: rewrite/hyde use the generated text, decompose merges sub-query results, a model failure falls back; endpoint 400s, 404 for someone else's workspace, demo read allowed
 
-**Done when:** debug search returns sensible results on your real book + repo; timings logged per stage.
+**Done when:** debug search returns sensible results on the real book and repo (DDIA, express); timings logged per stage; `EXPLAIN` plans recorded (GIN for keyword; exact or HNSW for vector, whichever Postgres picks at this size).
 
 ---
 
@@ -1455,69 +1485,75 @@ Goal: `search(workspaceId, query, options)` returning the best, cited chunks —
 
 Goal: a repeatable, versioned retrieval benchmark so every later change is measured with numbers.
 
-**Decision needed before this phase:** the eval corpus (see §10) — 1 book/doc PDF + 1 public repo + 1 docs page with licenses that allow use.
+**Found during the build** (2026-10-24):
+- Built in parallel: eval core (schema, runner, scorers, report), corpus + the context switch, two agents drafting the 60 questions and two more checking every ref against the stored pages and lines. The user delegated the review: all 60 are `reviewed: true` (20 of them corrected by the checkers: tighter refs, reworded questions that echoed the text, three multi-hop cases one passage could answer)
+- The eval corpus re-indexed from the caches: 0 new embeddings, READY in 15 s. The no-context copy (repo + docs) took 231 embeddings
+- The contextual switch is snapshotted on the draft (a run stays consistent if the setting changes) and kept out of the PATCH schema; the corpus spec has `variants`, so the book stays out of the no-context copy
+- Review fixes: report filtered by split and dataset (and one `latest` file per split), PDF twin found by its bytes, removed cases `retired` instead of scored, a timed-out search settles before the next case, resume refuses a changed config / SHA / corpus, the eval user can't have a password
+- **The machine hard-reset twice** during long reranker evals (CPU at 100% on all cores for minutes, ~75 °C at idle). Later runs used `taskset -c 0,1 nice -n 10` (2 cores) and finished cleanly; vector search waits up to 10 s for a pooled connection, since the 2 s default ran out once under that load
+- **Results** (DEV, 46 cases; `evals/reports/latest.md`, tuning in `evals/CHANGELOG.md`): vector-only R@5 0.925 / R@10 0.960 / MRR 0.946 · hybrid (keyword ¼) 0.901 / 0.937 / 0.885 · hybrid + rerank 0.917 / 0.984 / 0.839 · decompose 0.925 / 0.984 / 0.835 · keyword-only 0.714 / 0.778 / 0.556. Contextual retrieval: +10.5 points of R@5 on the 19 code / cross-source cases (about two questions). HELDOUT: vector-only 0.974 / 1.000 / 0.885, hybrid-rerank 0.897 / 1.000 / 0.748
+- **Decisions from the numbers:** keyword list weight ¼ in RRF; `weakVectorScore` 0.65; default reranker MiniLM (bge ~23 s per search, its eval run starved the process), and **reranking off by default** (user decision: little gain, worse first result on code, ~2 s of CPU); no query mode by default. No-answer accuracy is 2 of 4 on DEV (two express questions score like real ones): left for the agent's own judgement in Phase 11
+
+**Corpus (decided 2026-10-24):** `book` = DDIA (the user's local copy, `evals/corpus/` is gitignored, never committed or demoed), `repo` = `expressjs/express@1c6f1b0fe4000977b9a7b4f34097e4d527dd9824`, `docs` = `https://expressjs.com/en/guide/routing.html` (depth 0, 1 page). All three are already indexed in the dev DB, so their contexts and vectors are in the caches.
+
+**Checked 2026-10-24** (planning):
+- Quota per full matrix: the question's vector is cached, so vector / keyword / hybrid / rerank configs share ~60 query embeddings; rewrite, HyDE and decompose add ~180 `rewrite`-route calls (gpt-oss-20b, ~400 tokens each → ~10 min at 8K tokens/min) and ~250 embeddings. Well under the daily caps; one matrix a day is the budget
+- Contextual off needs every chunk embedded again (DDIA alone is 924 of the ~1,000 daily embeddings) → only the repo + docs corpus without contexts in this phase (~230 embeddings); the DDIA ablation is optional, run on another day
+- Golden refs for DDIA use **physical pages**, as stored (`/content?page=` is physical too); expected answers are one-sentence paraphrases, never quotes from the book
 
 **10.1 Schema**
-- [ ] `EvalDataset`, `EvalCase`, `EvalRun`, `EvalResult` + enums
-- [ ] Migration `evals`
+- [x] `EvalDataset`, `EvalCase` (+ `reviewed Boolean @default(false)`), `EvalRun` (+ `suite`), `EvalResult`; enums `EvalCaseType` (BOOK, CODE, MULTI_HOP, CROSS_SOURCE, NO_ANSWER), `EvalSplit` (DEV, HELDOUT), `EvalRunStatus` (RUNNING, DONE, FAILED)
+- [x] Migration `evals` via `db:migrate:new`; **read the SQL and delete Prisma's `DROP INDEX` / `tsv` lines** before applying (build mistake #17); list the SourceChunk indexes afterwards
 
 **10.2 Corpus spec**
-- [ ] `evals/datasets/corpus.json`: list of sources with stable `sourceKey` (`book`, `repo`, `docs`), type, location (PDF path in `evals/corpus/` gitignored if large, repo URL + pinned commit SHA, URL)
-- [ ] `pnpm evals:corpus` → creates a dedicated eval user + workspace (`eval-<datasetName>`), ingests the corpus (real pipeline), waits for READY, records `corpusVersion` (hash of specs + ingestVersion)
-- [ ] Embedding/context caches make re-ingesting cheap
+- [x] `evals/datasets/corpus.json`: `[{ sourceKey, type, location }]` (PDF file name in `evals/corpus/`, repo URL + commit, URL + depth/pages), zod-checked
+- [x] `pnpm evals:corpus [--no-context]` → system eval user (`isSystem`, no password) and workspace `eval-<dataset>[-nocontext]`; creates the sources through the sources service (dedupe makes a rerun a no-op), sends the ingest events, waits for READY with progress lines; needs the dev server + Inngest dev running (checked first, clear message). `--no-context` stores `contextualRetrieval: false` in that workspace's settings JSON, written by the script only (**not** in the PATCH schema, so a user can't trigger a costly re-index); the three `*IngestHash` functions, the contextualize step count and the missing-context check read it through one `contextualRetrievalFor(workspace)` helper, defaulting to `appConfig`
+- [x] Source titles in the spec match the dev sources exactly (the title is part of the embedding input, so the cache only hits with the same title); before sending events the script counts the uncached embeddings and stops above a budget (`--max-embeddings`, default 300)
+- [x] `corpusVersion` = hash of the spec + ingest versions, stored on the dataset; a run records it
 
 **10.3 Golden dataset**
-- [ ] `evals/datasets/core.json` format:
-  ```json
-  { "id": "code-017", "type": "MULTI_HOP", "split": "DEV",
-    "question": "What happens between the login route and the database query?",
-    "expectedAnswer": "loginHandler calls AuthService.login which ...",
-    "expectedRefs": [{ "sourceKey": "repo", "path": "src/services/auth.ts", "lineStart": 30, "lineEnd": 55 }],
-    "tags": ["auth","flow"] }
-  ```
-- [ ] Target size: ~60 cases now (20 BOOK, 20 CODE, 10 MULTI_HOP, 5 CROSS_SOURCE, 5 NO_ANSWER), ~25% marked HELDOUT
-- [ ] Written by you (I draft candidates from the corpus, you verify/correct each one)
-- [ ] `pnpm evals:import` → validates JSON with zod, upserts `EvalCase` by `externalId`
+- [x] `evals/datasets/core.json`: `{ id, type, split, question, expectedAnswer, expectedRefs, tags, reviewed }`; refs `{ sourceKey: 'book', pageStart, pageEnd }` · `{ sourceKey: 'repo', path, lineStart, lineEnd }` · `{ sourceKey: 'docs', url, heading? }`
+- [x] ~60 cases: 20 BOOK, 20 CODE, 10 MULTI_HOP, 5 CROSS_SOURCE (docs ↔ code), 5 NO_ANSWER; ~25% HELDOUT (fixed by id, so the split never shifts)
+- [x] Drafted by agents from the indexed text (read-only SQL on the dev DB; each ref checked against the stored pages / lines), questions **paraphrased** the way a user would ask (not lifted from the chunk's wording, which would flatter keyword search), all `reviewed: false` until the user checks them
+- [x] `pnpm evals:import` → zod validation, upsert `EvalCase` by `externalId`, cases missing from the file are reported (not deleted)
 
-**10.4 Ref matching**
-- [ ] A retrieved chunk "hits" an expected ref when: same source AND (PDF: page ranges overlap) / (code: same path AND line ranges overlap) / (web: same URL AND heading overlap)
-- [ ] Unit tests for overlap rules
+**10.4 Ref matching** (`evals/matching.ts`)
+- [x] A retrieved chunk hits a ref when it is from the ref's source and: book → page ranges overlap · repo → same path and line ranges overlap · docs → same URL and (no heading in the ref, or the heading is in the chunk's `headingPath`)
+- [x] Unit tests for each rule and the edges (touching ranges, null pages, trailing slash on URLs)
 
 **10.5 Retrieval scorers** (`evals/scorers/retrieval.ts`)
-- [ ] `recall@k` (k = 5, 10): fraction of expected refs hit in top k
-- [ ] `hit@k`: any expected ref in top k
-- [ ] `MRR`: 1/rank of first hit
-- [ ] `nDCG@10` (optional)
-- [ ] NO_ANSWER cases: success = `weak` flag true / no result above threshold
-- [ ] Latency per stage (vector, keyword, rerank, query mode) and cost (query-mode LLM calls)
+- [x] `recall@5`, `recall@10` (share of expected refs hit), `hit@5`, `MRR`, `nDCG@10`
+- [x] NO_ANSWER: pass when `weak`; left out of the recall metrics and reported on their own, next to the **false-weak rate** on answerable cases (a threshold that calls everything weak would ace NO_ANSWER) — thresholds are tuned on both
+- [x] Ranking metrics use `debug.ranked` (before the threshold); retrieval configs pin `topK` ≥ 10
+- [x] Latency per stage (from `debug.timings`), p50 / p95; cost from the run's UsageEvents (query modes)
 
 **10.6 Configs**
-- [ ] `evals/configs/retrieval/*.json`: `vector-only`, `keyword-only`, `hybrid`, `hybrid-rerank`, `hybrid-rerank-parents`, `hybrid-rerank+rewrite`, `+hyde`, `+decompose`
-- [ ] Contextual on/off needs two corpora (`contextual: true|false`) → corpus spec takes a `pipeline` override; eval workspace name includes it
-- [ ] Config schema validated with zod
+- [x] `evals/configs/retrieval/*.json` (zod): `vector-only`, `keyword-only`, `hybrid`, `hybrid-rerank`, `hybrid-rerank-rewrite`, `hybrid-rerank-hyde`, `hybrid-rerank-decompose`, `hybrid-rerank-bge` (MiniLM became the default), `hybrid-rerank-nocontext`; each a set of `search()` options plus the corpus workspace. Parent expansion only changes what a model reads, so it is measured with answers in Phase 14, not here
+- [x] A `nocontext` config is compared only on the case types its corpus has (CODE, CROSS_SOURCE), against the same types of its context twin
 
 **10.7 Runner**
-- [ ] `evals/runner.ts` CLI (`pnpm evals -- --suite retrieval --config hybrid-rerank --split DEV [--limit 20] [--tags auth]`)
-  - creates `EvalRun` (config, gitSha via `git rev-parse HEAD`, prompt versions, models)
-  - runs cases with concurrency limit (config) and per-case timeout
-  - stores `EvalResult` per case (ranked refs + scores + timings)
-  - aggregates `summary` (overall + by type + by tag)
-  - `--matrix` runs several configs in one go
-- [ ] Resumable: rerun with `--resume <runId>` skips completed cases
+- [x] `evals/runner.ts` (`pnpm evals -- --suite retrieval --config hybrid-rerank --split DEV [--limit 20] [--tags auth] [--matrix a,b,c] [--resume <runId>]`), `node:util` `parseArgs`
+  - `EvalRun` with config, git SHA (`git rev-parse HEAD`, `-dirty` when the tree has changes), prompt ids, models, corpusVersion
+  - cases with a concurrency limit (2) and a per-case timeout; one `EvalResult` each (ranked refs + scores + timings + error)
+  - summary overall, by type and by tag, reviewed and unreviewed apart; `--resume` skips cases already stored
+  - each result records `debug.rerank`, `queryModeError` and `fallbackUsed`; a run where any case fell back (reranker unavailable, query mode failed) is marked **tainted** in the summary and the report
+  - query-mode configs run at concurrency 1, paced under Groq's 8K tokens/min, and use the memo
+- [x] Calls `search()` in-process, as the eval system user (no HTTP)
+- [x] `evals/` joins the tsconfig `include` and lint; scripts `evals`, `evals:corpus`, `evals:import`, `evals:report` run through `node --import tsx`
 
 **10.8 Report**
-- [ ] `evals/report.ts`: Markdown table comparing runs (rows = configs, cols = recall@5, recall@10, MRR, p50/p95 latency, cost) + per-type breakdown + list of worst cases (with question, expected ref, top 3 retrieved)
-- [ ] Writes `evals/reports/<date>-<suite>.md` and updates `evals/reports/latest.md`
+- [x] `evals/report.ts`: Markdown table of runs (rows = configs; recall@5, recall@10, MRR, nDCG@10, no-answer accuracy, p50 / p95 latency, cost), a per-type table, and the 10 worst cases (question, expected ref, top 3 retrieved)
+- [x] Writes `evals/reports/<date>-retrieval-<split>.md` and `latest.md` (DEV) / `latest-heldout.md` (only the latest files are committed)
 
 **10.9 Tests**
-- [ ] Scorer unit tests with hand-made rankings
-- [ ] Runner smoke test on a 3-case dataset with mocked retrieval
+- [x] Scorer and matching unit tests with hand-made rankings
+- [x] Runner smoke test: 3-case dataset, mocked `search()`, a stored run + results, resume skips the done case, report renders
 
 **10.10 First baseline**
-- [ ] Run full retrieval matrix on DEV → commit `latest.md` → note results in README draft
-- [ ] Use results to tune chunk sizes / candidateK / thresholds (record each change + result in `evals/CHANGELOG.md`)
+- [x] Full matrix on DEV → `latest.md` committed → numbers into the README draft
+- [x] Tuning from the results (candidateK, thresholds, weak scores, reranker model, simple tsvector) — each change and its numbers in `evals/CHANGELOG.md`
 
-**Done when:** a real comparison table exists for at least vector vs keyword vs hybrid vs hybrid+rerank on DEV.
+**Done when:** `evals/reports/latest.md` has a real table for at least vector vs keyword vs hybrid vs hybrid + rerank on DEV.
 
 ---
 
@@ -2148,23 +2184,31 @@ Each phase lists: **Entry** · **Build order** · **Risks & mitigations** · **P
 - **Commit:** `feat(ingestion): website crawling with robots.txt and readability extraction`. **→ M3 cross-review.**
 
 #### Phase 9 — Retrieval
-- **Build order:** vector search (`ef_search`) → keyword search (identifier splitting) → RRF → reranker (lazy load, warm-up, fallback) → threshold and `weak` flag → parent expansion → query modes (rewrite, HyDE, decompose) → debug endpoint → tests, starting with isolation.
+- **Built with Phase 10 as wave 1, in parallel** (each agent has its own test database `codebook_agent{1,2,3}_test` via `TEST_DATABASE_URL`, so agents run their own test files; the full suite stays mine, one run at a time):
+  - me: vector + keyword SQL, fusion, threshold / weak, parent expansion, `search()`, endpoint (9.1–9.4, 9.6, 9.7, 9.9)
+  - fork A (DB 1): reranker install + `llm/reranker.ts` + query modes and their prompts (9.5, 9.8), against the `search()` contract above
+  - coder (DB 3): retrieval tests (9.10) once the service compiles
+- **Build order (mine):** contract types → vector search (`ef_search`, iterative scan) → keyword (OR query, identifier split) → RRF → threshold + `weak` → parents → endpoint → `EXPLAIN` on the dev DB → real searches on DDIA + express.
 - **Risks & mitigations:**
 
   | Risk | Mitigation |
   |---|---|
-  | The reranker model download (~300MB) is slow or fails | Cached in `.cache/models`; non-blocking warm-up; fall back to RRF order |
-  | The reranker uses the CPU on the main thread | Known limitation (the worker thread was skipped by choice); small batches; p95 measured and noted in the README |
-  | HNSW isn't used with WHERE filters | `EXPLAIN` check; over-fetch then filter if needed |
-- **Proof:** isolation test · debug search over DDIA and the repo returns sensible chunks, with timings per stage.
-- **Commit:** `feat(retrieval): hybrid search, RRF, local reranker, parent expansion and query modes`
+  | onnxruntime-node needs its postinstall on this platform | Builds off first; if the CPU backend fails to load, allow only that build and re-check `pnpm-workspace.yaml` |
+  | The reranker model download (~280 MB) is slow or fails | Cached in `.cache/models`; non-blocking warm-up; RRF order when unavailable |
+  | The reranker uses the CPU on the main thread | Known limitation (worker thread skipped by choice); small batches; p95 measured, MiniLM compared in Phase 10 |
+  | HNSW skipped with filters | `iterative_scan = relaxed_order` + `EXPLAIN` check |
+- **Proof:** isolation test · debug search over DDIA and express returns sensible chunks, with timings per stage.
+- **Commit:** one commit for Phases 9 + 10: `feat: hybrid retrieval with local reranking, and the retrieval eval benchmark`
 
 #### Phase 10 — Evals part 1
-- **Entry (stop and ask if missing):** the eval corpus. DDIA ✅ (copy to `backend/evals/corpus/`, gitignored), plus the **repo URL with a commit** and the **docs page URL**.
-- **Build order:** schema → corpus spec + `evals:corpus` → ref-matching rules + tests → I draft ~60 golden cases (marked `unreviewed`) → import → scorers (recall@k, hit@k, MRR, no-answer) → configs → runner (resume, matrix) → report → first baseline matrix → tuning, recorded in `evals/CHANGELOG.md`.
-- **Risks:** wrong golden refs. Cases stay `unreviewed` until you check them, and the report shows reviewed and unreviewed separately.
+- **Entry:** corpus decided (DDIA, express@1c6f1b0, the routing guide) ✅.
+- **In parallel with Phase 9:**
+  - fork B (DB 2): schema + migration, matching, scorers, configs, runner, report, tests (10.1, 10.4–10.9), against the `search()` contract; mocked search in tests
+  - agent C (read-only SQL on the dev DB): ~60 golden drafts with refs checked against the stored text (10.3)
+  - me, after Phase 9: corpus script + eval ingest (10.2), import, first matrix, tuning (10.10)
+- **Risks:** wrong golden refs → cases stay `reviewed: false` and the report keeps reviewed and unreviewed apart; free-tier quota → one matrix a day, query-mode memo, contextual-off only for repo + docs.
 - **Proof:** `evals/reports/latest.md` with the vector vs keyword vs hybrid vs hybrid + rerank table.
-- **Commit:** `feat(evals): retrieval benchmark, scorers, runner and first baseline`. **→ M4 cross-review.**
+- **After the commit:** M4 cross-review.
 
 #### Phase 11 — Chat & agent
 - **Entry:** `TAVILY_API_KEY` present (verified).
@@ -2264,9 +2308,13 @@ One line per phase: `date · phase · commit · notes / deviations`.
 | 2026-10-24 | 6 GitHub repo ingestion | ebbd63f | `tar@7.5.22`, `web-tree-sitter@0.27.1` + grammar WASM from `tree-sitter-typescript@0.23.2` / `-javascript@0.25.0` / `-python@0.25.0` (native builds off); no `@octokit/rest`. Plan reviewed in two passes before the build (22 findings). Archive read in memory (never extracted); tests and changelogs skipped by default; 800-child cap; packed contextualize calls (8 chunks); separate repo hash with `scannerVersion`, PDF hash pinned by a golden test. Built with three code reviews: two scanner leaks fixed (type annotations, unquoted value before a comment), expression bodies, damaged archives, redirect logging. Postgres locale sort and Prisma `startsWith` wildcards → raw SQL for `/files`. Real run on `expressjs/express@1c6f1b0`: READY in ~2.5 min (prepare 4s, 3 contextualize steps ~45s, 3 embed steps), 100 files kept / 3 skipped (`.npmrc`, `History.md`, `test/`), 212 children all with context, vector and lines, 18 with a symbol name, 40.7K tokens, 0 scanner findings over every stored text; keyword "redirect status location" → `res.redirect` at `lib/response.js:815-867`. DDIA's hash still matches (resync skips). Re-review after the commit (two fresh reviewers + re-checks) fixed a quadratic tokenizer stall, a late-NUL ingest failure, scanner gaps (low-entropy passwords, YAML next-key, URL passwords, PGP keys), more secret files and TS decorators. 428 tests + live tests pass |
 | 2026-10-24 | Refactor (single responsibility) | 979dc4f | No behaviour change. `ingestion.service.ts` keeps only the Inngest steps: context units / packs / cache keys → `contextUnits.ts`, search texts and embedding keys → `indexedChildren.ts`; index row building → `indexRows.ts` (the repository keeps the transaction); tree-sitter node knowledge → `code/syntax.ts` (Phase 7 reuses it); GitHub client → `utils/github.ts` (shared by sources and ingestion); GitHub URL / ref checks → `sources/githubUrl.ts`; the embedding model's input format (Gemini's task prefix) and token estimate → `embeddingRoute` in `llm/models.ts`, so `embeddings.ts` is provider-neutral (inputs and cache keys byte-identical, pinned by a test). 429 tests pass |
 | 2026-10-24 | 7 Code graph + 8 Website ingestion | b72f375 | Planned together, plan reviewed once (10 findings folded in), built in parallel (graph by hand; website by a forked agent, its tests by two coder agents), two code reviews + a re-review. **Graph:** symbols from the chunker's `declarationOf` (no separate `.scm` queries); facts per file → `resolve.ts` (relative/ESM/index/Python module resolution, re-export barrels, CommonJS `require` / `module.exports` / assigned methods, 5 call heuristics, member-only unique-name guess counted apart); stored in `IngestDraft.graph`, written in the index transaction; walks are `UNION` CTEs over (symbol, via, depth) with a row cap (no path explosion). `prisma migrate --create-only` dropped the HNSW/GIN indexes in the dev DB on first apply → removed from the migration, indexes recreated. Real run on express: 155 symbols, 870 edges, calls 199/627 resolved (32%; 116 by unique name), imports 49/138 (the rest are packages); `res.send` has 29 callers. **Website:** `@mozilla/readability@0.6.0`, `linkedom@0.18.13`, `robots-parser@3.0.1`, `undici@8.11.2`, `htmlparser2@10.1.0` (linkedom's own). `safeFetch` checks the connected address (lookup rejects if any address is private), IP literals and ports on every hop, decoded body size, one timeout for the whole request. Readability and linkedom are both superlinear in DOM depth → htmlparser2 counts depth first (> 1,000 → stripped text), Readability only ≤ 64 deep / 10K elements. Serial polite crawl with robots (also on redirects), 3-minute budget, capped queue; code blocks never split (atomic ranges, one CommonMark fence rule). Real run: `expressjs.com/en/guide/routing.html` → redirect to `/routing/`, title "Routing · Express.js", 19 children with headings, contexts and vectors, keyword search answers. 490 tests pass (10 live skipped) |
-| 2026-10-24 | M3 review | _this commit_ | Cross-review of Phases 5–8 with three parallel reviewers (security & scoping, pipeline consistency, data & tests) plus a coder for the test gaps. Access checks, demo write blocking, SSRF, hashes, titles, step results all clean. Fixed: `CodeSymbol.chunkId` had no index (every chunk delete scanned all symbols; new migration, Prisma's DROP INDEX lines removed again); a draft left by a cancelled run made a later run's failure handler stand down (source stuck PROCESSING) → only drafts written after the run was queued count; the index step deleted the draft by source only → by run; a quota error in the index step's top-up embedding now reports the embedding message; NUL in query text and int4-overflowing page/line numbers were 500s → 400; one message for unknown and private hosts (no internal host-name oracle); website URLs on non-standard ports refused at create (the crawler always refused them); `/content?path=` reads web pages by URL. Tests added: website resync with a changed and a removed page (unchanged page's contexts cached), graph resync with a removed file (no dangling edges, counts equal a fresh ingest), failed repo resync keeps the graph, demo graph reads, workspace delete leaves no rows. Real docs-page resync on the final code: skipped as unchanged (same extracted text). 498 tests pass (10 live skipped) |
+| 2026-10-24 | M3 review | 35f8aa6 | Cross-review of Phases 5–8 with three parallel reviewers (security & scoping, pipeline consistency, data & tests) plus a coder for the test gaps. Access checks, demo write blocking, SSRF, hashes, titles, step results all clean. Fixed: `CodeSymbol.chunkId` had no index (every chunk delete scanned all symbols; new migration, Prisma's DROP INDEX lines removed again); a draft left by a cancelled run made a later run's failure handler stand down (source stuck PROCESSING) → only drafts written after the run was queued count; the index step deleted the draft by source only → by run; a quota error in the index step's top-up embedding now reports the embedding message; NUL in query text and int4-overflowing page/line numbers were 500s → 400; one message for unknown and private hosts (no internal host-name oracle); website URLs on non-standard ports refused at create (the crawler always refused them); `/content?path=` reads web pages by URL. Tests added: website resync with a changed and a removed page (unchanged page's contexts cached), graph resync with a removed file (no dangling edges, counts equal a fresh ingest), failed repo resync keeps the graph, demo graph reads, workspace delete leaves no rows. Real docs-page resync on the final code: skipped as unchanged (same extracted text). 498 tests pass (10 live skipped) |
+| 2026-10-24 | 9 Retrieval + 10 Evals part 1 | _this commit_ | Planned together (plan reviewed once, 14 findings), built in parallel by me and nine agents on per-agent test databases (`codebook_agent{1..6}_test`), two code reviews (10 findings fixed). Hybrid search (vector + OR keyword query, weighted RRF), MiniLM reranker (opt-in), weak flag, parent blocks, rewrite / HyDE / decompose, debug endpoint; eval schema, 60 verified golden cases, runner with resume and taint, reports per split. DEV: vector-only 0.925 R@5, hybrid + rerank 0.984 R@10; contextual retrieval +10.5 points R@5 on code (19 cases). Defaults from the numbers: keyword ¼, reranker off. Long CPU-bound evals reset the machine twice → evals run on 2 cores. 620 tests pass |
+| 2026-10-24 | M4 review | _this commit_ | Cross-review of Phases 9–10 with three parallel reviewers (security & scoping, cross-module consistency, data & eval validity). No blocking issue: every query is workspace-scoped, no error leaks internals, the ingestion ↔ retrieval contract and the context-switch hashes hold. Fixed: demo visitors can't turn reranking on (CPU), searches stop when the client disconnects, the query-mode memo is per user, HyDE/query embeddings never wait on the ingestion quota, a child whose parent was re-indexed away is skipped; evals run one case at a time with question embeddings warmed first (latency comparable), runs record `HEAD-dirty-<diff hash>` and resume refuses changed code, cases or reranker; corrected overstated eval claims (contextual retrieval +10.5 points on 19 cases, decisions cite DEV only). Tests added for the reranker-off default, the keyword weight, demo rerank refusal, the startup model check, repo/website context switch, per-split reports |
 
 **Later** (ideas parked during the build, not in scope):
+- M4 review (Phase 15): per-user rate limit on search and a process-wide cap on concurrent reranks / searches (each vector search holds a pooled connection; decompose holds up to four in turn)
+- Phase 9/10: a code-aware reranker (MiniLM hurts code ranking; bge is too slow on CPU) and `revision` pins for the reranker models; the bge eval run; DDIA without contexts (~924 embeddings); more NO_ANSWER cases (4 on DEV is too few to tune the weak threshold on)
 - M3 review (Phase 15): per-user rate limits on source create / resync / `/events`, and a cheap workspace-count + dedupe pre-check before the GitHub calls (a duplicate create still spends GitHub quota today); a lifetime cap on `/events` streams
 - M3 review: `ContextCache` / `EmbeddingCache` never shrink, and contexts outlive the deleted source → TTL prune cron (with the guest cleanup cron)
 - M3 review: a website resync where some linked pages fail transiently re-indexes without them (hash covers the pages kept); keep the old index when too many fail, or document it

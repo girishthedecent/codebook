@@ -11,6 +11,8 @@ export type IngestSource = NonNullable<Awaited<ReturnType<typeof findIngestSourc
 
 export type AdapterContext = {
   stage(stage: IngestStage, progress: number): Promise<unknown>;
+  // Whether this source's workspace uses contextual retrieval; part of the content hash.
+  contextual: boolean;
   // True when the source's last complete ingest had this hash and nothing is missing.
   unchanged(contentHash: string): boolean;
 };

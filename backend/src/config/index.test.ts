@@ -82,6 +82,15 @@ describe('parseServerConfig', () => {
     expect(parseServerConfig(both).GITHUB_CLIENT_ID).toBe('id');
   });
 
+  it('refuses a reranker model without score thresholds', () => {
+    expect(() => parseServerConfig({ ...base, RERANKER_MODEL: 'Xenova/no-such-reranker' })).toThrow(
+      /RERANKER_MODEL/,
+    );
+    expect(
+      parseServerConfig({ ...base, RERANKER_MODEL: 'Xenova/bge-reranker-base' }).RERANKER_MODEL,
+    ).toBe('Xenova/bge-reranker-base');
+  });
+
   it('rejects a bad port', () => {
     expect(() => parseServerConfig({ ...base, PORT: '70000' })).toThrow(/PORT/);
     expect(() => parseServerConfig({ ...base, PORT: 'abc' })).toThrow(/PORT/);

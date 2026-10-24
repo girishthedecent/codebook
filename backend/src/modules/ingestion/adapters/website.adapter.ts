@@ -58,7 +58,7 @@ export async function prepareWebsite(
 
   await ctx.stage('CHUNKING', 10);
   const hashed = pages.map((page) => ({ ...page, hash: sha256(page.text) }));
-  const contentHash = websiteIngestHash(title, limits, hashed);
+  const contentHash = websiteIngestHash(title, limits, hashed, ctx.contextual);
   if (ctx.unchanged(contentHash)) return { outcome: 'unchanged' };
 
   const documents: DraftDocument[] = hashed.map((page) => {

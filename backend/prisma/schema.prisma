@@ -384,3 +384,106 @@ model IngestDraft {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
+
+enum EvalCaseType {
+  BOOK
+  CODE
+  MULTI_HOP
+  CROSS_SOURCE
+  NO_ANSWER
+}
+
+enum EvalSplit {
+  DEV
+  HELDOUT
+}
+
+enum EvalRunStatus {
+  RUNNING
+  DONE
+  FAILED
+}
+
+// A golden set and the corpus it is asked against. Cases come from evals/datasets/*.json.
+model EvalDataset {
+  id          String     @id @default(cuid())
+  name        String     @unique
+  description String?
+  // The corpus spec the cases refer to (sourceKey → source).
+  corpus      Json       @default("[]")
+  createdAt   DateTime   @default(now())
+  cases       EvalCase[]
+  runs        EvalRun[]
+}
+
+model EvalCase {
+  id             String       @id @default(cuid())
+  datasetId      String
+  dataset        EvalDataset  @relation(fields: [datasetId], references: [id], onDelete: Cascade)
+  // The id in the dataset file, stable across imports.
+  externalId     String
+  question       String
+  expectedAnswer String
+  // [{ sourceKey, pageStart?, pageEnd?, path?, lineStart?, lineEnd?, url?, heading? }]
+  expectedRefs   Json
+  type           EvalCaseType
+  split          EvalSplit
+  tags           String[]
+  // Checked against the stored text after drafting; the report keeps the two apart.
+  reviewed       Boolean      @default(false)
+  // Gone from the dataset file: kept for old runs' results, never run again.
+  retired        Boolean      @default(false)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  results        EvalResult[]
+
+  @@unique([datasetId, externalId])
+}
+
+model EvalRun {
+  id             String        @id @default(cuid())
+  datasetId      String
+  dataset        EvalDataset   @relation(fields: [datasetId], references: [id], onDelete: Cascade)
+  // `retrieval` now; answers and the agent in Phase 14.
+  suite          String
+  // The config file's name, e.g. hybrid-rerank.
+  name           String
+  config         Json
+  gitSha         String
+  promptVersions Json          @default("[]")
+  models         Json          @default("{}")
+  split          EvalSplit
+  status         EvalRunStatus @default(RUNNING)
+  startedAt      DateTime      @default(now())
+  finishedAt     DateTime?
+  // metric → value, overall and by type / tag / reviewed.
+  summary        Json?
+  costUsd        Decimal       @default(0) @db.Decimal(12, 8)
+  notes          String?
+  results        EvalResult[]
+
+  @@index([suite, name, startedAt])
+}
+
+model EvalResult {
+  id             String   @id @default(cuid())
+  runId          String
+  run            EvalRun  @relation(fields: [runId], references: [id], onDelete: Cascade)
+  caseId         String
+  case           EvalCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  // Ranked chunk refs with their scores, and what the search reported about itself.
+  retrieved      Json     @default("[]")
+  answer         String?
+  citations      Json?
+  toolTrajectory Json?
+  scores         Json     @default("{}")
+  latencyMs      Int
+  tokensIn       Int      @default(0)
+  tokensOut      Int      @default(0)
+  costUsd        Decimal  @default(0) @db.Decimal(12, 8)
+  error          String?
+  createdAt      DateTime @default(now())
+
+  @@unique([runId, caseId])
+  @@index([caseId])
+}
