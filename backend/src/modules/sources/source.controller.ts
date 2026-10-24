@@ -7,6 +7,7 @@ import type { WorkspaceParams } from '../workspaces/workspace.dto.js';
 import {
   toSourceResponse,
   type CreateSourceInput,
+  type ListFilesQuery,
   type SourceContentQuery,
   type SourceParams,
   type UploadFields,
@@ -93,7 +94,7 @@ export async function getTocHandler(_req: Request, res: Response) {
 export async function listFilesHandler(_req: Request, res: Response) {
   const user = getAuthUser(res);
   const { sourceId } = res.locals.params as SourceParams;
-  const page = await listFilesService(user.id, sourceId, res.locals.query as PaginationQuery);
+  const page = await listFilesService(user.id, sourceId, res.locals.query as ListFilesQuery);
   res.json(successResponse('Files', page));
 }
 

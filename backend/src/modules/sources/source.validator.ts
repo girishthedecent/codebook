@@ -38,15 +38,59 @@ export const sourceParamsSchema = z.object({
 
 export const listSourcesQuerySchema = paginationQuerySchema;
 
-export const listFilesQuerySchema = paginationQuerySchema;
+// Files are listed in path order, so the cursor is the last path of the previous page
+// (base64url, opaque to clients). Paths can be long, hence its own schema.
+const pathCursorSchema = z
+  .string()
+  .max(6_000)
+  .transform((value, ctx) => {
+    const path = Buffer.from(value, 'base64url').toString('utf8');
+    if (!path) {
+      ctx.addIssue({ code: 'custom', message: 'Invalid cursor' });
+      return z.NEVER;
+    }
+    return path;
+  });
 
-// One way to pick the text: a physical page of a PDF, or a TOC section. Phase 6 adds
-// file paths and line ranges for repositories.
+export const listFilesQuerySchema = z.object({
+  cursor: pathCursorSchema.optional(),
+  limit: paginationQuerySchema.shape.limit,
+  // Only files under this path, e.g. "src/"; matched literally.
+  prefix: z.string().min(1).max(1_000).optional(),
+});
+
+const line = z.coerce.number().int().min(1);
+
+// One way to pick the text: a physical page of a PDF, a TOC section, or lines of a
+// repository file.
 export const sourceContentQuerySchema = z
   .object({
     page: z.coerce.number().int().min(1).optional(),
     tocNodeId: z.uuid().optional(),
+    path: z.string().min(1).max(1_000).optional(),
+    lineStart: line.optional(),
+    lineEnd: line.optional(),
   })
-  .refine((query) => (query.page === undefined) !== (query.tocNodeId === undefined), {
-    message: 'Give either page or tocNodeId',
-  });
+  .refine(
+    (query) =>
+      [query.page, query.tocNodeId, query.path].filter((v) => v !== undefined).length === 1,
+    {
+      message: 'Give one of page, tocNodeId or path',
+    },
+  )
+  .refine(
+    (query) =>
+      query.path !== undefined || (query.lineStart === undefined && query.lineEnd === undefined),
+    {
+      message: 'lineStart and lineEnd go with path',
+    },
+  )
+  .refine(
+    (query) =>
+      query.lineStart === undefined ||
+      query.lineEnd === undefined ||
+      query.lineEnd >= query.lineStart,
+    {
+      message: 'lineEnd must not be before lineStart',
+    },
+  );

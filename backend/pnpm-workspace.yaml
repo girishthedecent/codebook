@@ -4,3 +4,7 @@ allowBuilds:
   prisma: true
   # Its postinstall only prints version warnings (pulled in by inngest's OpenTelemetry deps).
   protobufjs: false
+  # Grammar packages build native Node bindings on install; we only load their WASM files.
+  tree-sitter-javascript: false
+  tree-sitter-python: false
+  tree-sitter-typescript: false

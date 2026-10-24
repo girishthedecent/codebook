@@ -1,7 +1,7 @@
 import { appConfig } from '../../config/app.config.js';
 import prismaClient from '../../config/db.config.js';
 import { Prisma, type IngestStage } from '../../generated/prisma/client.js';
-import type { Draft } from './ingestion.types.js';
+import type { ChunkSpan, Draft } from './ingestion.types.js';
 import { chunkText } from './doc.chunker.js';
 
 // Ingestion owns a source's ingest state (status, stage, progress, hash, stats) and its
@@ -83,6 +83,7 @@ type IndexInput = {
 };
 
 const INSERT_BATCH = 500;
+const DOCUMENT_BATCH = 50;
 
 /**
  * Swaps the source's documents, TOC and chunks for the draft's in one transaction and marks
@@ -106,75 +107,87 @@ export async function writeIndex(input: IndexInput): Promise<'done' | 'gone' | '
       // Chunks and TOC nodes go with their documents.
       await tx.sourceDocument.deleteMany({ where: { sourceId } });
 
-      for (const doc of draft.documents) {
-        await tx.sourceDocument.create({
-          data: {
-            id: doc.id,
-            sourceId,
-            path: doc.path,
-            language: doc.language,
-            content: doc.content,
-            pageStart: doc.pageStart,
-            pageEnd: doc.pageEnd,
-            lineCount: doc.lineCount,
-            sizeBytes: Buffer.byteLength(doc.content),
-            hash: doc.hash,
-          },
-        });
-        // In reading order, so a node's parent is always inserted before it.
-        await tx.tocNode.createMany({
-          data: doc.toc.map((entry, ordinal) => ({
-            id: entry.id,
-            sourceId,
-            documentId: doc.id,
-            parentId: entry.parentIndex === null ? null : doc.toc[entry.parentIndex]!.id,
-            title: entry.title,
-            number: entry.number,
-            level: entry.level,
-            ordinal,
-            pageStart: entry.pageStart,
-            pageEnd: entry.pageEnd,
-            charStart: entry.charStart,
-            charEnd: entry.charEnd,
-          })),
-        });
-
-        const base = { sourceId, documentId: doc.id, workspaceId };
-        const parents = doc.parents.map((parent, ordinal) => ({
-          ...base,
-          id: parent.id,
+      // Batched across all documents: a repository has hundreds of files.
+      const documents = draft.documents.map((doc) => ({
+        id: doc.id,
+        sourceId,
+        path: doc.path,
+        language: doc.language,
+        content: doc.content,
+        pageStart: doc.pageStart,
+        pageEnd: doc.pageEnd,
+        lineCount: doc.lineCount,
+        sizeBytes: doc.sizeBytes ?? Buffer.byteLength(doc.content),
+        skippedReason: doc.skippedReason ?? null,
+        hash: doc.hash,
+      }));
+      // In reading order, so a node's parent is always inserted before it.
+      const tocNodes = draft.documents.flatMap((doc) =>
+        doc.toc.map((entry, ordinal) => ({
+          id: entry.id,
+          sourceId,
+          documentId: doc.id,
+          parentId: entry.parentIndex === null ? null : doc.toc[entry.parentIndex]!.id,
+          title: entry.title,
+          number: entry.number,
+          level: entry.level,
+          ordinal,
+          pageStart: entry.pageStart,
+          pageEnd: entry.pageEnd,
+          charStart: entry.charStart,
+          charEnd: entry.charEnd,
+        })),
+      );
+      const chunkFields = (
+        doc: Draft['documents'][number],
+        chunk: ChunkSpan & { id: string; hash: string },
+      ) => ({
+        id: chunk.id,
+        sourceId,
+        documentId: doc.id,
+        workspaceId,
+        content: chunkText(doc.content, chunk.start, chunk.end),
+        headingPath: chunk.headingPath,
+        pageStart: chunk.pageStart,
+        pageEnd: chunk.pageEnd,
+        // Missing in drafts written before repositories were supported.
+        lineStart: chunk.lineStart ?? null,
+        lineEnd: chunk.lineEnd ?? null,
+        symbolName: chunk.symbolName ?? null,
+        tokenCount: chunk.tokenCount,
+        hash: chunk.hash,
+      });
+      const parents = draft.documents.flatMap((doc) =>
+        doc.parents.map((parent, ordinal) => ({
+          ...chunkFields(doc, parent),
           kind: 'PARENT' as const,
           ordinal,
-          content: chunkText(doc.content, parent.start, parent.end),
-          headingPath: parent.headingPath,
-          pageStart: parent.pageStart,
-          pageEnd: parent.pageEnd,
-          tokenCount: parent.tokenCount,
-          hash: parent.hash,
           searchText: '',
-        }));
-        const children = doc.children.map((child, ordinal) => {
+        })),
+      );
+      const children = draft.documents.flatMap((doc) =>
+        doc.children.map((child, ordinal) => {
           const indexed = input.children.get(child.id)!;
           return {
-            ...base,
-            id: child.id,
+            ...chunkFields(doc, child),
             parentId: doc.parents[child.parentIndex]!.id,
             kind: 'CHILD' as const,
             ordinal,
-            content: chunkText(doc.content, child.start, child.end),
             context: indexed.context,
-            headingPath: child.headingPath,
-            pageStart: child.pageStart,
-            pageEnd: child.pageEnd,
-            tokenCount: child.tokenCount,
-            hash: child.hash,
             searchText: indexed.searchText,
           };
-        });
-        for (const rows of [parents, children]) {
-          for (let i = 0; i < rows.length; i += INSERT_BATCH) {
-            await tx.sourceChunk.createMany({ data: rows.slice(i, i + INSERT_BATCH) });
-          }
+        }),
+      );
+      // Documents can be large (a whole book), so they go in smaller batches.
+      for (let i = 0; i < documents.length; i += DOCUMENT_BATCH) {
+        await tx.sourceDocument.createMany({ data: documents.slice(i, i + DOCUMENT_BATCH) });
+      }
+      for (let i = 0; i < tocNodes.length; i += INSERT_BATCH) {
+        await tx.tocNode.createMany({ data: tocNodes.slice(i, i + INSERT_BATCH) });
+      }
+      for (const rows of [parents, children]) {
+        for (let i = 0; i < rows.length; i += INSERT_BATCH) {
+          await tx.sourceChunk.createMany({ data: rows.slice(i, i + INSERT_BATCH) });
         }
       }
 

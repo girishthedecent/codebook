@@ -21,6 +21,11 @@ export type ChunkSpan = {
   headingPath: string[];
   pageStart: number | null;
   pageEnd: number | null;
+  // Repository files only: 1-based, inclusive, as GitHub numbers them.
+  lineStart: number | null;
+  lineEnd: number | null;
+  // The symbol a code chunk belongs to (`AuthService.login`), when it is one symbol or part of one.
+  symbolName: string | null;
   tokenCount: number;
 };
 
@@ -42,13 +47,32 @@ export type DraftDocument = {
   pageStart: number | null;
   pageEnd: number | null;
   lineCount: number | null;
+  // Size of the original file; for a skipped file (no content) the only size there is.
+  // Missing in drafts written before repositories: then the content's size.
+  sizeBytes?: number;
+  // Set for files left out of the index (no content, no chunks), e.g. "secret file".
+  skippedReason?: string | null;
+  // Repository files: imports and top-level names, shown to the contextualize model.
+  outline?: string;
   hash: string;
   toc: (TocEntry & { id: string })[];
   parents: (ChunkSpan & { id: string; hash: string })[];
   children: (ChildSpan & { id: string; hash: string })[];
 };
 
+// What the index step can't recount from the documents.
+export type RepoDraftStats = {
+  commitSha: string;
+  files: number;
+  skippedFiles: number;
+  redactions: number;
+  languages: Record<string, number>;
+};
+
 export type Draft = {
+  // Missing in drafts written before repositories were supported: those are PDFs.
+  sourceType?: 'PDF' | 'GITHUB_REPO';
+  repo?: RepoDraftStats;
   // Snapshot of the source title: it feeds prompts, cache keys and embedding inputs, so
   // every step must use the same one even if the source is renamed mid-run.
   title: string;

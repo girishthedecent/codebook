@@ -5,11 +5,24 @@ import { textRoutes } from '../src/llm/models.js';
 import { deletePrefix } from '../src/utils/storage.js';
 import { authAgent, signedInUser } from './helpers/auth.js';
 import { resetDb } from './helpers/db.js';
-import { contextReply, createPdfSource, ingest, SECTIONS } from './helpers/ingestion.js';
+import { downloadTarball, resolveCommit } from '../src/modules/sources/github.client.js';
+import {
+  codeContextReply,
+  contextReply,
+  createPdfSource,
+  createRepoSource,
+  ingest,
+  SECTIONS,
+} from './helpers/ingestion.js';
 import { promptModel, useModels } from './helpers/llm-mock.js';
+import { buildTarball, FIXTURE_FILES, fixtureRepoEntries } from './helpers/repo.js';
 
 vi.mock('../src/llm/providers.js', () => import('./helpers/llm-mock.js'));
 vi.mock('../src/utils/pacer.js', () => import('./helpers/no-pacing.js'));
+vi.mock('../src/modules/sources/github.client.js', () => ({
+  resolveCommit: vi.fn(),
+  downloadTarball: vi.fn(),
+}));
 
 type User = Awaited<ReturnType<typeof signedInUser>>;
 type TocNode = { id: string; title: string; level: number; children: TocNode[] };
@@ -19,6 +32,10 @@ let bob: User;
 let workspaceId: string;
 let sourceId: string;
 let emptySourceId: string;
+let repoId: string;
+
+// A long file, to page through lines.
+const LONG_FILE = Array.from({ length: 450 }, (_, i) => `line ${i + 1}`).join('\n') + '\n';
 
 // Read-only tests, so the book is ingested once for the whole file.
 beforeAll(async () => {
@@ -28,10 +45,23 @@ beforeAll(async () => {
   const res = await alice.agent.post('/api/v1/workspaces').send({ name: 'Books' });
   workspaceId = (res.body as { data: { id: string } }).data.id;
 
-  useModels({ [textRoutes.contextualize.primary.model]: promptModel(contextReply) });
+  // One model for both prompts: the code prompt has no "Section:" line.
+  useModels({
+    [textRoutes.contextualize.primary.model]: promptModel((prompt) =>
+      prompt.includes('<file path=') ? codeContextReply(prompt) : contextReply(prompt),
+    ),
+  });
   sourceId = await createPdfSource(alice.userId, workspaceId);
   await ingest(sourceId);
   emptySourceId = await createPdfSource(alice.userId, workspaceId, undefined, 'Not yet');
+
+  const files = { ...FIXTURE_FILES, 'src/long.txt': LONG_FILE, 'src/empty.ts': '' };
+  vi.mocked(resolveCommit).mockResolvedValue({ sha: 'c'.repeat(40) });
+  vi.mocked(downloadTarball).mockImplementation(
+    async () => new Response(buildTarball(fixtureRepoEntries(files))).body!,
+  );
+  repoId = await createRepoSource(workspaceId);
+  await ingest(repoId);
 });
 
 afterAll(async () => {
@@ -174,5 +204,121 @@ describe('access', () => {
   it('needs a session', async () => {
     const res = await authAgent().get(`/api/v1/sources/${sourceId}/toc`);
     expect(res.status).toBe(401);
+  });
+});
+
+describe('repository files', () => {
+  type FileRow = { path: string; skippedReason: string | null; lineCount: number | null };
+  const listFiles = async (query = '') => {
+    const res = await alice.agent.get(`/api/v1/sources/${repoId}/files${query}`);
+    expect(res.status).toBe(200);
+    return dataOf<{ items: FileRow[]; nextCursor: string | null }>(res);
+  };
+
+  it('lists kept and skipped files in path order, page by page', async () => {
+    const all: FileRow[] = [];
+    let cursor: string | null = null;
+    do {
+      const page = await listFiles(`?limit=3${cursor ? `&cursor=${cursor}` : ''}`);
+      expect(page.items.length).toBeLessThanOrEqual(3);
+      all.push(...page.items);
+      cursor = page.nextCursor;
+    } while (cursor);
+
+    const paths = all.map((file) => file.path);
+    expect(paths).toEqual([...paths].sort());
+    expect(paths).toContain('node_modules/');
+    expect(all.find((file) => file.path === '.env')).toMatchObject({
+      skippedReason: 'secret file',
+    });
+    expect(all.find((file) => file.path === 'src/long.txt')).toMatchObject({
+      skippedReason: null,
+      lineCount: 450,
+    });
+  });
+
+  it('filters by a literal path prefix', async () => {
+    const page = await listFiles('?prefix=src/');
+    expect(page.items.map((file) => file.path)).toEqual([
+      'src/auth/service.ts',
+      'src/empty.ts',
+      'src/long.txt',
+      'src/util.py',
+    ]);
+    // "_" and "%" are not wildcards.
+    expect((await listFiles('?prefix=s_c/')).items).toEqual([]);
+    expect((await listFiles('?prefix=%25')).items).toEqual([]);
+  });
+
+  it('rejects a cursor that is not one', async () => {
+    const res = await alice.agent.get(`/api/v1/sources/${repoId}/files?cursor=`);
+    expect(res.status).toBe(400);
+  });
+});
+
+describe('GET /sources/:id/content?path=', () => {
+  type Lines = {
+    path: string;
+    lineCount: number;
+    lineStart: number;
+    lineEnd: number;
+    lines: { n: number; text: string }[];
+  };
+  const content = (query: string) => alice.agent.get(`/api/v1/sources/${repoId}/content?${query}`);
+
+  it('returns numbered lines of a file', async () => {
+    const res = await content('path=src/auth/service.ts&lineStart=4&lineEnd=5');
+    expect(res.status).toBe(200);
+    const body = dataOf<Lines>(res);
+    const fileLines = FIXTURE_FILES['src/auth/service.ts']!.split('\n');
+    expect(body).toMatchObject({ path: 'src/auth/service.ts', lineStart: 4, lineEnd: 5 });
+    expect(body.lines).toEqual([
+      { n: 4, text: fileLines[3] },
+      { n: 5, text: fileLines[4] },
+    ]);
+  });
+
+  it('defaults to the whole file and stops at 400 lines', async () => {
+    const whole = dataOf<Lines>(await content('path=src/util.py'));
+    expect(whole.lineStart).toBe(1);
+    expect(whole.lineEnd).toBe(whole.lineCount);
+
+    const long = dataOf<Lines>(await content('path=src/long.txt&lineStart=11'));
+    expect(long).toMatchObject({ lineCount: 450, lineStart: 11, lineEnd: 410 });
+    expect(long.lines).toHaveLength(400);
+    expect(long.lines.at(-1)).toEqual({ n: 410, text: 'line 410' });
+
+    const tail = dataOf<Lines>(await content('path=src/long.txt&lineStart=440&lineEnd=999'));
+    expect(tail).toMatchObject({ lineStart: 440, lineEnd: 450 });
+  });
+
+  it('returns no lines for an empty file', async () => {
+    const res = await content('path=src/empty.ts');
+    expect(res.status).toBe(200);
+    expect(dataOf<Lines>(res)).toMatchObject({ lineCount: 0, lineStart: 1, lineEnd: 0, lines: [] });
+  });
+
+  it('is a 404 for unknown and skipped files and lines past the end', async () => {
+    expect((await content('path=src/nope.ts')).status).toBe(404);
+    const skipped = await content('path=.env');
+    expect(skipped.status).toBe(404);
+    expect((skipped.body as { message: string }).message).toBe(
+      "This file wasn't indexed (secret file)",
+    );
+    expect((await content('path=src/util.py&lineStart=999')).status).toBe(404);
+  });
+
+  it('rejects bad combinations', async () => {
+    for (const query of [
+      'path=src/util.py&lineStart=5&lineEnd=4',
+      'path=src/util.py&page=1',
+      'page=1&lineStart=2',
+      'path=src/util.py&lineStart=0',
+    ]) {
+      expect((await content(query)).status, query).toBe(400);
+    }
+    // Lines only make sense for repository files.
+    const pdf = await alice.agent.get(`/api/v1/sources/${sourceId}/content?path=fixture.pdf`);
+    expect(pdf.status).toBe(400);
   });
 });

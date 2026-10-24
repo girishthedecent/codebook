@@ -1,29 +1,51 @@
 import prismaClient from '../../config/db.config.js';
-import { paginate, type PaginationQuery } from '../../utils/helpers/pagination.helpers.js';
+import { Prisma } from '../../generated/prisma/client.js';
+import type { ListFilesQuery } from './source.dto.js';
 
 // Reads of what ingestion stored for a source (documents, TOC). Callers check access first.
 
-export async function listDocuments(sourceId: string, page: PaginationQuery) {
-  return paginate(
-    (query) =>
-      prismaClient.sourceDocument.findMany({
-        ...query,
-        where: { AND: [query.where, { sourceId }] },
-        // Everything but the content, which can be megabytes.
-        select: {
-          id: true,
-          path: true,
-          language: true,
-          sizeBytes: true,
-          pageStart: true,
-          pageEnd: true,
-          lineCount: true,
-          skippedReason: true,
-          createdAt: true,
-        },
-      }),
-    page,
-  );
+type DocumentRow = {
+  id: string;
+  path: string;
+  language: string | null;
+  sizeBytes: number;
+  pageStart: number | null;
+  pageEnd: number | null;
+  lineCount: number | null;
+  skippedReason: string | null;
+  createdAt: Date;
+};
+
+/** A page of the source's documents in path order (skipped files included). */
+export async function listDocuments(sourceId: string, { cursor, limit, prefix }: ListFilesQuery) {
+  // Raw SQL for two reasons: byte order ("C"), where the database's locale would sort
+  // ".env" after "CHANGELOG.md" and ignore case, and starts_with(), which has no wildcards
+  // (Prisma's startsWith turns "_" and "%" in the prefix into LIKE wildcards).
+  // Everything but the content, which can be megabytes.
+  const rows = await prismaClient.$queryRaw<DocumentRow[]>`
+    SELECT id, path, language, "sizeBytes", "pageStart", "pageEnd", "lineCount",
+      "skippedReason", "createdAt"
+    FROM "SourceDocument"
+    WHERE "sourceId" = ${sourceId}
+      ${cursor === undefined ? Prisma.empty : Prisma.sql`AND path COLLATE "C" > ${cursor}`}
+      ${prefix === undefined ? Prisma.empty : Prisma.sql`AND starts_with(path, ${prefix})`}
+    ORDER BY path COLLATE "C"
+    -- One extra row tells us whether there is another page.
+    LIMIT ${limit + 1}
+  `;
+  const items = rows.slice(0, limit);
+  const last = items.at(-1);
+  return {
+    items,
+    nextCursor: rows.length > limit && last ? Buffer.from(last.path).toString('base64url') : null,
+  };
+}
+
+export async function findFile(sourceId: string, path: string) {
+  return prismaClient.sourceDocument.findUnique({
+    where: { sourceId_path: { sourceId, path } },
+    select: { path: true, language: true, content: true, lineCount: true, skippedReason: true },
+  });
 }
 
 export async function listTocNodes(sourceId: string) {

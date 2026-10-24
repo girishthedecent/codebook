@@ -43,6 +43,31 @@ export function contextReply(prompt: string) {
   });
 }
 
+/** The code contextualize model's answer: one context per chunk, naming the chunk's file. */
+export function codeContextReply(prompt: string) {
+  const contexts: { chunk: number; context: string }[] = [];
+  let path = '';
+  for (const match of prompt.matchAll(/<file path="([^"]+)">|<chunk n="(\d+)">/g)) {
+    if (match[1]) path = match[1];
+    else contexts.push({ chunk: Number(match[2]), context: `Context ${match[2]} of ${path}.` });
+  }
+  return JSON.stringify({ contexts });
+}
+
+/** A GitHub repository source, as creating one through the API leaves it. */
+export async function createRepoSource(workspaceId: string, ref = 'main') {
+  const source = await prismaClient.source.create({
+    data: {
+      workspaceId,
+      type: 'GITHUB_REPO',
+      title: 'acme/widgets',
+      origin: { owner: 'acme', repo: 'widgets', ref, defaultBranch: 'main' },
+      dedupeKey: `github:acme/widgets@${ref}`,
+    },
+  });
+  return source.id;
+}
+
 /** A PDF source with its file in the test bucket, as an upload leaves it. */
 export async function createPdfSource(
   userId: string,

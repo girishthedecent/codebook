@@ -11,7 +11,7 @@ export type ChunkSettings = {
 };
 
 // A piece of text that is never split further: a sentence, or part of an over-long one.
-type Unit = { start: number; end: number; tokens: number };
+export type Unit = { start: number; end: number; tokens: number };
 type Section = { start: number; end: number; headingPath: string[] };
 
 // Sentence ends: punctuation (and closing quotes or brackets) followed by space and
@@ -40,6 +40,9 @@ export function chunkDocument(
     headingPath,
     pageStart: pageAt(starts, first.start),
     pageEnd: pageAt(starts, last.end - 1),
+    lineStart: null,
+    lineEnd: null,
+    symbolName: null,
     tokenCount: countTokens(chunkText(content, first.start, last.end)),
   });
 
@@ -121,7 +124,7 @@ function unitsOf(content: string, section: Section, maxTokens: number): Unit[] {
   return units;
 }
 
-function trimRange(content: string, start: number, end: number) {
+export function trimRange(content: string, start: number, end: number) {
   while (start < end && /\s/.test(content[start]!)) start++;
   while (end > start && /\s/.test(content[end - 1]!)) end--;
   return start < end ? { start, end } : null;
@@ -129,7 +132,7 @@ function trimRange(content: string, start: number, end: number) {
 
 // A "sentence" longer than a child (code, a table, a list without full stops) is split at
 // line breaks, then at spaces; a single word longer than that is cut where it has to be.
-function splitLong(
+export function splitLong(
   content: string,
   range: { start: number; end: number },
   maxTokens: number,
@@ -156,7 +159,7 @@ function splitLong(
 
 // A long section becomes several parents of about equal size instead of full ones and a
 // small remainder.
-function splitParents(units: Unit[], maxTokens: number) {
+export function splitParents(units: Unit[], maxTokens: number) {
   const total = units.reduce((sum, unit) => sum + unit.tokens, 0);
   const target = total / Math.ceil(total / maxTokens);
   const parents: Unit[][] = [];
@@ -180,7 +183,7 @@ function splitParents(units: Unit[], maxTokens: number) {
  * last whole sentences of the one before (up to `overlapTokens`). A last child with
  * hardly anything new is folded into the previous one.
  */
-function childRanges(units: Unit[], settings: ChunkSettings): [number, number][] {
+export function childRanges(units: Unit[], settings: ChunkSettings): [number, number][] {
   const ranges: [number, number][] = [];
   let from = 0;
   while (from < units.length) {

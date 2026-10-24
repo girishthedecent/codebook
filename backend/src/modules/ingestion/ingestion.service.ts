@@ -1,14 +1,19 @@
-import { randomUUID } from 'node:crypto';
 import { appConfig } from '../../config/app.config.js';
 import type { IngestStage, Prisma, SourceType } from '../../generated/prisma/client.js';
 import { embedTexts, embeddingCacheKey, withTaskPrefix } from '../../llm/embeddings.js';
-import { embeddingRoute, textRoutes } from '../../llm/models.js';
-import { contextualizePrompt } from '../../llm/prompts/contextualize.js';
-import { sha256 } from '../../utils/hash.js';
-import { getObjectBuffer } from '../../utils/storage.js';
-import type { PdfOrigin } from '../sources/source.dto.js';
-import { contextKeys, contextualizeParent, type ParentToContextualize } from './contextualizer.js';
-import { chunkDocument, chunkText } from './doc.chunker.js';
+import type { AdapterContext, AdapterResult } from './adapters/adapter.js';
+import { preparePdf } from './adapters/pdf.adapter.js';
+import { prepareRepo } from './adapters/repo.adapter.js';
+import { identifierWords } from './code/identifiers.js';
+import {
+  codeContextKey,
+  contextKeys,
+  contextualizePack,
+  contextualizeParent,
+  type CodePack,
+  type ParentToContextualize,
+} from './contextualizer.js';
+import { chunkText } from './doc.chunker.js';
 import {
   failIngest,
   findContexts,
@@ -20,18 +25,12 @@ import {
   type IndexedChild,
 } from './ingestion.repository.js';
 import type { Draft, DraftDocument } from './ingestion.types.js';
-import { readPdf, PdfReadError } from './pdf/pdf.parser.js';
-import { cleanPages, hasTextLayer } from './pdf/pdf.text.js';
-import { buildToc, outlineHeadings } from './toc.js';
+
+export { ingestHash } from './contentHash.js';
 
 // Each function below is one Inngest step of the ingest run (see ingest.function.ts). They
 // return small plain objects only: Inngest stores step results, and big data lives in the
 // draft row instead.
-
-const UNSUPPORTED: Partial<Record<SourceType, string>> = {
-  GITHUB_REPO: "GitHub repositories can't be ingested yet",
-  WEBSITE: "Websites can't be ingested yet",
-};
 
 export type Prepared =
   | { outcome: 'draft'; contextSteps: number; embedSteps: number }
@@ -48,55 +47,30 @@ export async function startIngest(sourceId: string) {
 }
 
 /**
- * Downloads and parses the file, builds the TOC and the chunk plan, and stores them as this
- * run's draft. Stops early when the content is unchanged since the last complete ingest, or
- * when the file can't be ingested (then the source is FAILED with a message for the user).
+ * Fetches and parses the source with its type's adapter (TOC, chunk plan) and stores the
+ * result as this run's draft. Stops early when the content is unchanged since the last
+ * complete ingest, or when it can't be ingested (then the source is FAILED with a message
+ * for the user).
  */
 export async function prepareSource(sourceId: string, runId: string): Promise<Prepared> {
   const source = await findIngestSource(sourceId);
   if (!source) return { outcome: 'gone' };
 
-  const fail = async (error: string) => {
-    await setIngestState(sourceId, { status: 'FAILED', error });
-    return { outcome: 'failed' } as const;
-  };
-  const unsupported = UNSUPPORTED[source.type];
-  if (unsupported) return fail(unsupported);
-
-  const origin = source.origin as PdfOrigin;
-  if (!origin.storageKey) {
-    return fail("The PDF upload didn't finish. Delete this source and upload it again.");
-  }
-  await setIngestState(sourceId, { stage: 'FETCHING', progress: 2 });
-  const file = await getObjectBuffer(origin.storageKey);
-  if (!file) return fail('The uploaded file is missing. Delete this source and upload it again.');
-
-  await setIngestState(sourceId, { stage: 'PARSING', progress: 5 });
-  let raw;
-  try {
-    raw = await readPdf(file);
-  } catch (error) {
-    if (error instanceof PdfReadError) return fail(error.message);
-    throw error;
-  }
-  if (!hasTextLayer(raw.pages)) {
-    return fail("This PDF has no text layer (scanned pages need OCR, which isn't supported)");
-  }
-
-  await setIngestState(sourceId, { stage: 'STRUCTURING', progress: 8 });
-  const headings = outlineHeadings(raw.outline);
-  const pages = cleanPages(raw.pages, headings);
-  const toc = buildToc(pages, headings);
-
-  await setIngestState(sourceId, { stage: 'CHUNKING', progress: 10 });
-  const content = pages.join('\f');
-  const contentHash = ingestHash(source.title, [content]);
   const stats = source.stats as { missingContexts?: number };
-  if (
-    source.contentHash === contentHash &&
-    source.lastIngestedAt &&
-    (stats.missingContexts ?? 0) === 0
-  ) {
+  const ctx: AdapterContext = {
+    stage: (stage: IngestStage, progress: number) => setIngestState(sourceId, { stage, progress }),
+    unchanged: (contentHash) =>
+      source.contentHash === contentHash &&
+      source.lastIngestedAt !== null &&
+      (stats.missingContexts ?? 0) === 0,
+  };
+  const result = await prepareByType(source.type, source, ctx);
+
+  if (result.outcome === 'failed') {
+    await setIngestState(sourceId, { status: 'FAILED', error: result.error });
+    return { outcome: 'failed' };
+  }
+  if (result.outcome === 'unchanged') {
     await setIngestState(sourceId, {
       status: 'READY',
       stage: 'DONE',
@@ -107,61 +81,39 @@ export async function prepareSource(sourceId: string, runId: string): Promise<Pr
     return { outcome: 'skipped' };
   }
 
-  const plan = chunkDocument(content, toc);
-  const document: DraftDocument = {
-    id: randomUUID(),
-    path: origin.fileName,
-    language: null,
-    content,
-    pageStart: 1,
-    pageEnd: pages.length,
-    lineCount: null,
-    hash: sha256(content),
-    toc: toc.map((entry) => ({ ...entry, id: randomUUID() })),
-    parents: plan.parents.map((parent) => ({
-      ...parent,
-      id: randomUUID(),
-      hash: sha256(chunkText(content, parent.start, parent.end)),
-    })),
-    children: plan.children.map((child) => ({
-      ...child,
-      id: randomUUID(),
-      hash: sha256(chunkText(content, child.start, child.end)),
-    })),
-  };
   const draft: Draft = {
+    sourceType: source.type === 'GITHUB_REPO' ? 'GITHUB_REPO' : 'PDF',
+    ...(result.repo && { repo: result.repo }),
     title: source.title,
     userId: source.workspace.userId,
     workspaceId: source.workspaceId,
-    contentHash,
-    documents: [document],
+    contentHash: result.contentHash,
+    documents: result.documents,
   };
   if (!(await saveDraft(sourceId, runId, draft))) return { outcome: 'gone' };
 
-  const { parentsPerStep } = appConfig.ingestion.contextualize;
   const contextual = appConfig.ingestion.contextualRetrieval;
+  const children = draft.documents.reduce((sum, doc) => sum + doc.children.length, 0);
   return {
     outcome: 'draft',
-    contextSteps: contextual ? Math.ceil(document.parents.length / parentsPerStep) : 0,
-    embedSteps: Math.ceil(document.children.length / appConfig.ingestion.childrenPerEmbedStep),
+    contextSteps: contextual ? Math.ceil(contextUnitsFor(draft).length / unitsPerStep(draft)) : 0,
+    embedSteps: Math.ceil(children / appConfig.ingestion.childrenPerEmbedStep),
   };
 }
 
-/**
- * Everything that changes what the index would contain, so a resync with nothing new can
- * skip the work. Bump `ingestion.version` for changes in code that these don't capture.
- */
-export function ingestHash(title: string, contents: string[]) {
-  const settings = {
-    version: appConfig.ingestion.version,
-    chunking: appConfig.ingestion.chunking,
-    contextualRetrieval: appConfig.ingestion.contextualRetrieval,
-    contextModel: textRoutes.contextualize.primary.model,
-    contextPrompt: contextualizePrompt.id,
-    embeddingModel: embeddingRoute.model.model,
-    dimensions: embeddingRoute.dimensions,
-  };
-  return sha256(JSON.stringify(settings), title, ...contents);
+function prepareByType(
+  type: SourceType,
+  source: Parameters<typeof preparePdf>[0],
+  ctx: AdapterContext,
+): Promise<AdapterResult> {
+  switch (type) {
+    case 'PDF':
+      return preparePdf(source, ctx);
+    case 'GITHUB_REPO':
+      return prepareRepo(source, ctx);
+    case 'WEBSITE':
+      return Promise.resolve({ outcome: 'failed', error: "Websites can't be ingested yet" });
+  }
 }
 
 /**
@@ -172,20 +124,23 @@ export async function contextualizeStep(sourceId: string, runId: string, step: n
   const draft = await loadDraft(sourceId, runId);
   if (!draft) return null;
 
-  const { parentsPerStep } = appConfig.ingestion.contextualize;
-  const groups = parentGroups(draft);
-  const steps = Math.ceil(groups.length / parentsPerStep);
+  const units = contextUnitsFor(draft);
+  const perStep = unitsPerStep(draft);
+  const steps = Math.ceil(units.length / perStep);
   // Stage and progress as the step starts, so a failure is reported against this stage.
   await setIngestState(sourceId, {
     stage: 'CONTEXTUALIZING',
     progress: 10 + Math.round((50 * step) / steps),
   });
 
-  const batch = groups.slice(step * parentsPerStep, (step + 1) * parentsPerStep);
   let done = 0;
   let failed = 0;
-  for (const { parent } of batch) {
-    if (await contextualizeParent(parent, callContext(draft))) done++;
+  for (const unit of units.slice(step * perStep, (step + 1) * perStep)) {
+    const ok =
+      unit.kind === 'parent'
+        ? await contextualizeParent(unit.group.parent, callContext(draft))
+        : await contextualizePack(unit.pack, callContext(draft));
+    if (ok) done++;
     else failed++;
   }
   return { done, failed };
@@ -235,8 +190,7 @@ export async function indexStep(sourceId: string, runId: string) {
     ? [...children.values()].filter((child) => child.context === null).length
     : 0;
   const documents = draft.documents;
-  const stats = {
-    pages: documents.reduce((sum, doc) => sum + (doc.pageEnd ?? 0), 0),
+  const counts = {
     documents: documents.length,
     parentChunks: documents.reduce((sum, doc) => sum + doc.parents.length, 0),
     chunks: children.size,
@@ -245,7 +199,10 @@ export async function indexStep(sourceId: string, runId: string) {
       0,
     ),
     missingContexts,
-  } satisfies Prisma.InputJsonObject;
+  };
+  const stats: Prisma.InputJsonObject = draft.repo
+    ? { ...draft.repo, ...counts }
+    : { pages: documents.reduce((sum, doc) => sum + (doc.pageEnd ?? 0), 0), ...counts };
 
   const outcome = await writeIndex({
     sourceId,
@@ -280,6 +237,26 @@ type ParentGroup = {
   children: DraftDocument['children'];
 };
 
+// What one contextualize call covers: a PDF parent with its children, or a pack of
+// repository chunks.
+type ContextUnit = { kind: 'parent'; group: ParentGroup } | { kind: 'pack'; pack: CodePack };
+
+const isRepo = (draft: Draft) => draft.sourceType === 'GITHUB_REPO';
+
+function unitsPerStep(draft: Draft) {
+  const { packsPerStep, parentsPerStep } = appConfig.ingestion.contextualize;
+  return isRepo(draft) ? packsPerStep : parentsPerStep;
+}
+
+/**
+ * The draft's contextualize calls, in a fixed order that only depends on the draft: the
+ * prepare step counts them and each contextualize step takes its slice, so the two agree.
+ */
+function contextUnitsFor(draft: Draft): ContextUnit[] {
+  if (!isRepo(draft)) return parentGroups(draft).map((group) => ({ kind: 'parent', group }));
+  return codePacks(draft).map((pack) => ({ kind: 'pack', pack }));
+}
+
 // Every parent with its children, in document order.
 function parentGroups(draft: Draft): ParentGroup[] {
   return draft.documents.flatMap((doc) => {
@@ -301,23 +278,74 @@ function parentGroups(draft: Draft): ParentGroup[] {
   });
 }
 
+// Every repository chunk in path order, cut into packs of a few chunks: small files share
+// a call, a big file spans several.
+function codePacks(draft: Draft): CodePack[] {
+  const { codeChunksPerCall, codeTokensPerCall } = appConfig.ingestion.contextualize;
+  const packs: CodePack[] = [];
+  let current: CodePack['items'] = [];
+  let tokens = 0;
+  for (const doc of draft.documents) {
+    const file = { path: doc.path, outline: doc.outline ?? '' };
+    for (const child of doc.children) {
+      const full =
+        current.length >= codeChunksPerCall ||
+        (current.length > 0 && tokens + child.tokenCount > codeTokensPerCall);
+      if (full) {
+        packs.push({ title: draft.title, items: current });
+        current = [];
+        tokens = 0;
+      }
+      current.push({
+        file,
+        chunk: { hash: child.hash, text: chunkText(doc.content, child.start, child.end) },
+      });
+      tokens += child.tokenCount;
+    }
+  }
+  if (current.length > 0) packs.push({ title: draft.title, items: current });
+  return packs;
+}
+
+/** Each child's context cache key, by child id; empty when contextual retrieval is off. */
+function contextKeysFor(draft: Draft) {
+  const keys = new Map<string, string>();
+  if (!appConfig.ingestion.contextualRetrieval) return keys;
+  if (isRepo(draft)) {
+    for (const doc of draft.documents) {
+      const file = { path: doc.path, outline: doc.outline ?? '' };
+      for (const child of doc.children) {
+        keys.set(child.id, codeContextKey(draft.title, file, child.hash));
+      }
+    }
+    return keys;
+  }
+  for (const group of parentGroups(draft)) {
+    const groupKeys = contextKeys(group.parent);
+    group.children.forEach((child, i) => keys.set(child.id, groupKeys[i]!));
+  }
+  return keys;
+}
+
 /** Each child's context (as cached now), search text and embedding key, by child id. */
 async function indexedChildren(draft: Draft) {
-  const groups = parentGroups(draft);
-  const contextual = appConfig.ingestion.contextualRetrieval;
-  const keys = groups.map((group) => (contextual ? contextKeys(group.parent) : []));
-  const contexts = await findContexts(keys.flat());
+  const keys = contextKeysFor(draft);
+  const contexts = await findContexts([...keys.values()]);
+  const repo = isRepo(draft);
 
   // Keyed by child id; insertion follows document order.
   const children = new Map<string, IndexedChild>();
-  groups.forEach((group, g) =>
-    group.children.forEach((child, i) => {
-      const key = keys[g]![i];
+  for (const doc of draft.documents) {
+    for (const child of doc.children) {
+      const key = keys.get(child.id);
       const context = (key && contexts.get(key)) || null;
+      const content = chunkText(doc.content, child.start, child.end);
       const searchText = [
         context,
         child.headingPath.join(' > '),
-        chunkText(group.doc.content, child.start, child.end),
+        // Code identifiers spelled out, so keyword search finds them by their words.
+        repo ? identifierWords(content).join(', ') : null,
+        content,
       ]
         .filter(Boolean)
         .join('\n');
@@ -327,7 +355,7 @@ async function indexedChildren(draft: Draft) {
         searchText,
         embeddingKey: embeddingCacheKey('document', input),
       });
-    }),
-  );
+    }
+  }
   return children;
 }

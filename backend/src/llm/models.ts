@@ -103,11 +103,12 @@ export const textRoutes: Record<TextTask, TextRoute> = {
   // A chunk whose context fails is still indexed, just without one.
   contextualize: {
     primary: GEMINI_FLASH_LITE,
-    // One call writes the contexts for all children of a parent (5-6), plus reasoning.
-    maxOutputTokens: 2_048,
+    // One call writes the contexts for all children of a parent (5-6) or a pack of code
+    // chunks (up to 8), plus reasoning.
+    maxOutputTokens: 3_072,
     temperature: 0.2,
     reasoning: 'low',
-    timeoutMs: 30_000,
+    timeoutMs: 45_000,
   },
   // Long inputs too, but occasional, so Groq can step in.
   summarize: {

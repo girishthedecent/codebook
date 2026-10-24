@@ -2,6 +2,7 @@ import type { z } from 'zod';
 import type { Source } from '../../generated/prisma/client.js';
 import type {
   createSourceSchema,
+  listFilesQuerySchema,
   sourceContentQuerySchema,
   sourceParamsSchema,
   uploadFieldsSchema,
@@ -11,6 +12,7 @@ export type CreateSourceInput = z.infer<typeof createSourceSchema>;
 export type UploadFields = z.infer<typeof uploadFieldsSchema>;
 export type SourceParams = z.infer<typeof sourceParamsSchema>;
 export type SourceContentQuery = z.infer<typeof sourceContentQuerySchema>;
+export type ListFilesQuery = z.infer<typeof listFilesQuerySchema>;
 
 export type PdfOrigin = { storageKey: string | null; fileName: string; size: number; mime: string };
 export type RepoOrigin = { owner: string; repo: string; ref: string; defaultBranch: string };

@@ -41,7 +41,12 @@
     "js-tiktoken": "1.0.21",
     "multer": "2.4.0",
     "pg": "^8.23.1",
+    "tar": "7.5.22",
+    "tree-sitter-javascript": "0.25.0",
+    "tree-sitter-python": "0.25.0",
+    "tree-sitter-typescript": "0.23.2",
     "unpdf": "1.9.0",
+    "web-tree-sitter": "0.27.1",
     "winston": "3.19.0",
     "winston-daily-rotate-file": "5.0.0",
     "zod": "^4.6.7"

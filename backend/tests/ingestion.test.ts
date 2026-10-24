@@ -318,14 +318,14 @@ describe('ingesting a PDF', () => {
     expect((await sourceRow(sourceId)).error).toMatch(/file is missing/);
   });
 
-  it("fails repositories and websites until they're supported", async () => {
+  it("fails websites until they're supported", async () => {
     const source = await prismaClient.source.create({
       data: {
         workspaceId,
-        type: 'GITHUB_REPO',
-        title: 'acme/widgets',
-        origin: { owner: 'acme', repo: 'widgets', ref: 'main', defaultBranch: 'main' },
-        dedupeKey: 'github:acme/widgets@main',
+        type: 'WEBSITE',
+        title: 'docs.example.com',
+        origin: { url: 'https://docs.example.com', maxDepth: 0, maxPages: 10 },
+        dedupeKey: 'web:https://docs.example.com',
       },
     });
 
@@ -363,6 +363,13 @@ describe('ingesting a PDF', () => {
 });
 
 describe('ingestHash', () => {
+  it("hasn't changed for PDFs, so indexed books keep taking the skip path", () => {
+    // Pinned when repositories were added: a change here re-indexes every PDF on resync.
+    expect(ingestHash('Book', ['page one\fpage two'])).toBe(
+      '6eb5c6228b56208de4ad12054c2f30d3caf1c07db379fa29841d649b5f8b30da',
+    );
+  });
+
   it('is stable, and changes with the title and with the content', () => {
     const base = ingestHash('Book', ['page one\fpage two']);
     expect(ingestHash('Book', ['page one\fpage two'])).toBe(base);

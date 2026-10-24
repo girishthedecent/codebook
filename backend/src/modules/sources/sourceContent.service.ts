@@ -1,8 +1,9 @@
-import { NotFoundError } from '../../utils/errors/app.error.js';
-import type { PaginationQuery } from '../../utils/helpers/pagination.helpers.js';
-import type { SourceContentQuery } from './source.dto.js';
+import { appConfig } from '../../config/app.config.js';
+import { BadRequestError, NotFoundError } from '../../utils/errors/app.error.js';
+import type { ListFilesQuery, SourceContentQuery } from './source.dto.js';
 import { getSourceService } from './source.service.js';
 import {
+  findFile,
   findPageText,
   findTocSection,
   listDocuments,
@@ -32,9 +33,9 @@ export async function getTocService(userId: string, sourceId: string) {
   return roots;
 }
 
-export async function listFilesService(userId: string, sourceId: string, page: PaginationQuery) {
+export async function listFilesService(userId: string, sourceId: string, query: ListFilesQuery) {
   await getSourceService(userId, sourceId);
-  return listDocuments(sourceId, page);
+  return listDocuments(sourceId, query);
 }
 
 export async function getContentService(
@@ -42,7 +43,15 @@ export async function getContentService(
   sourceId: string,
   query: SourceContentQuery,
 ) {
-  await getSourceService(userId, sourceId);
+  const source = await getSourceService(userId, sourceId);
+
+  if (query.path !== undefined) {
+    // A book is one document of \f-joined pages; its "lines" would mean nothing.
+    if (source.type !== 'GITHUB_REPO') {
+      throw new BadRequestError('Line ranges are only available for repository files');
+    }
+    return fileLines(sourceId, query.path, query.lineStart ?? 1, query.lineEnd);
+  }
 
   if (query.page !== undefined) {
     const text = await findPageText(sourceId, query.page);
@@ -54,4 +63,31 @@ export async function getContentService(
   if (!section) throw new NotFoundError('Section not found');
   const { text, ...tocNode } = section;
   return { tocNode, text: text.replaceAll('\f', '\n') };
+}
+
+/** Lines `from`…`to` of a repository file (1-based, inclusive), at most `maxLines` of them. */
+async function fileLines(sourceId: string, path: string, from: number, to: number | undefined) {
+  const file = await findFile(sourceId, path);
+  if (!file) throw new NotFoundError('File not found');
+  if (file.skippedReason) {
+    throw new NotFoundError(`This file wasn't indexed (${file.skippedReason})`);
+  }
+
+  const lineCount = file.lineCount ?? 0;
+  if (from > Math.max(lineCount, 1)) {
+    throw new NotFoundError(`The file has ${lineCount} lines`);
+  }
+  const last = Math.min(to ?? lineCount, lineCount, from + appConfig.sources.maxContentLines - 1);
+  const lines = file.content
+    .split('\n')
+    .slice(from - 1, last)
+    .map((text, i) => ({ n: from + i, text }));
+  return {
+    path: file.path,
+    language: file.language,
+    lineCount,
+    lineStart: from,
+    lineEnd: from + lines.length - 1,
+    lines,
+  };
 }
