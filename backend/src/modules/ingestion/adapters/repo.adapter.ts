@@ -3,7 +3,7 @@ import { Readable } from 'node:stream';
 import { appConfig } from '../../../config/app.config.js';
 import logger from '../../../config/logger.config.js';
 import { sha256 } from '../../../utils/hash.js';
-import { downloadTarball, resolveCommit } from '../../sources/github.client.js';
+import { downloadTarball, resolveCommit } from '../../../utils/github.js';
 import type { RepoOrigin } from '../../sources/source.dto.js';
 import { chunkCode } from '../code/code.chunker.js';
 import { countLines } from '../code/lines.js';

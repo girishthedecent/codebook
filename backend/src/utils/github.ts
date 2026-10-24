@@ -1,7 +1,7 @@
-import { appConfig } from '../../config/app.config.js';
-import { serverConfig } from '../../config/index.js';
-import logger from '../../config/logger.config.js';
-import { UpstreamError } from '../../utils/errors/app.error.js';
+import { appConfig } from '../config/app.config.js';
+import { serverConfig } from '../config/index.js';
+import logger from '../config/logger.config.js';
+import { UpstreamError } from './errors/app.error.js';
 
 export type GithubRepo = {
   fullName: string;

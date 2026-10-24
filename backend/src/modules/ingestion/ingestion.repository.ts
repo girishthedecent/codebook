@@ -1,8 +1,8 @@
 import { appConfig } from '../../config/app.config.js';
 import prismaClient from '../../config/db.config.js';
 import { Prisma, type IngestStage } from '../../generated/prisma/client.js';
-import type { ChunkSpan, Draft } from './ingestion.types.js';
-import { chunkText } from './doc.chunker.js';
+import { indexRows } from './indexRows.js';
+import type { Draft, IndexedChild } from './ingestion.types.js';
 
 // Ingestion owns a source's ingest state (status, stage, progress, hash, stats) and its
 // documents, TOC and chunks; the sources module owns the rest of the source's life.
@@ -65,13 +65,6 @@ export async function saveContexts(entries: { key: string; context: string }[]) 
 
 // ---- index ------------------------------------------------------------------------------
 
-export type IndexedChild = {
-  context: string | null;
-  searchText: string;
-  // EmbeddingCache key of the child's vector, which the transaction copies in SQL.
-  embeddingKey: string;
-};
-
 type IndexInput = {
   sourceId: string;
   runId: string;
@@ -91,7 +84,7 @@ const DOCUMENT_BATCH = 50;
  * was deleted, 'superseded' when another run owns the draft now.
  */
 export async function writeIndex(input: IndexInput): Promise<'done' | 'gone' | 'superseded'> {
-  const { sourceId, runId, workspaceId, draft } = input;
+  const { sourceId, runId, draft } = input;
   return prismaClient.$transaction(
     async (tx) => {
       const locked = await tx.$queryRaw<unknown[]>`
@@ -107,77 +100,8 @@ export async function writeIndex(input: IndexInput): Promise<'done' | 'gone' | '
       // Chunks and TOC nodes go with their documents.
       await tx.sourceDocument.deleteMany({ where: { sourceId } });
 
-      // Batched across all documents: a repository has hundreds of files.
-      const documents = draft.documents.map((doc) => ({
-        id: doc.id,
-        sourceId,
-        path: doc.path,
-        language: doc.language,
-        content: doc.content,
-        pageStart: doc.pageStart,
-        pageEnd: doc.pageEnd,
-        lineCount: doc.lineCount,
-        sizeBytes: doc.sizeBytes ?? Buffer.byteLength(doc.content),
-        skippedReason: doc.skippedReason ?? null,
-        hash: doc.hash,
-      }));
-      // In reading order, so a node's parent is always inserted before it.
-      const tocNodes = draft.documents.flatMap((doc) =>
-        doc.toc.map((entry, ordinal) => ({
-          id: entry.id,
-          sourceId,
-          documentId: doc.id,
-          parentId: entry.parentIndex === null ? null : doc.toc[entry.parentIndex]!.id,
-          title: entry.title,
-          number: entry.number,
-          level: entry.level,
-          ordinal,
-          pageStart: entry.pageStart,
-          pageEnd: entry.pageEnd,
-          charStart: entry.charStart,
-          charEnd: entry.charEnd,
-        })),
-      );
-      const chunkFields = (
-        doc: Draft['documents'][number],
-        chunk: ChunkSpan & { id: string; hash: string },
-      ) => ({
-        id: chunk.id,
-        sourceId,
-        documentId: doc.id,
-        workspaceId,
-        content: chunkText(doc.content, chunk.start, chunk.end),
-        headingPath: chunk.headingPath,
-        pageStart: chunk.pageStart,
-        pageEnd: chunk.pageEnd,
-        // Missing in drafts written before repositories were supported.
-        lineStart: chunk.lineStart ?? null,
-        lineEnd: chunk.lineEnd ?? null,
-        symbolName: chunk.symbolName ?? null,
-        tokenCount: chunk.tokenCount,
-        hash: chunk.hash,
-      });
-      const parents = draft.documents.flatMap((doc) =>
-        doc.parents.map((parent, ordinal) => ({
-          ...chunkFields(doc, parent),
-          kind: 'PARENT' as const,
-          ordinal,
-          searchText: '',
-        })),
-      );
-      const children = draft.documents.flatMap((doc) =>
-        doc.children.map((child, ordinal) => {
-          const indexed = input.children.get(child.id)!;
-          return {
-            ...chunkFields(doc, child),
-            parentId: doc.parents[child.parentIndex]!.id,
-            kind: 'CHILD' as const,
-            ordinal,
-            context: indexed.context,
-            searchText: indexed.searchText,
-          };
-        }),
-      );
+      // Inserted in batches across all documents: a repository has hundreds of files.
+      const { documents, tocNodes, parents, children } = indexRows(input);
       // Documents can be large (a whole book), so they go in smaller batches.
       for (let i = 0; i < documents.length; i += DOCUMENT_BATCH) {
         await tx.sourceDocument.createMany({ data: documents.slice(i, i + DOCUMENT_BATCH) });

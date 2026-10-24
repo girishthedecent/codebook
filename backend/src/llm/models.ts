@@ -137,12 +137,30 @@ export const textRoutes: Record<TextTask, TextRoute> = {
   },
 };
 
+// Documents and queries are embedded differently so a short question lands near the
+// passage that answers it.
+export type EmbedKind = 'document' | 'query';
+
 // No fallback: vectors from different models can't be compared, so mixing them breaks
-// the index.
+// the index. Everything specific to the model is here, so switching models only touches
+// this route (the database column is vector(1536), so a model with other dimensions also
+// needs a migration).
 export const embeddingRoute = {
   model: { provider: 'google', model: 'gemini-embedding-2' } satisfies ModelRef,
   dimensions: 1536,
   timeoutMs: 30_000,
+  // gemini-embedding-2 takes the task as a text prefix (it has no taskType option); a
+  // document's title gives it context. Code search could use "task: code retrieval" once
+  // evals show it helps.
+  input(text: string, kind: EmbedKind, title?: string) {
+    return kind === 'query'
+      ? `task: search result | query: ${text}`
+      : `title: ${title?.trim() || 'none'} | text: ${text}`;
+  },
+  // Gemini reports no token counts for embeddings; ~4 characters per token is close enough.
+  estimateTokens(input: string) {
+    return Math.ceil(input.length / 4);
+  },
 };
 
 /** The models to try for a task, in order. An override (used by evals) is tried alone. */

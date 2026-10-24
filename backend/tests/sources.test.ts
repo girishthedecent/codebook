@@ -6,9 +6,9 @@ import { appConfig } from '../src/config/app.config.js';
 import prismaClient from '../src/config/db.config.js';
 import { inngest } from '../src/config/inngest.config.js';
 import { s3Client } from '../src/config/storage.config.js';
-import { getRepo, refExists } from '../src/modules/sources/github.client.js';
+import { getRepo, refExists } from '../src/utils/github.js';
 import { createSource } from '../src/modules/sources/source.repository.js';
-import { isValidGitRef, parseGithubUrl } from '../src/modules/sources/source.service.js';
+import { isValidGitRef, parseGithubUrl } from '../src/modules/sources/githubUrl.js';
 import { isCleanupPrefix, pdfStorageKey } from '../src/modules/sources/source.storage.js';
 import { drainRegistry } from '../src/utils/helpers/shutdown.helpers.js';
 import { deletePrefix, headObject } from '../src/utils/storage.js';
@@ -16,7 +16,7 @@ import { authAgent, ORIGIN, signedInUser } from './helpers/auth.js';
 import { countLockWaiters, resetDb } from './helpers/db.js';
 import { minimalPdf } from './helpers/pdf.js';
 
-vi.mock('../src/modules/sources/github.client.js', () => ({
+vi.mock('../src/utils/github.js', () => ({
   getRepo: vi.fn(),
   refExists: vi.fn(),
 }));

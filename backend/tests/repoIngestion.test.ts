@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } fr
 import { appConfig } from '../src/config/app.config.js';
 import prismaClient from '../src/config/db.config.js';
 import { textRoutes } from '../src/llm/models.js';
-import { downloadTarball, resolveCommit } from '../src/modules/sources/github.client.js';
+import { downloadTarball, resolveCommit } from '../src/utils/github.js';
 import { signedInUser } from './helpers/auth.js';
 import { resetDb } from './helpers/db.js';
 import { codeContextReply, createRepoSource, ingest } from './helpers/ingestion.js';
@@ -17,7 +17,7 @@ import {
 
 vi.mock('../src/llm/providers.js', () => import('./helpers/llm-mock.js'));
 vi.mock('../src/utils/pacer.js', () => import('./helpers/no-pacing.js'));
-vi.mock('../src/modules/sources/github.client.js', () => ({
+vi.mock('../src/utils/github.js', () => ({
   resolveCommit: vi.fn(),
   downloadTarball: vi.fn(),
 }));

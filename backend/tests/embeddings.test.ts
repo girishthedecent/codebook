@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import { appConfig } from '../src/config/app.config.js';
 import prismaClient from '../src/config/db.config.js';
-import { embedTexts, normalize } from '../src/llm/embeddings.js';
+import { embedTexts, embeddingCacheKey, embeddingInput, normalize } from '../src/llm/embeddings.js';
 import { UpstreamError } from '../src/utils/errors/app.error.js';
 import { resetDb } from './helpers/db.js';
 import { apiError, fakeEmbed, fakeEmbeddingModel } from './helpers/llm-mock.js';
@@ -155,6 +155,17 @@ describe('embedTexts', () => {
   it('returns an empty list for no texts', async () => {
     expect(await embedTexts([], { kind: 'document' })).toEqual([]);
     expect(doEmbed).not.toHaveBeenCalled();
+  });
+});
+
+describe('embeddingCacheKey', () => {
+  it("hasn't changed, so indexed sources keep their cached vectors", () => {
+    // Pinned when the model-specific input format moved onto the embedding route.
+    const input = embeddingInput('Some chunk text', 'document', 'Book');
+    expect(input).toBe('title: Book | text: Some chunk text');
+    expect(embeddingCacheKey('document', input)).toBe(
+      '6f759fa2d0225900097945a4fdfdf60ea8984d2db7d3f11b2b5f8562b8bbb915',
+    );
   });
 });
 

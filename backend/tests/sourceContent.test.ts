@@ -5,7 +5,7 @@ import { textRoutes } from '../src/llm/models.js';
 import { deletePrefix } from '../src/utils/storage.js';
 import { authAgent, signedInUser } from './helpers/auth.js';
 import { resetDb } from './helpers/db.js';
-import { downloadTarball, resolveCommit } from '../src/modules/sources/github.client.js';
+import { downloadTarball, resolveCommit } from '../src/utils/github.js';
 import {
   codeContextReply,
   contextReply,
@@ -19,7 +19,7 @@ import { buildTarball, FIXTURE_FILES, fixtureRepoEntries } from './helpers/repo.
 
 vi.mock('../src/llm/providers.js', () => import('./helpers/llm-mock.js'));
 vi.mock('../src/utils/pacer.js', () => import('./helpers/no-pacing.js'));
-vi.mock('../src/modules/sources/github.client.js', () => ({
+vi.mock('../src/utils/github.js', () => ({
   resolveCommit: vi.fn(),
   downloadTarball: vi.fn(),
 }));

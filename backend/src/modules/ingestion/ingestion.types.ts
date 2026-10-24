@@ -82,3 +82,11 @@ export type Draft = {
   contentHash: string;
   documents: DraftDocument[];
 };
+
+// What search indexes for a child, built in the embed and index steps.
+export type IndexedChild = {
+  context: string | null;
+  searchText: string;
+  // EmbeddingCache key of the child's vector, which the transaction copies in SQL.
+  embeddingKey: string;
+};

@@ -6,16 +6,13 @@ import { UpstreamError } from '../utils/errors/app.error.js';
 import { createWindowLimiter } from '../utils/pacer.js';
 import type { CallContext } from './client.js';
 import { findCachedEmbeddings, saveCachedEmbeddings } from './embeddingCache.repository.js';
-import { embeddingRoute } from './models.js';
+import { embeddingRoute, type EmbedKind } from './models.js';
 import { estimateCost } from './pricing.js';
 import { embeddingModel } from './providers.js';
 import { describeError, withRetry } from './retry.js';
 import { recordUsage } from './usage.repository.js';
 
-// Documents and queries are embedded differently so a short question lands near the
-// passage that answers it. gemini-embedding-2 takes the task as a text prefix (it has no
-// taskType option). Code search could use "task: code retrieval" once evals show it helps.
-export type EmbedKind = 'document' | 'query';
+export type { EmbedKind };
 
 type EmbedOptions = {
   kind: EmbedKind;
@@ -25,15 +22,14 @@ type EmbedOptions = {
   ctx?: CallContext;
 };
 
-// Gemini's free tier counts texts, not requests: 100 a minute for everyone. Ingestion
+// The free tier counts texts, not requests: 100 a minute for everyone. Ingestion
 // waits to stay under documentsPerMinute; queries never wait (a user is waiting) but are
 // counted, so a book being embedded can't push search over the limit.
 const quota = createWindowLimiter(appConfig.llm.embeddings.documentsPerMinute, 60_000);
 
-export function withTaskPrefix(text: string, kind: EmbedKind, title?: string) {
-  return kind === 'query'
-    ? `task: search result | query: ${text}`
-    : `title: ${title?.trim() || 'none'} | text: ${text}`;
+/** What the embedding model is sent for a text: the route's own format for its kind. */
+export function embeddingInput(text: string, kind: EmbedKind, title?: string) {
+  return embeddingRoute.input(text, kind, title);
 }
 
 export function embeddingCacheKey(kind: EmbedKind, input: string) {
@@ -47,7 +43,7 @@ export function embeddingCacheKey(kind: EmbedKind, input: string) {
  * retry after a failure only pays for what's left.
  */
 export async function embedTexts(texts: string[], options: EmbedOptions): Promise<number[][]> {
-  const inputs = texts.map((text) => withTaskPrefix(text, options.kind, options.title));
+  const inputs = texts.map((text) => embeddingInput(text, options.kind, options.title));
   const keys = inputs.map((input) => embeddingCacheKey(options.kind, input));
   const vectors = await findCachedEmbeddings([...new Set(keys)]);
 
@@ -90,8 +86,9 @@ async function embedMissing(entries: [key: string, input: string][], options: Em
       { timeoutMs, signal: options.abortSignal },
     );
 
-    // Gemini doesn't report token counts for embeddings; ~4 characters per token is close enough.
-    tokensIn += usage.tokens || values.reduce((sum, value) => sum + Math.ceil(value.length / 4), 0);
+    // Providers that don't report token counts get the route's estimate.
+    tokensIn +=
+      usage.tokens || values.reduce((sum, value) => sum + embeddingRoute.estimateTokens(value), 0);
     const normalized = embeddings.map((embedding) => normalize(embedding, dimensions));
     batch.forEach(([key], i) => results.set(key, normalized[i]!));
 

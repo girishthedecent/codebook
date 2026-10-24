@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, it, vi } from 'vitest';
 import prismaClient from '../src/config/db.config.js';
 import { serverConfig } from '../src/config/index.js';
-import { downloadTarball, resolveCommit } from '../src/modules/sources/github.client.js';
+import { downloadTarball, resolveCommit } from '../src/utils/github.js';
 import { deletePrefix } from '../src/utils/storage.js';
 import { signedInUser } from './helpers/auth.js';
 import { resetDb } from './helpers/db.js';
@@ -10,7 +10,7 @@ import { buildPdf } from './helpers/pdf.js';
 import { buildTarball, FIXTURE_SECRETS, fixtureRepoEntries } from './helpers/repo.js';
 
 // GitHub itself stays mocked: the fixture repository is served from memory.
-vi.mock('../src/modules/sources/github.client.js', () => ({
+vi.mock('../src/utils/github.js', () => ({
   resolveCommit: vi.fn(),
   downloadTarball: vi.fn(),
 }));

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { UpstreamError } from '../../utils/errors/app.error.js';
-import { downloadTarball, resolveCommit } from './github.client.js';
+import { UpstreamError } from './errors/app.error.js';
+import { downloadTarball, resolveCommit } from './github.js';
 
 const SHA = 'a'.repeat(40);
 
