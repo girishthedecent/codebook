@@ -1,3 +1,5 @@
+import type { GraphStats } from '../graph/resolve.js';
+
 // What a source turns into before it is indexed. The prepare step builds it, the IngestDraft
 // row stores it between Inngest steps, and the index step writes it out as rows.
 // Offsets are character positions in the document's `content`.
@@ -67,12 +69,22 @@ export type RepoDraftStats = {
   skippedFiles: number;
   redactions: number;
   languages: Record<string, number>;
+  // Symbol and edge counts with resolution rates (modules/graph). Missing before the graph.
+  graph?: GraphStats;
+};
+
+export type WebsiteDraftStats = {
+  pages: number;
+  // Linked pages that were tried but not kept (not HTML, too big, an error).
+  skippedPages: number;
+  robotsBlocked: number;
 };
 
 export type Draft = {
   // Missing in drafts written before repositories were supported: those are PDFs.
-  sourceType?: 'PDF' | 'GITHUB_REPO';
+  sourceType?: 'PDF' | 'GITHUB_REPO' | 'WEBSITE';
   repo?: RepoDraftStats;
+  website?: WebsiteDraftStats;
   // Snapshot of the source title: it feeds prompts, cache keys and embedding inputs, so
   // every step must use the same one even if the source is renamed mid-run.
   title: string;
@@ -82,6 +94,33 @@ export type Draft = {
   contentHash: string;
   documents: DraftDocument[];
 };
+
+// A repository's code graph (modules/graph). Stored next to the draft, not in it: only the
+// index step needs it, and the other steps load the draft every time.
+export type DraftSymbol = {
+  id: string;
+  documentId: string;
+  name: string;
+  qualifiedName: string;
+  kind: 'FILE' | 'CLASS' | 'INTERFACE' | 'FUNCTION' | 'METHOD';
+  filePath: string;
+  lineStart: number;
+  lineEnd: number;
+  signature: string | null;
+  exported: boolean;
+  chunkId: string | null;
+};
+
+export type DraftEdge = {
+  fromSymbolId: string;
+  toSymbolId: string | null;
+  toName: string;
+  type: 'IMPORTS' | 'DEFINES' | 'EXTENDS' | 'IMPLEMENTS' | 'CALLS';
+  filePath: string;
+  line: number;
+};
+
+export type DraftGraph = { symbols: DraftSymbol[]; edges: DraftEdge[] };
 
 // What search indexes for a child, built in the embed and index steps.
 export type IndexedChild = {

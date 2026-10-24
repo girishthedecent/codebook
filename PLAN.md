@@ -258,15 +258,20 @@ codebook/
    │  │  │  ├─ ingest.function.ts   # the Inngest function (steps)
    │  │  │  ├─ ingestion.service.ts # one function per step
    │  │  │  ├─ ingestion.repository.ts # draft, ingest state, index transaction
-   │  │  │  ├─ adapters/        # pdf.adapter.ts, repo.adapter.ts (website in Phase 8)
+   │  │  │  ├─ adapters/        # pdf.adapter.ts, repo.adapter.ts, website.adapter.ts
    │  │  │  ├─ pdf/             # pdf.parser.ts, pdf.text.ts (page cleanup)
    │  │  │  ├─ repo/            # repo.archive.ts, file.filter.ts, secret.scanner.ts
    │  │  │  ├─ code/            # treeSitter.ts, syntax.ts, code/line/markdown chunkers, identifiers.ts
+   │  │  │  ├─ web/             # crawler.ts (robots, limits), extract.ts (Readability + guards), htmlText.ts, pageText.ts
    │  │  │  ├─ doc.chunker.ts, toc.ts, pageMap.ts
    │  │  │  ├─ contextualizer.ts, contextUnits.ts  # model calls; what each call covers + cache keys
    │  │  │  ├─ indexedChildren.ts, indexRows.ts    # search texts + embedding keys; rows to insert
-   │  │  │  └─ contentHash.ts   # skip-if-unchanged hashes (PDF, repo)
+   │  │  │  └─ contentHash.ts   # skip-if-unchanged hashes (PDF, repo, website)
    │  │  ├─ graph/
+   │  │  │  ├─ extract/         # fileFacts.ts, declarations.ts, references.ts (tree-sitter → facts)
+   │  │  │  ├─ resolve.ts       # modules + the 5 call heuristics → symbols and edges
+   │  │  │  ├─ buildGraph.ts    # repo adapter entry point
+   │  │  │  └─ graph.{repository,service,controller,router,validator,dto}.ts  # recursive CTE walks, endpoints
    │  │  ├─ retrieval/
    │  │  ├─ chat/
    │  │  │  ├─ tools/           # one file per agent tool
@@ -1249,57 +1254,75 @@ Goal: a public repo becomes documents (files) → code-aware parent/child chunks
 
 Goal: symbols and relationships (calls, imports, extends, implements) extracted with tree-sitter, stored in Postgres, queryable with recursive SQL. Plus the book TOC tool data is already from Phase 5.
 
+**Checked 2026-10-24** (planning, probes on the installed grammars):
+- Node shapes the extractor relies on: TS/JS `import_statement` (`import_clause` → identifier / `named_imports` → `import_specifier` name+alias / `namespace_import`, field `source`), `export_statement` with `source` (re-export; `export_clause` or bare `*`), `class_heritage` → `extends_clause` (field `value`) + `implements_clause` (type identifiers; JS has the expression directly), `interface_declaration` → `extends_type_clause`, constructor `required_parameter` with `accessibility_modifier` + `type_annotation` (injected field), `public_field_definition` with `value: new_expression`, `call_expression` (field `function`; `type_arguments` separate), `require('./x')` is a plain `call_expression`. Python: `import_statement` (`dotted_name` / `aliased_import`), `import_from_statement` (`module_name`: `relative_import` = `import_prefix` + `dotted_name`; names; `wildcard_import`), `class_definition` `superclasses: argument_list` (skip `keyword_argument`), `call` (field `function`: identifier / `attribute`)
+- Symbols come from the same `declarationOf` the chunker uses (`code/syntax.ts`), not separate `.scm` query strings: one definition of "a symbol", so chunk `symbolName`s and graph symbols agree
+
+**Found during the build** (2026-10-24, all with tests):
+- **`prisma migrate dev --create-only` adds `DROP INDEX` for the raw-SQL HNSW / GIN indexes and `DROP DEFAULT` on the generated `tsv`** (it can't see them): the first apply dropped both indexes in the dev DB, then failed. Removed those lines from `code_graph`, recreated the indexes from the `pdf_ingestion` definitions. Every new migration must be checked for these lines
+- Plan review: the graph is stored in its own `IngestDraft.graph` column, read only by the index step (`loadDraft` doesn't select it), not inside the draft every step loads; qualified names over 1,000 bytes are skipped (btree row limit); a path containing `#` can't collide with a symbol (one global set of qualified names)
+- Heuristic 5 matches **members only** (methods, functions assigned onto objects) and skips a list of runtime method names (`map`, `get`, `then`, …); bare `foo()` only resolves through the same file or an import. Hits are counted apart (`callsResolvedByName`). Without this `pool.query()` resolved to the file's own `query()`
+- Module-level `const service = new AuthService()` types `service` (heuristic 4 for variables), the fixture's `service.login()` needed it
+- CommonJS: `exports.helper = function …` is the module's `helper`; `exports = module.exports = createApplication` chains; `module.exports = require('./lib/express')` passes the default on; `require('../../')` and `require('..')` load the folder's index; a namespace binding called directly (`express()`) calls the module's default export; `module.exports = res` makes `res.json` an export
+- Python: absolute imports try the root, `src/`, `lib/`, then folders above the importing file (an `import logging` isn't a sibling `logging.py`)
+- Walks use `UNION` over `(symbol, via, depth)` with a `LIMIT` straight on the CTE (`maxWalkRows`); dependencies follow `CALLS` + `IMPORTS` (imports leave FILE symbols); `path(imports=true)` adds `DEFINES` so a file can lead into its symbols
+- Interface method signatures are METHOD symbols (so `login` is ambiguous in the fixture: the 409 test)
+- **express** (`1c6f1b0`): 155 symbols, 870 edges; calls 199 / 627 resolved (32%, of which 116 by unique name), imports 49 / 138 (the rest are packages). Most unresolved calls are external (`console.log`, `path.join`, callbacks like `next`) or dynamic (`app.get` is defined in a loop)
+
 **7.1 Schema**
-- [ ] `CodeSymbol`, `CodeEdge` models + enums
-- [ ] Migration `code_graph` with indexes (§7.2)
+- [x] `CodeSymbol`, `CodeEdge` (§7.2) + enums `SymbolKind` (`FILE`, `CLASS`, `INTERFACE`, `FUNCTION`, `METHOD`), `EdgeType` (`IMPORTS`, `DEFINES`, `EXTENDS`, `IMPLEMENTS`, `CALLS`). `documentId` FK cascade (so the index swap replaces the graph with the documents), `chunkId` FK to `SourceChunk` set null, edges cascade with their `from` symbol, `toSymbolId` FK set null
+- [x] Migration `code_graph`: `(sourceId, name)`, unique `(sourceId, qualifiedName)`, `(fromSymbolId, type)`, `(toSymbolId, type)`
+- [x] Ids generated in the draft (randomUUID), like documents and chunks, so edges link without reading ids back
 
-**7.2 Symbol extraction** (`modules/graph/extract/`)
-- [ ] Per language query files (tree-sitter queries, `.scm`-style strings):
-  - TS/JS: function declarations, arrow functions assigned to const, classes, methods, interfaces, exported names
-  - Python: `def`, `class`, methods
-- [ ] Every file also gets a `FILE` symbol (qualifiedName = path)
-- [ ] `qualifiedName` = `path#Class.method` / `path#function`
-- [ ] Link each symbol to the chunk whose line range contains it
+**7.2 Symbol extraction** (`modules/graph/extract/declarations.ts`)
+- [x] Code files only (typescript, tsx, javascript, python): a `FILE` symbol (name = file name, qualifiedName = path, lines 1…lineCount)
+- [x] Top-level declarations via `declarationOf`: function / arrow-or-function const → `FUNCTION`, class → `CLASS`, interface → `INTERFACE`; class members → `METHOD` (`qualifiedName` = `path#Class.method`, else `path#function`). Types, enums, namespaces aren't symbols (no edges to them)
+- [x] Assigned functions (`res.send = function …`): name = last segment (`send`), qualifiedName `path#res.send`, the object (`res`) kept as the container for `this.x()` resolution
+- [x] A repeated qualifiedName in a file (overloads, getter + setter, a redefinition) → the first is kept; the later body's calls count for it (keeps the unique index safe)
+- [x] `signature` = the declaration's first line, trimmed, up to 200 chars; `exported`: TS/JS `export` / `export { … }` / `module.exports` / `exports.x`; Python: top-level name not starting with `_`
+- [x] Each symbol links to the child chunk that contains its first line (a child whose `symbolName` matches preferred); FILE symbols have none
+- [x] Files with parse errors are still extracted (tree-sitter recovers); nodes inside `ERROR` are skipped
 
-**7.3 Edge extraction**
-- [ ] `IMPORTS`: TS/JS `import ... from './x'`, `require('./x')`, re-exports; Python `import x`, `from x import y` → edge FILE → FILE (resolved) or `toName` (external package, unresolved)
-- [ ] `DEFINES`: FILE → symbol, CLASS → METHOD
-- [ ] `EXTENDS` / `IMPLEMENTS`: class heritage clauses
-- [ ] `CALLS`: call expressions inside a function/method → `toName` = callee text (`foo`, `this.repo.find`, `UserRepository.find`)
+**7.3 Edge extraction** (`modules/graph/extract/references.ts` + `resolve.ts`)
+- [x] `IMPORTS`: TS/JS `import … from`, `export … from`, `require('…')` (string argument only); Python `import a.b [as c]`, `from .x import y`, `from . import util` → FILE → FILE when resolved, else unresolved with `toName` = the specifier (external package). One edge per (file, specifier). Bindings recorded for call resolution: local name → (file, imported name | namespace | default)
+- [x] `DEFINES`: FILE → each top-level symbol, CLASS → METHOD (always resolved)
+- [x] `EXTENDS` / `IMPLEMENTS`: class heritage (TS/JS), interface `extends`, Python base classes → `toName` = the base's text, resolved like a call but only to CLASS / INTERFACE
+- [x] `CALLS`: `call_expression` / `call` inside a symbol's body → from the innermost enclosing METHOD / FUNCTION (module-level calls → the FILE symbol); `toName` = callee text with `?.` → `.` (`foo`, `this.repo.find`, `UserRepository.find`); callees that aren't an identifier or member chain (`foo()()`, `(a || b)()`) and `super()` are skipped; `require` and `import()` aren't calls; one edge per (from, toName), first line kept; `toName` up to 200 chars
 
-**7.4 Resolution** (`modules/graph/resolve.ts`)
-- [ ] Module resolution for relative imports: `./x` → try `x.ts`, `x.tsx`, `x.js`, `x/index.ts`, ... ; Python relative/package imports within repo
-- [ ] Call resolution heuristics, in order:
-  1. symbol defined in same file with that name
-  2. imported name → symbol exported from the imported file
-  3. `this.method()` → method of the enclosing class
-  4. `obj.method()` where `obj` is a constructor-injected/class field typed with a known class (TS type annotation) → that class's method
-  5. unique global name match across repo (only if exactly one candidate)
+**7.4 Resolution** (`modules/graph/resolve.ts`, pure)
+- [x] Module resolution for relative imports: `./x` → `x`, `x.ts`, `x.tsx`, `x.js`, `x.jsx`, `x.mjs`, `x.cjs`, `x/index.{ts,tsx,js,jsx}`; `./x.js` also tries `x.ts` / `x.tsx` (ESM TypeScript). Python: `.`-relative from the file's folder; absolute `a.b` → `a/b.py` or `a/b/__init__.py` under the repo root or any folder above the importing file (nearest first); `from pkg import mod` resolves to `pkg/mod.py` when that file exists. Bare specifiers (`express`, `os`) stay unresolved
+- [x] Re-exports followed up to 3 hops (`export * from`, `export { a } from`) when a name isn't defined in the imported file (barrel `index.ts`)
+- [x] Call resolution heuristics, in order:
+  1. symbol defined in same file with that name (`foo()`; `Foo.bar()` with `Foo` a class in the file)
+  2. imported name → symbol exported from the imported file (`foo()`, `ns.foo()`, `Imported.method()`)
+  3. `this.method()` / `self.method()` → method of the enclosing class (or the container object of an assigned function), then its resolved base classes (up to 3)
+  4. `this.x.method()` / `self.x.method()` where `x` is a constructor-injected parameter property or class field typed with a known class (TS type annotation, or `= new X()`; Python `__init__` annotation) → that class's method
+  5. unique global name match across repo (only if exactly one FUNCTION / METHOD has that last name segment)
   6. otherwise unresolved (`toSymbolId = null`, keep `toName`)
-- [ ] Record resolution rate in `stats` (`edgesResolved / edgesTotal`) — reported in README as an honest number
+- [x] Record resolution rate in `stats.graph`: `symbols`, `edges`, `calls`, `callsResolved`, `imports`, `importsResolved` — reported in README as an honest number
 
 **7.5 Pipeline**
-- [ ] `structure` step for repos: extract symbols + raw edges for all files → resolve → bulk insert (`createMany` in batches)
-- [ ] Re-ingest replaces graph for that source in the same transaction as chunks
+- [x] Runs in the repo adapter (prepare step, stage `STRUCTURING`) after chunking: extract → resolve → `draft.graph = { symbols, edges }`; config `ingestion.graph` (`version`) joins the repo content hash, so existing repos rebuild on resync (contexts and vectors stay cached)
+- [x] The index step inserts symbols then edges (`createMany`, batches of 500) inside the existing `writeIndex` transaction; deleting the documents removes the old graph, so readers see the old graph or the new one
 
 **7.6 Graph queries** (`modules/graph/graph.repository.ts`, raw SQL)
-- [ ] `findSymbols(sourceIds, q)` → name / qualifiedName `ILIKE` + exact match first
-- [ ] `callers(symbolId, depth ≤ 3)` → recursive CTE walking `CALLS` edges backwards, with cycle guard (path array), returns tree with depth
-- [ ] `dependencies(symbolId, depth ≤ 3)` → forward `CALLS` + `IMPORTS`
-- [ ] `path(fromId, toId, maxDepth ≤ 6)` → BFS via recursive CTE over CALLS (+ optional IMPORTS), shortest path first, cycle guard
-- [ ] Each result includes `filePath`, `lineStart/lineEnd`, `chunkId` (so the agent can cite)
-- [ ] Result size caps (config) to protect the agent's context
+- [x] `findSymbols(sourceId, q, limit)` → exact name / qualifiedName first, then `ILIKE` (wildcards escaped), FILE symbols last
+- [x] `callers(symbolId, depth ≤ 3)` and `dependencies(symbolId, depth ≤ 3)` (forward `CALLS` + `IMPORTS`, unresolved targets listed by `toName` at the last hop) → recursive CTE over `(symbol, via, depth)` with `UNION` (not `UNION ALL`): rows are bounded by edges × depth, so cycles end at the depth cap and dense graphs can't explode into every path (deviation from a path-array guard, which grows with the number of paths); each symbol reported once at its smallest depth with the symbol it was reached through, so the client can draw the tree
+- [x] `path(fromId, toId, maxDepth ≤ 6, imports?)` → same bounded walk forward from `from`, then the shortest chain rebuilt from the rows
+- [x] Each result includes `filePath`, `lineStart/lineEnd`, `chunkId`, `kind`, `qualifiedName`
+- [x] Result size caps (config `graph.maxResults` 100, `maxWalkRows` 20,000) to protect the agent's context and the database
 
-**7.7 Endpoints**
-- [ ] `GET /api/v1/sources/:id/graph/symbols?q=`
-- [ ] `GET /api/v1/sources/:id/graph/callers?symbol=<qualifiedName|id>&depth=2`
-- [ ] `GET /api/v1/sources/:id/graph/dependencies?symbol=&depth=2`
-- [ ] `GET /api/v1/sources/:id/graph/path?from=&to=`
-- [ ] Ambiguous symbol name → `409` with candidate list
+**7.7 Endpoints** (`modules/graph/graph.router.ts`, mounted at `/sources/:sourceId/graph`, owner check like `/files`; repository sources only, else 400)
+- [x] `GET /api/v1/sources/:id/graph/symbols?q=&limit=`
+- [x] `GET /api/v1/sources/:id/graph/callers?symbol=<id|qualifiedName|name>&depth=2`
+- [x] `GET /api/v1/sources/:id/graph/dependencies?symbol=&depth=2`
+- [x] `GET /api/v1/sources/:id/graph/path?from=&to=&imports=false`
+- [x] Symbol lookup: id, then exact qualifiedName, then exact name; ambiguous name → `409` with up to 20 candidates; none → 404
 
 **7.8 Tests**
-- [ ] Fixture repo has known call chain: `routes/auth.ts:loginHandler → AuthService.login → UserRepository.findByEmail → db.query`, plus a cycle `a → b → a`, plus an inheritance pair
-- [ ] Asserts: symbols extracted with correct lines; imports resolved; `callers(findByEmail)` returns login and handler at depths 1, 2; `path(loginHandler, db.query)` returns the chain; cycle doesn't loop; unresolved external call kept with `toName`
+- [x] Unit (no DB): extraction and resolution on in-memory files — kinds, names, lines, exported, imports (relative, ESM `.js`, index, re-export barrel, Python relative/absolute), all six heuristics, unresolved externals
+- [x] Fixture repo (`tests/helpers/graphRepo.ts`) has known call chain: `routes/auth.ts:loginHandler → AuthService.login → UserRepository.findByEmail → db.query`, plus a cycle `a → b → a`, plus an inheritance pair
+- [x] Asserts (ingested through the real pipeline, endpoints): symbols extracted with correct lines; imports resolved; `callers(findByEmail)` returns login and handler at depths 1, 2; `path(loginHandler, db.query)` returns the chain; cycle doesn't loop; unresolved external call kept with `toName`; 409 on an ambiguous name; another user's source 404; resync replaces the graph
 
 **Done when:** graph endpoints answer correctly on fixture and on one real repo; resolution rate logged.
 
@@ -1309,35 +1332,56 @@ Goal: symbols and relationships (calls, imports, extends, implements) extracted 
 
 Goal: a URL (and optionally same-site links up to a small limit) becomes clean documents → heading chunks.
 
+**Checked 2026-10-24** (planning, probes):
+- `linkedom` + `@mozilla/readability` work together (title, article HTML, `<pre><code class="language-x">` kept with `keepClasses: true`). Readability turns `h1` into `h2` inside the article
+- **Readability is superlinear in DOM depth**: 1,000 nested `<div>`s took 8s, 5,000 didn't finish in 40s; 20,000 elements at depth 200 took 6s, flat 100,000 elements 1.8s. A hostile page could stall the server → Readability runs only when the page is at most **64 deep and 10,000 elements**; anything bigger goes to the fallback extractor, which walks the DOM iteratively (linear, no recursion)
+- `undici@8` `Agent({ connect: { lookup } })` calls the lookup with `all: true` for hostnames and **not at all for IP literals** → `safeFetch` checks literal hosts itself, before every request and redirect
+- Installed (pinned, ≥ 2 weeks old): `@mozilla/readability@0.6.0`, `linkedom@0.18.13`, `robots-parser@3.0.1`, `undici@8.11.2` (needs Node ≥ 22.19)
+
+**Found during the build** (2026-10-24):
+- linkedom's parser (htmlparser2 underneath) is **quadratic in nesting depth** too: 40,000 nested tags 0.7s, a million minutes. Before parsing, one linear pass bounds the depth the parser would build (quoted attributes, comments and raw-text elements read like the parser does; a close tag only counts when its element is open; `<div/>` opens a div). Over 5,000 → the page's text with tags stripped, no structure. A regex like `/<[^>]*>/` is itself quadratic on a page of `<` without `>`, so tags are found with `indexOf`. Worst measured 5 MB inputs: 0.2–0.4s; a 4 MB page of 300,000 ordinary elements ~3s
+- linkedom builds no implied elements: a page without `<html>` has its first tag as the root, `document.title` is empty and an empty page has no root at all → title from `querySelector('title')`, Readability only for real `<html>` documents, the fallback converts the whole document, an empty root → stripped text
+- `robots-parser`'s types describe an ES default export; at runtime the CommonJS module is the function
+- Port rule: only 80 / 443 (an internal service on a public IP's odd port is out of reach too); allowlisted test addresses on any port
+- `maxChildChunks` (800) is shared with repositories; pages with no readable text count as skipped
+- Code review (fresh reviewer, security): the depth pre-scan could be fooled (`<!-->`, `<svg><foreignObject><div/>`, `a=b="…`) → htmlparser2's own tokenizer counts the depth; nested tables were quadratic and duplicated layout-table text → direct rows and cells only; atomic-range lookup per sentence cut was O(cuts × blocks) → moving index; charset from BOM, header, then `<meta>` prescan; one CommonMark fence rule shared by `markdownHeadings` and `fencedBlocks`; the crawl queue is capped at 4 × `maxPages`; a redirect inside the site is checked against robots.txt too; a refused start URL (private address) is reported as such, not as a robots.txt refusal (`UrlRefusedError`)
+- Coder-written tests caught: a size-cap error came out as "Couldn't fetch" (`cancel()` on a stream locked by `for await`)
+
 **8.1 Install**
-- [ ] `@mozilla/readability`, `linkedom`, `robots-parser`, `undici` (for the validating connection `lookup`)
+- [x] `@mozilla/readability`, `linkedom`, `robots-parser`, `undici` (for the validating connection `lookup`)
 
 **8.1b Safe fetch** (moved from Phase 4; `assertPublicUrl` / `isPublicIp` already exist in `utils/network.ts`)
-- [ ] `utils/httpFetch.ts`: `safeFetch(url, { timeoutMs, maxBytes, allowedContentTypes })` — http(s) only; undici `Agent` whose `connect.lookup` rejects non-public addresses, so the address actually connected to is checked (DNS rebinding safe); `redirect: 'manual'`, max 5 redirects, each re-checked; abort on timeout and when the body exceeds `maxBytes`; User-Agent `CodeBookBot/0.1 (+repo url)`
-- [ ] Unit tests: blocks `http://127.0.0.1`, `http://169.254.169.254`, a hostname resolving to a private IP, a redirect to a private IP; enforces the size cap and the timeout
+- [x] `utils/httpFetch.ts`: `safeFetch(url, { timeoutMs, maxBytes, allowedContentTypes })` → `{ url (final), status, contentType, body: Buffer }` — http(s) only, no credentials in URLs; undici `Agent` whose `connect.lookup` rejects non-public addresses, so the address actually connected to is checked (DNS rebinding safe); `redirect: 'manual'`, max 5 redirects, each re-checked; abort on timeout (whole request, body included) and when the body exceeds `maxBytes`; User-Agent `CodeBookBot/0.1`. Blocked / too big / wrong type → `FetchError` (user-safe message; `UrlRefusedError` when the URL itself is refused)
+- [x] Test-only allowlist: `allowTestAddresses(['127.0.0.1'])` in `utils/network.ts` throws unless `NODE_ENV === 'test'`; `isPublicIp` is unchanged, the fetch check is "public or allowlisted"
+- [x] Unit tests: blocks `http://127.0.0.1`, `http://169.254.169.254`, a hostname resolving to a private IP (`localhost`), a redirect to a private IP; enforces the size cap and the timeout; the allowlist throws outside tests
 
-**8.2 Crawler** (`adapters/website.ts`)
-- [ ] BFS from start URL, same origin only, `maxDepth`, `maxPages`
-- [ ] Fetch `robots.txt` once per origin; skip disallowed paths for our UA; respect `Crawl-delay` (cap)
-- [ ] Use `safeFetch` (SSRF guard, timeout 15s, max 5MB, only `text/html` and `text/markdown`/`text/plain`)
-- [ ] Normalize URLs (strip hash, sort query, drop tracking params `utm_*`), dedupe
-- [ ] Polite concurrency (2) + delay between requests (500ms)
+**8.2 Crawler** (`ingestion/web/crawler.ts`)
+- [x] BFS from start URL, same origin only (the start page's final URL after redirects), `maxDepth`, `maxPages`
+- [x] Fetch `robots.txt` once per origin; skip disallowed paths for our UA; respect `Crawl-delay` (capped at 5s). 2xx → rules, 4xx → allow all, 5xx / network error → disallow all (Google's rule); start page disallowed → FAILED with a message
+- [x] Use `safeFetch` (SSRF guard, timeout 15s, max 5MB, only `text/html` and `text/markdown`/`text/plain`)
+- [x] Normalize URLs (strip hash, sort query, drop tracking params `utm_*`, `gclid`, `fbclid`), dedupe; links with binary extensions (`.pdf`, images, archives…) skipped without a fetch
+- [x] One request at a time with 500 ms between requests (deviation from concurrency 2: 50 pages is about a minute either way, and serial is the polite choice)
+- [x] Start page fails (blocked, not HTML, 4xx/5xx) → FAILED with a message; a later page failing is skipped and counted in `stats.skippedPages`
 
-**8.3 Extract**
-- [ ] Parse with `linkedom`, run Readability → title + article HTML
-- [ ] Convert article HTML to structured text preserving headings (`h1–h4` → markdown `#`), lists, code blocks (`<pre><code>` kept verbatim with language class)
-- [ ] Fallback when Readability fails: strip nav/footer/script/style, take body text
-- [ ] One `SourceDocument` per page (`path = canonical URL`)
-- [ ] Content hash per page; whole-source hash = hash of sorted page hashes
+**8.3 Extract** (`ingestion/web/extract.ts`, `ingestion/web/htmlText.ts`)
+- [x] Parse with `linkedom`, links collected first (Readability mutates the document), then Readability (`keepClasses`) → title + article HTML, when the size guard allows
+- [x] Convert article HTML to structured text preserving headings (`h1–h4` → markdown `#`), lists, code blocks (`<pre><code>` kept verbatim as a fenced block with the `language-x` / `lang-x` class), tables as `a | b` rows, links as their text; iterative walk
+- [x] Fallback when Readability fails, returns nothing, or the guard skips it: strip nav/header/footer/aside/script/style/noscript/template/svg, take body
+- [x] `text/markdown` / `text/plain` pages kept as they are (normalized)
+- [x] One `SourceDocument` per page (`path = canonical URL`, `language: 'markdown'`, no lines)
+- [x] Content hash per page; whole-source hash = settings + title + sorted (url, page hash) pairs
+- [x] The source title, while it is still the default one made from the URL, becomes the start page's `<title>` (trimmed, ≤ 200 chars) before the draft is built
 
 **8.4 Chunk/contextualize/embed**
-- [ ] Reuse doc chunker by headings (no pages; `headingPath` from h1–h4), code blocks never split mid-block
-- [ ] Citations for web chunks use URL + heading
+- [x] Reuse doc chunker by headings (no pages; `headingPath` from h1–h4), code blocks never split mid-block: `chunkDocument` takes optional atomic ranges (fenced blocks) that sentence cuts can't fall inside; a block longer than a child is still split at lines
+- [x] Citations for web chunks use URL + heading (document path + `headingPath`)
+- [x] Contextualized like a PDF (parent + children, `contextualize@v1`); more than `maxChildChunks` (shared with repos, 800) → FAILED with a message
+- [x] `stats`: `pages`, `skippedPages`, `robotsBlocked` + the usual counts
 
 **8.5 Tests**
-- [ ] Local fixture site served by a tiny test HTTP server (`tests/fixtures/sample-site/`: 3 linked pages, one disallowed in robots.txt, one with code block)
-- [ ] SSRF guard must allow the test server only in tests (explicit test-only allowlist flag, never in prod)
-- [ ] Asserts: depth/page limits respected, robots respected, code block intact in one chunk, READY
+- [x] Local fixture site served by a tiny test HTTP server (`tests/helpers/site.ts`: 3 linked pages, one disallowed in robots.txt, one with code block, one beyond the depth limit)
+- [x] SSRF guard must allow the test server only in tests (explicit test-only allowlist flag, never in prod)
+- [x] Asserts: depth/page limits respected, robots respected, code block intact in one chunk, READY; title taken from the page; an unchanged resync is skipped; a non-HTML start page fails with a message; extract unit tests (headings, lists, code language, fallback, size guard)
 
 **Done when:** a real docs page (e.g. one page of a framework's docs) ingests and is searchable.
 
@@ -2218,7 +2262,8 @@ One line per phase: `date · phase · commit · notes / deviations`.
 | 2026-10-23 | M2 review | 49f519c | Cross-review of Phases 3–4. Fixed: busboy errors (malformed or aborted multipart) were 500s → 400; a source left PENDING by a crash mid-create can be resynced after 10 min (a PDF without its file says to re-upload); temp file removed even when the client left before multer finished; SSE streams opened after shutdown started close at once (`draining` flag); workspaces read source counts through the sources service, not its repository (§4.2); `S3_ENDPOINT` / `INNGEST_BASE_URL` validated as URLs; tests pin `APP_URL`. 213 tests + 8 live |
 | 2026-10-23 | 5 PDF ingestion | 232efcf | `unpdf@1.9.0`, `js-tiktoken@1.0.21` (o200k), `@inngest/test@1.0.0`. Plan reviewed in four passes before the build. Free tier measured: embeddings are counted **per text** (100/min, ~1,000/day) → process-wide limiter in `embeddings.ts` (documents ≤ 80/min, queries never wait), batches of 40; Flash-Lite 15 RPM / 500 RPD → **one contextualize call per parent** (DDIA: 266 calls instead of 925), paced, no fallback. Parsed data lives in an `IngestDraft` row owned by one run (`runId`); contexts and vectors go to their caches per batch; the `index` step rebuilds the search texts, embeds anything missing, and swaps documents/TOC/chunks in one transaction (vectors copied inside Postgres), so the old index stays live until then. Chunk/TOC/document ids are UUIDs generated in code (exception to §4.1). Prisma 7 would drop the HNSW/GIN indexes and generated `tsv` in every later migration → `db:migrate` is apply-only, `db:migrate:new` create-only, and a guard test. Real-book fixes (DDIA): U+2010 line-break hyphens, `n \| title` running heads, chapter openers kept, footnote marks, words split across pages. TOC entries start at their title line (185/187 on DDIA). Read endpoints: `/toc`, `/files`, `/content?page=|tocNodeId=` (physical pages). Resync also recovers a source stuck PROCESSING for 30 min. Review fixes: section text sliced in JS (UTF-16 offsets), no overlap-only child, NUL stripped, stale `onFailure` ignored after a newer successful ingest, tighter page-number patterns. Real run on DDIA (491 pages): prepare 8s → 266 parents / 925 children / 187 TOC nodes, contextualize ~27 min (cached contexts reused on a second upload in ~50 ms per batch), 11 of 12 embed batches, then the free-tier daily embedding cap (429) → FAILED with the embedding message, draft removed, 880 vectors + 914 contexts cached; resync after the quota reset (2026-10-24): **READY in 30s** — contexts from the cache in ~50 ms per batch, the timed-out sections and the last 45 embeddings done, 924/924 children with embedding, context and pages, 266 parents, 0 missing contexts, TOC endpoint shows the 18 top-level entries with their chapters' sections, keyword and vector search both answer. Inngest re-sent an already finished step once during the retries ("duplicate response; keeping existing output"): steps are at-least-once, which the caches and the draft owner check already cover. 281 tests + 9 live |
 | 2026-10-24 | 6 GitHub repo ingestion | ebbd63f | `tar@7.5.22`, `web-tree-sitter@0.27.1` + grammar WASM from `tree-sitter-typescript@0.23.2` / `-javascript@0.25.0` / `-python@0.25.0` (native builds off); no `@octokit/rest`. Plan reviewed in two passes before the build (22 findings). Archive read in memory (never extracted); tests and changelogs skipped by default; 800-child cap; packed contextualize calls (8 chunks); separate repo hash with `scannerVersion`, PDF hash pinned by a golden test. Built with three code reviews: two scanner leaks fixed (type annotations, unquoted value before a comment), expression bodies, damaged archives, redirect logging. Postgres locale sort and Prisma `startsWith` wildcards → raw SQL for `/files`. Real run on `expressjs/express@1c6f1b0`: READY in ~2.5 min (prepare 4s, 3 contextualize steps ~45s, 3 embed steps), 100 files kept / 3 skipped (`.npmrc`, `History.md`, `test/`), 212 children all with context, vector and lines, 18 with a symbol name, 40.7K tokens, 0 scanner findings over every stored text; keyword "redirect status location" → `res.redirect` at `lib/response.js:815-867`. DDIA's hash still matches (resync skips). Re-review after the commit (two fresh reviewers + re-checks) fixed a quadratic tokenizer stall, a late-NUL ingest failure, scanner gaps (low-entropy passwords, YAML next-key, URL passwords, PGP keys), more secret files and TS decorators. 428 tests + live tests pass |
-| 2026-10-24 | Refactor (single responsibility) | _this commit_ | No behaviour change. `ingestion.service.ts` keeps only the Inngest steps: context units / packs / cache keys → `contextUnits.ts`, search texts and embedding keys → `indexedChildren.ts`; index row building → `indexRows.ts` (the repository keeps the transaction); tree-sitter node knowledge → `code/syntax.ts` (Phase 7 reuses it); GitHub client → `utils/github.ts` (shared by sources and ingestion); GitHub URL / ref checks → `sources/githubUrl.ts`; the embedding model's input format (Gemini's task prefix) and token estimate → `embeddingRoute` in `llm/models.ts`, so `embeddings.ts` is provider-neutral (inputs and cache keys byte-identical, pinned by a test). 429 tests pass |
+| 2026-10-24 | Refactor (single responsibility) | 979dc4f | No behaviour change. `ingestion.service.ts` keeps only the Inngest steps: context units / packs / cache keys → `contextUnits.ts`, search texts and embedding keys → `indexedChildren.ts`; index row building → `indexRows.ts` (the repository keeps the transaction); tree-sitter node knowledge → `code/syntax.ts` (Phase 7 reuses it); GitHub client → `utils/github.ts` (shared by sources and ingestion); GitHub URL / ref checks → `sources/githubUrl.ts`; the embedding model's input format (Gemini's task prefix) and token estimate → `embeddingRoute` in `llm/models.ts`, so `embeddings.ts` is provider-neutral (inputs and cache keys byte-identical, pinned by a test). 429 tests pass |
+| 2026-10-24 | 7 Code graph + 8 Website ingestion | _this commit_ | Planned together, plan reviewed once (10 findings folded in), built in parallel (graph by hand; website by a forked agent, its tests by two coder agents), two code reviews + a re-review. **Graph:** symbols from the chunker's `declarationOf` (no separate `.scm` queries); facts per file → `resolve.ts` (relative/ESM/index/Python module resolution, re-export barrels, CommonJS `require` / `module.exports` / assigned methods, 5 call heuristics, member-only unique-name guess counted apart); stored in `IngestDraft.graph`, written in the index transaction; walks are `UNION` CTEs over (symbol, via, depth) with a row cap (no path explosion). `prisma migrate --create-only` dropped the HNSW/GIN indexes in the dev DB on first apply → removed from the migration, indexes recreated. Real run on express: 155 symbols, 870 edges, calls 199/627 resolved (32%; 116 by unique name), imports 49/138 (the rest are packages); `res.send` has 29 callers. **Website:** `@mozilla/readability@0.6.0`, `linkedom@0.18.13`, `robots-parser@3.0.1`, `undici@8.11.2`, `htmlparser2@10.1.0` (linkedom's own). `safeFetch` checks the connected address (lookup rejects if any address is private), IP literals and ports on every hop, decoded body size, one timeout for the whole request. Readability and linkedom are both superlinear in DOM depth → htmlparser2 counts depth first (> 1,000 → stripped text), Readability only ≤ 64 deep / 10K elements. Serial polite crawl with robots (also on redirects), 3-minute budget, capped queue; code blocks never split (atomic ranges, one CommonMark fence rule). Real run: `expressjs.com/en/guide/routing.html` → redirect to `/routing/`, title "Routing · Express.js", 19 children with headings, contexts and vectors, keyword search answers. 490 tests pass (10 live skipped) |
 
 **Later** (ideas parked during the build, not in scope):
 - One retry after a timeout for routes without a fallback (`contextualize`): ~2% of Flash-Lite calls queue past 30s on the free tier; today those chunks wait for the next resync

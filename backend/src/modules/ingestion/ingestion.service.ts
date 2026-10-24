@@ -4,6 +4,7 @@ import { embedTexts } from '../../llm/embeddings.js';
 import type { AdapterContext, AdapterResult } from './adapters/adapter.js';
 import { preparePdf } from './adapters/pdf.adapter.js';
 import { prepareRepo } from './adapters/repo.adapter.js';
+import { prepareWebsite } from './adapters/website.adapter.js';
 import { contextUnitsFor, unitsPerStep } from './contextUnits.js';
 import { contextualizePack, contextualizeParent } from './contextualizer.js';
 import { indexedChildren } from './indexedChildren.js';
@@ -11,6 +12,7 @@ import {
   failIngest,
   findIngestSource,
   loadDraft,
+  loadGraph,
   saveDraft,
   setIngestState,
   writeIndex,
@@ -72,16 +74,20 @@ export async function prepareSource(sourceId: string, runId: string): Promise<Pr
     return { outcome: 'skipped' };
   }
 
+  if (result.title && result.title !== source.title) {
+    await setIngestState(sourceId, { title: result.title });
+  }
   const draft: Draft = {
-    sourceType: source.type === 'GITHUB_REPO' ? 'GITHUB_REPO' : 'PDF',
+    sourceType: source.type,
     ...(result.repo && { repo: result.repo }),
-    title: source.title,
+    ...(result.website && { website: result.website }),
+    title: result.title ?? source.title,
     userId: source.workspace.userId,
     workspaceId: source.workspaceId,
     contentHash: result.contentHash,
     documents: result.documents,
   };
-  if (!(await saveDraft(sourceId, runId, draft))) return { outcome: 'gone' };
+  if (!(await saveDraft(sourceId, runId, draft, result.graph))) return { outcome: 'gone' };
 
   const contextual = appConfig.ingestion.contextualRetrieval;
   const children = draft.documents.reduce((sum, doc) => sum + doc.children.length, 0);
@@ -103,7 +109,7 @@ function prepareByType(
     case 'GITHUB_REPO':
       return prepareRepo(source, ctx);
     case 'WEBSITE':
-      return Promise.resolve({ outcome: 'failed', error: "Websites can't be ingested yet" });
+      return prepareWebsite(source, ctx);
   }
 }
 
@@ -175,6 +181,7 @@ export async function indexStep(sourceId: string, runId: string) {
     [...children.values()].map((child) => child.searchText),
     { kind: 'document', title: draft.title, ctx: callContext(draft) },
   );
+  const graph = draft.repo ? await loadGraph(sourceId) : null;
 
   const contextual = appConfig.ingestion.contextualRetrieval;
   const missingContexts = contextual
@@ -193,7 +200,9 @@ export async function indexStep(sourceId: string, runId: string) {
   };
   const stats: Prisma.InputJsonObject = draft.repo
     ? { ...draft.repo, ...counts }
-    : { pages: documents.reduce((sum, doc) => sum + (doc.pageEnd ?? 0), 0), ...counts };
+    : draft.website
+      ? { ...draft.website, ...counts }
+      : { pages: documents.reduce((sum, doc) => sum + (doc.pageEnd ?? 0), 0), ...counts };
 
   const outcome = await writeIndex({
     sourceId,
@@ -201,6 +210,7 @@ export async function indexStep(sourceId: string, runId: string) {
     workspaceId: draft.workspaceId,
     draft,
     children,
+    graph,
     stats,
   });
   return { outcome, ...stats };

@@ -1,8 +1,8 @@
 import { appConfig } from '../../config/app.config.js';
 import prismaClient from '../../config/db.config.js';
 import { Prisma, type IngestStage } from '../../generated/prisma/client.js';
-import { indexRows } from './indexRows.js';
-import type { Draft, IndexedChild } from './ingestion.types.js';
+import { graphRows, indexRows } from './indexRows.js';
+import type { Draft, DraftGraph, IndexedChild } from './ingestion.types.js';
 
 // Ingestion owns a source's ingest state (status, stage, progress, hash, stats) and its
 // documents, TOC and chunks; the sources module owns the rest of the source's life.
@@ -25,14 +25,18 @@ export async function setIngestState(sourceId: string, data: Prisma.SourceUpdate
 
 // ---- draft ------------------------------------------------------------------------------
 
-/** Stores the parsed source for this run, replacing any older run's draft. False when the source is gone. */
-export async function saveDraft(sourceId: string, runId: string, draft: Draft) {
+/**
+ * Stores the parsed source (and a repository's code graph) for this run, replacing any older
+ * run's draft. False when the source is gone.
+ */
+export async function saveDraft(sourceId: string, runId: string, draft: Draft, graph?: DraftGraph) {
   const data = draft as unknown as Prisma.InputJsonValue;
+  const graphData = graph ? (graph as unknown as Prisma.InputJsonValue) : Prisma.DbNull;
   try {
     await prismaClient.ingestDraft.upsert({
       where: { sourceId },
-      create: { sourceId, runId, data },
-      update: { runId, data },
+      create: { sourceId, runId, data, graph: graphData },
+      update: { runId, data, graph: graphData },
     });
     return true;
   } catch (error) {
@@ -46,8 +50,20 @@ export async function saveDraft(sourceId: string, runId: string, draft: Draft) {
 
 /** This run's draft, or null when the source is gone or a newer run has taken over. */
 export async function loadDraft(sourceId: string, runId: string) {
-  const row = await prismaClient.ingestDraft.findUnique({ where: { sourceId } });
+  const row = await prismaClient.ingestDraft.findUnique({
+    where: { sourceId },
+    select: { runId: true, data: true },
+  });
   return row?.runId === runId ? (row.data as unknown as Draft) : null;
+}
+
+/** The code graph saved with the draft. The index transaction checks the run owns it. */
+export async function loadGraph(sourceId: string) {
+  const row = await prismaClient.ingestDraft.findUnique({
+    where: { sourceId },
+    select: { graph: true },
+  });
+  return (row?.graph ?? null) as unknown as DraftGraph | null;
 }
 
 // ---- context cache ----------------------------------------------------------------------
@@ -72,6 +88,7 @@ type IndexInput = {
   draft: Draft;
   // By child id.
   children: Map<string, IndexedChild>;
+  graph: DraftGraph | null;
   stats: Prisma.InputJsonValue;
 };
 
@@ -97,7 +114,7 @@ export async function writeIndex(input: IndexInput): Promise<'done' | 'gone' | '
       });
       if (owner?.runId !== runId) return 'superseded';
 
-      // Chunks and TOC nodes go with their documents.
+      // Chunks, TOC nodes and the code graph go with their documents.
       await tx.sourceDocument.deleteMany({ where: { sourceId } });
 
       // Inserted in batches across all documents: a repository has hundreds of files.
@@ -113,6 +130,15 @@ export async function writeIndex(input: IndexInput): Promise<'done' | 'gone' | '
         for (let i = 0; i < rows.length; i += INSERT_BATCH) {
           await tx.sourceChunk.createMany({ data: rows.slice(i, i + INSERT_BATCH) });
         }
+      }
+
+      // Symbols before edges, which point at them.
+      const { symbols, edges } = graphRows(sourceId, input.graph);
+      for (let i = 0; i < symbols.length; i += INSERT_BATCH) {
+        await tx.codeSymbol.createMany({ data: symbols.slice(i, i + INSERT_BATCH) });
+      }
+      for (let i = 0; i < edges.length; i += INSERT_BATCH) {
+        await tx.codeEdge.createMany({ data: edges.slice(i, i + INSERT_BATCH) });
       }
 
       // Vectors are already in the embedding cache; copy them inside Postgres rather than

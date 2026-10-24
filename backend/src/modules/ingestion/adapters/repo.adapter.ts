@@ -3,6 +3,7 @@ import { Readable } from 'node:stream';
 import { appConfig } from '../../../config/app.config.js';
 import logger from '../../../config/logger.config.js';
 import { sha256 } from '../../../utils/hash.js';
+import { buildCodeGraph } from '../../graph/buildGraph.js';
 import { downloadTarball, resolveCommit } from '../../../utils/github.js';
 import type { RepoOrigin } from '../../sources/source.dto.js';
 import { chunkCode } from '../code/code.chunker.js';
@@ -124,16 +125,22 @@ export async function prepareRepo(
   }
   documents.sort((a, b) => (a.path < b.path ? -1 : 1));
 
+  await ctx.stage('STRUCTURING', 10);
+  const { graph, stats: graphStats } = await buildCodeGraph(documents);
+  logger.info('Code graph built', { sourceId: source.id, ...graphStats });
+
   return {
     outcome: 'draft',
     contentHash,
     documents,
+    graph,
     repo: {
       commitSha: commit.sha,
       files: files.length,
       skippedFiles: archive.skipped.length,
       redactions,
       languages,
+      graph: graphStats,
     },
   };
 }

@@ -32,6 +32,25 @@ export function repoIngestHash(title: string, commitSha: string) {
     ...sharedSettings(),
     contextPrompt: contextualizeCodePrompt.id,
     repo: appConfig.ingestion.repo,
+    graph: appConfig.ingestion.graph,
   };
   return sha256(JSON.stringify(settings), title, commitSha);
+}
+
+/**
+ * A website's content hash, from its extracted pages (url and text hash, in url order) and
+ * the crawl limits that chose them.
+ */
+export function websiteIngestHash(
+  title: string,
+  limits: { maxDepth: number; maxPages: number },
+  pages: { url: string; hash: string }[],
+) {
+  const settings = { ...sharedSettings(), website: appConfig.ingestion.website, limits };
+  const sorted = [...pages].sort((a, b) => (a.url < b.url ? -1 : 1));
+  return sha256(
+    JSON.stringify(settings),
+    title,
+    ...sorted.map((page) => `${page.url} ${page.hash}`),
+  );
 }

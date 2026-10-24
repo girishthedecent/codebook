@@ -191,6 +191,8 @@ model Source {
   tocNodes    TocNode[]
   chunks      SourceChunk[]
   ingestDraft IngestDraft?
+  symbols     CodeSymbol[]
+  edges       CodeEdge[]
 
   @@unique([workspaceId, dedupeKey])
   @@index([workspaceId, createdAt])
@@ -218,6 +220,7 @@ model SourceDocument {
   createdAt     DateTime      @default(now())
   tocNodes      TocNode[]
   chunks        SourceChunk[]
+  symbols       CodeSymbol[]
 
   @@unique([sourceId, path])
 }
@@ -264,6 +267,7 @@ model SourceChunk {
   parentId    String?
   parent      SourceChunk?                 @relation("ChunkTree", fields: [parentId], references: [id], onDelete: Cascade)
   children    SourceChunk[]                @relation("ChunkTree")
+  symbols     CodeSymbol[]
   kind        ChunkKind
   // Order within the document, counted separately for parents and children.
   ordinal     Int
@@ -293,6 +297,71 @@ model SourceChunk {
   @@index([parentId])
 }
 
+enum SymbolKind {
+  FILE
+  CLASS
+  INTERFACE
+  FUNCTION
+  METHOD
+}
+
+enum EdgeType {
+  IMPORTS
+  DEFINES
+  EXTENDS
+  IMPLEMENTS
+  CALLS
+}
+
+// A repository's code graph, written with its documents by the index step and removed with
+// them (documentId cascade), so a resync swaps the graph in the same transaction.
+model CodeSymbol {
+  id            String         @id
+  sourceId      String
+  source        Source         @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  documentId    String
+  document      SourceDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  name          String
+  // `src/auth/service.ts#AuthService.login`; a FILE symbol's is its path.
+  qualifiedName String
+  kind          SymbolKind
+  filePath      String
+  lineStart     Int
+  lineEnd       Int
+  signature     String?
+  exported      Boolean
+  // The child chunk holding the symbol's first line, for citations.
+  chunkId       String?
+  chunk         SourceChunk?   @relation(fields: [chunkId], references: [id], onDelete: SetNull)
+  outgoing      CodeEdge[]     @relation("EdgeFrom")
+  incoming      CodeEdge[]     @relation("EdgeTo")
+
+  @@unique([sourceId, qualifiedName])
+  @@index([sourceId, name])
+  @@index([documentId])
+}
+
+model CodeEdge {
+  id           String      @id @default(cuid())
+  sourceId     String
+  source       Source      @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  fromSymbolId String
+  from         CodeSymbol  @relation("EdgeFrom", fields: [fromSymbolId], references: [id], onDelete: Cascade)
+  // Null when the target isn't in the repository (a package, a builtin) or wasn't found.
+  toSymbolId   String?
+  to           CodeSymbol? @relation("EdgeTo", fields: [toSymbolId], references: [id], onDelete: SetNull)
+  // The target as written: `this.repo.find`, `./db`, `express`.
+  toName       String
+  type         EdgeType
+  // Where the call, import or heritage clause is.
+  filePath     String
+  line         Int
+
+  @@index([sourceId])
+  @@index([fromSymbolId, type])
+  @@index([toSymbolId, type])
+}
+
 // Contextual-retrieval results, so a rerun or a second copy of the same book doesn't pay
 // again. Key: sha256(model | prompt id | parent hash | chunk hash).
 model ContextCache {
@@ -308,6 +377,8 @@ model IngestDraft {
   source    Source   @relation(fields: [sourceId], references: [id], onDelete: Cascade)
   runId     String
   data      Json
+  // A repository's code graph, kept apart from `data`: only the index step reads it.
+  graph     Json?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }

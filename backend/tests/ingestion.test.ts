@@ -318,21 +318,21 @@ describe('ingesting a PDF', () => {
     expect((await sourceRow(sourceId)).error).toMatch(/file is missing/);
   });
 
-  it("fails websites until they're supported", async () => {
+  it('fails a website whose address became private after it was added', async () => {
     const source = await prismaClient.source.create({
       data: {
         workspaceId,
         type: 'WEBSITE',
-        title: 'docs.example.com',
-        origin: { url: 'https://docs.example.com', maxDepth: 0, maxPages: 10 },
-        dedupeKey: 'web:https://docs.example.com',
+        title: '10.0.0.1',
+        origin: { url: 'http://10.0.0.1/', maxDepth: 0, maxPages: 10 },
+        dedupeKey: 'web:http://10.0.0.1/',
       },
     });
 
     const { result } = await ingest(source.id);
 
     expect(result).toMatchObject({ outcome: 'failed' });
-    expect((await sourceRow(source.id)).error).toMatch(/can't be ingested yet/);
+    expect((await sourceRow(source.id)).error).toMatch(/private or reserved/);
   });
 
   it('stops quietly when the source was deleted', async () => {

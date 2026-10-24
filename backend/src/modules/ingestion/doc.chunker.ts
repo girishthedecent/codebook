@@ -23,6 +23,10 @@ export function chunkText(content: string, start: number, end: number) {
   return content.slice(start, end).replaceAll('\f', '\n');
 }
 
+// A range of the content that stays in one unit (a fenced code block), unless it is longer
+// than a child on its own. Ranges are sorted and don't overlap.
+export type AtomicRange = { start: number; end: number };
+
 /**
  * Splits a document into parent chunks (a TOC section, or a balanced part of a long one)
  * and overlapping child chunks inside each parent. Children are what search matches;
@@ -32,6 +36,7 @@ export function chunkDocument(
   content: string,
   toc: TocEntry[],
   settings: ChunkSettings = appConfig.ingestion.chunking,
+  atomic: AtomicRange[] = [],
 ): ChunkPlan {
   const starts = pageStarts(content);
   const span = (first: Unit, last: Unit, headingPath: string[]): ChunkSpan => ({
@@ -48,7 +53,7 @@ export function chunkDocument(
 
   const plan: ChunkPlan = { parents: [], children: [] };
   for (const section of sections(content, toc, settings)) {
-    const units = unitsOf(content, section, settings.childTokens);
+    const units = unitsOf(content, section, settings.childTokens, atomic);
     for (const parentUnits of splitParents(units, settings.parentMaxTokens)) {
       const parentIndex = plan.parents.length;
       plan.parents.push(span(parentUnits[0]!, parentUnits.at(-1)!, section.headingPath));
@@ -109,11 +114,19 @@ function headingPath(toc: TocEntry[], index: number) {
   return path;
 }
 
-function unitsOf(content: string, section: Section, maxTokens: number): Unit[] {
+function unitsOf(
+  content: string,
+  section: Section,
+  maxTokens: number,
+  atomic: AtomicRange[],
+): Unit[] {
   const text = content.slice(section.start, section.end);
+  const inside = (cut: number) => insideRange(atomic, section.start + cut);
   const cuts = [
     0,
-    ...[...text.matchAll(SENTENCE_END)].map((m) => m.index + m[0].length),
+    ...[...text.matchAll(SENTENCE_END)]
+      .map((m) => m.index + m[0].length)
+      .filter((cut) => !inside(cut)),
     text.length,
   ];
   const units: Unit[] = [];
@@ -122,6 +135,20 @@ function unitsOf(content: string, section: Section, maxTokens: number): Unit[] {
     if (range) units.push(...splitLong(content, range, maxTokens));
   }
   return units;
+}
+
+// Whether `at` falls strictly inside one of the ranges (sorted, not overlapping).
+function insideRange(ranges: AtomicRange[], at: number) {
+  let low = 0;
+  let high = ranges.length - 1;
+  while (low <= high) {
+    const middle = (low + high) >> 1;
+    const range = ranges[middle]!;
+    if (at <= range.start) high = middle - 1;
+    else if (at >= range.end) low = middle + 1;
+    else return true;
+  }
+  return false;
 }
 
 export function trimRange(content: string, start: number, end: number) {

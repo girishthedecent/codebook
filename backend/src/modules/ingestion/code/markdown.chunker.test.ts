@@ -46,6 +46,13 @@ describe('markdownHeadings', () => {
   it('strips trailing hashes and needs a space after the marks', () => {
     expect(markdownHeadings('## Title ##\n#nospace').map((e) => e.title)).toEqual(['Title']);
   });
+
+  it('reads a long line of hashes in linear time', () => {
+    const line = '# a' + ' #'.repeat(200_000) + ' b';
+    const started = performance.now();
+    expect(markdownHeadings(line)[0]!.title.endsWith('# b')).toBe(true);
+    expect(performance.now() - started).toBeLessThan(500);
+  });
 });
 
 describe('chunkMarkdown', () => {

@@ -1,5 +1,5 @@
 import { chunkText } from './doc.chunker.js';
-import type { ChunkSpan, Draft, IndexedChild } from './ingestion.types.js';
+import type { ChunkSpan, Draft, DraftGraph, IndexedChild } from './ingestion.types.js';
 
 type DraftChunk = ChunkSpan & { id: string; hash: string };
 
@@ -84,4 +84,13 @@ export function indexRows(input: {
   );
 
   return { documents, tocNodes, parents, children };
+}
+
+/** The code graph's rows; the draft already linked edges and chunks by id. */
+export function graphRows(sourceId: string, graph: DraftGraph | null) {
+  if (!graph) return { symbols: [], edges: [] };
+  return {
+    symbols: graph.symbols.map((symbol) => ({ ...symbol, sourceId })),
+    edges: graph.edges.map((edge) => ({ ...edge, sourceId })),
+  };
 }

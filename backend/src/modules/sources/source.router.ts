@@ -1,5 +1,6 @@
 import express from 'express';
 import { requireAuth } from '../../middlewares/auth.middleware.js';
+import { graphRouter } from '../graph/graph.router.js';
 import {
   validateQueryParams,
   validateRequestBody,
@@ -77,3 +78,4 @@ sourceRouter.get(
   validateQueryParams(sourceContentQuerySchema),
   getContentHandler,
 );
+sourceRouter.use('/:sourceId/graph', validateRequestParams(sourceParamsSchema), graphRouter);

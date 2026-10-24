@@ -1,5 +1,6 @@
 import { lookup } from 'node:dns/promises';
 import { BlockList, isIP } from 'node:net';
+import { serverConfig } from '../config/index.js';
 import { BadRequestError } from './errors/app.error.js';
 
 // Addresses a user-supplied URL must never reach: this machine, private networks, cloud
@@ -37,6 +38,26 @@ export function isPublicIp(ip: string) {
   const version = isIP(ip);
   if (version === 0) return false;
   return !blocked.check(ip, version === 4 ? 'ipv4' : 'ipv6');
+}
+
+// Addresses tests may fetch from (a fixture server on 127.0.0.1). Empty outside tests.
+let testAddresses = new Set<string>();
+
+/** Lets fetches reach these addresses, on any port. Tests only: throws anywhere else. */
+export function allowTestAddresses(addresses: string[]) {
+  if (serverConfig.NODE_ENV !== 'test') {
+    throw new Error('Test addresses can only be allowed in tests');
+  }
+  testAddresses = new Set(addresses);
+}
+
+export function isTestAddress(ip: string) {
+  return testAddresses.has(ip);
+}
+
+/** What a server-side fetch of a user-supplied URL may connect to. */
+export function isAllowedAddress(ip: string) {
+  return isPublicIp(ip) || isTestAddress(ip);
 }
 
 /**

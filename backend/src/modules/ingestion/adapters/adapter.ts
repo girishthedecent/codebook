@@ -1,6 +1,11 @@
 import type { IngestStage } from '../../../generated/prisma/client.js';
 import type { findIngestSource } from '../ingestion.repository.js';
-import type { DraftDocument, RepoDraftStats } from '../ingestion.types.js';
+import type {
+  DraftDocument,
+  DraftGraph,
+  RepoDraftStats,
+  WebsiteDraftStats,
+} from '../ingestion.types.js';
 
 export type IngestSource = NonNullable<Awaited<ReturnType<typeof findIngestSource>>>;
 
@@ -17,4 +22,13 @@ export type AdapterContext = {
 export type AdapterResult =
   | { outcome: 'failed'; error: string }
   | { outcome: 'unchanged' }
-  | { outcome: 'draft'; contentHash: string; documents: DraftDocument[]; repo?: RepoDraftStats };
+  | {
+      outcome: 'draft';
+      contentHash: string;
+      documents: DraftDocument[];
+      repo?: RepoDraftStats;
+      graph?: DraftGraph;
+      website?: WebsiteDraftStats;
+      // A new title for the source (a website's page title), used from this run on.
+      title?: string;
+    };

@@ -83,6 +83,23 @@ export const appConfig = {
       // Bump when a secret rule changes, so every repository is re-indexed (PDFs aren't).
       scannerVersion: 1,
     },
+    graph: {
+      // Part of the repo content hash: bump when extraction or resolution changes.
+      version: 1,
+    },
+    website: {
+      // Part of the website content hash: bump when extraction changes.
+      version: 1,
+      pageTimeoutMs: 15_000,
+      maxPageBytes: 5 * 1024 * 1024,
+      requestGapMs: 500,
+      // The whole crawl runs in one step; pages left when this runs out count as skipped.
+      crawlBudgetMs: 3 * 60 * 1000,
+      maxCrawlDelayMs: 5_000,
+      // Readability slows down sharply on deep DOMs; bigger pages use the plain extractor.
+      readabilityMaxDepth: 64,
+      readabilityMaxElements: 10_000,
+    },
     // Two embedding batches, about a minute at the free-tier rate.
     childrenPerEmbedStep: 80,
     indexTimeoutMs: 120_000,
@@ -93,6 +110,14 @@ export const appConfig = {
   inngest: {
     // Inngest posts step state back to /api/inngest, which can outgrow the API's JSON limit.
     bodyLimit: '4mb',
+  },
+  graph: {
+    maxDepth: 3,
+    maxPathDepth: 6,
+    // Symbols one answer lists, and rows one walk may produce.
+    maxResults: 100,
+    maxWalkRows: 20_000,
+    maxCandidates: 20,
   },
   github: {
     apiUrl: 'https://api.github.com',

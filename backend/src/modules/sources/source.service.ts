@@ -161,6 +161,11 @@ async function repoSource(input: Extract<CreateSourceInput, { type: 'GITHUB_REPO
   } satisfies NewSource;
 }
 
+/** A website source's title until its page title is known: host and path. */
+export function defaultWebsiteTitle(url: URL) {
+  return `${url.hostname}${url.pathname === '/' ? '' : url.pathname}`;
+}
+
 async function websiteSource(input: Extract<CreateSourceInput, { type: 'WEBSITE' }>) {
   const url = await assertPublicUrl(input.url);
   url.hash = '';
@@ -171,8 +176,8 @@ async function websiteSource(input: Extract<CreateSourceInput, { type: 'WEBSITE'
   };
   return {
     type: 'WEBSITE',
-    // Replaced by the page's <title> when it's fetched (Phase 8).
-    title: `${url.hostname}${url.pathname === '/' ? '' : url.pathname}`,
+    // Replaced by the page's <title> when it's fetched.
+    title: defaultWebsiteTitle(url),
     origin,
     dedupeKey: `web:${url.href}`,
   } satisfies NewSource;
