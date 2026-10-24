@@ -11,18 +11,20 @@ datasource db {
 
 // Auth tables follow the shape better-auth expects (regenerate with `pnpm dlx auth generate`).
 model User {
-  id            String      @id
-  name          String
-  email         String
-  emailVerified Boolean     @default(false)
-  image         String?
-  createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
-  isGuest       Boolean     @default(false)
-  isSystem      Boolean     @default(false)
-  sessions      Session[]
-  accounts      Account[]
-  workspaces    Workspace[]
+  id             String          @id
+  name           String
+  email          String
+  emailVerified  Boolean         @default(false)
+  image          String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  isGuest        Boolean         @default(false)
+  isSystem       Boolean         @default(false)
+  sessions       Session[]
+  accounts       Account[]
+  workspaces     Workspace[]
+  conversations  Conversation[]
+  studyArtifacts StudyArtifact[]
 
   @@unique([email])
   @@map("user")
@@ -83,17 +85,19 @@ enum WorkspaceTemplate {
 }
 
 model Workspace {
-  id          String            @id @default(cuid())
-  userId      String
-  user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)
-  name        String
-  description String?
-  template    WorkspaceTemplate @default(BLANK)
-  isDemo      Boolean           @default(false)
-  settings    Json              @default("{}")
-  createdAt   DateTime          @default(now())
-  updatedAt   DateTime          @updatedAt
-  sources     Source[]
+  id             String            @id @default(cuid())
+  userId         String
+  user           User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name           String
+  description    String?
+  template       WorkspaceTemplate @default(BLANK)
+  isDemo         Boolean           @default(false)
+  settings       Json              @default("{}")
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  sources        Source[]
+  conversations  Conversation[]
+  studyArtifacts StudyArtifact[]
 
   @@index([userId, createdAt])
 }
@@ -124,10 +128,13 @@ model UsageEvent {
   ok           Boolean
   error        String?
   fallbackUsed Boolean   @default(false)
+  // The assistant message a chat call was made for, so a turn's cost can be summed.
+  messageId    String?
   createdAt    DateTime  @default(now())
 
   @@index([userId, createdAt])
   @@index([type, createdAt])
+  @@index([messageId])
 }
 
 // Read and written with raw SQL (see llm/embeddings.ts): Prisma can't map vector columns.
@@ -486,4 +493,118 @@ model EvalResult {
 
   @@unique([runId, caseId])
   @@index([caseId])
+}
+
+enum MessageRole {
+  USER
+  ASSISTANT
+}
+
+enum MessageStatus {
+  COMPLETE
+  ERROR
+  ABORTED
+}
+
+enum Feedback {
+  UP
+  DOWN
+}
+
+model Conversation {
+  id                      String    @id @default(cuid())
+  workspaceId             String
+  workspace               Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  userId                  String
+  user                    User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title                   String
+  // Rolling summary of the messages up to summarizedUpToMessageId, so older turns still
+  // reach the model once they fall out of the verbatim history.
+  summary                 String?
+  summarizedUpToMessageId String?
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+  messages                Message[]
+
+  @@index([workspaceId, updatedAt])
+  @@index([userId])
+}
+
+model Message {
+  id               String        @id @default(cuid())
+  conversationId   String
+  conversation     Conversation  @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  role             MessageRole
+  content          String
+  // Assistant turns: [{ n, valid, supported, ...ref }] and [{ step, tool, args, summary, ms }].
+  citations        Json          @default("[]")
+  toolCalls        Json          @default("[]")
+  model            String?
+  promptVersion    String?
+  tokensIn         Int           @default(0)
+  tokensOut        Int           @default(0)
+  tokensCached     Int           @default(0)
+  costUsd          Decimal       @default(0) @db.Decimal(12, 8)
+  latencyMs        Int?
+  firstTokenMs     Int?
+  retrievalMs      Int?
+  // Quality signals for monitoring: citations that pointed nowhere, and a search that
+  // found nothing good.
+  invalidCitations Int           @default(0)
+  weakRetrieval    Boolean       @default(false)
+  status           MessageStatus @default(COMPLETE)
+  error            String?
+  feedback         Feedback?
+  feedbackNote     String?
+  createdAt        DateTime      @default(now())
+
+  @@index([conversationId, createdAt])
+  @@index([createdAt])
+}
+
+enum StudyType {
+  QUIZ
+  FLASHCARDS
+  MINDMAP
+  SUMMARY
+}
+
+enum JobStatus {
+  PENDING
+  RUNNING
+  DONE
+  FAILED
+}
+
+model StudyArtifact {
+  id            String    @id @default(cuid())
+  workspaceId   String
+  workspace     Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type          StudyType
+  title         String
+  // { sourceIds, tocNodeId?, pathPrefix?, topic?, count?, difficulty? }
+  input         Json
+  status        JobStatus @default(PENDING)
+  // Typed per type by study.schemas.ts; citations resolved from `sources`.
+  data          Json?
+  sources       Json      @default("[]")
+  error         String?
+  model         String?
+  promptVersion String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([workspaceId, createdAt])
+}
+
+// Fixed-window rate limit counters, one row per key and window.
+model RateLimitHit {
+  key         String
+  windowStart DateTime
+  count       Int      @default(0)
+
+  @@id([key, windowStart])
+  @@index([windowStart])
 }

@@ -10,6 +10,7 @@ import {
   updateWorkspace,
 } from './workspace.repository.js';
 import { countSourcesService } from '../sources/source.service.js';
+import { countConversationsService } from '../chat/conversation.service.js';
 import { queueStorageCleanup, workspacePrefix } from '../sources/source.storage.js';
 import { templateSettings } from './workspace.templates.js';
 
@@ -51,7 +52,11 @@ export async function listWorkspacesService(userId: string, page: PaginationQuer
 
 export async function getWorkspaceService(userId: string, workspaceId: string) {
   const workspace = await assertWorkspaceAccess(userId, workspaceId);
-  return { workspace, counts: { sources: await countSourcesService(workspaceId) } };
+  const [sources, conversations] = await Promise.all([
+    countSourcesService(workspaceId),
+    countConversationsService(userId, workspaceId),
+  ]);
+  return { workspace, counts: { sources, conversations } };
 }
 
 export async function updateWorkspaceService(

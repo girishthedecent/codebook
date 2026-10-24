@@ -24,3 +24,11 @@ export const workspaceDeleted = eventType('workspace/deleted', {
     storagePrefix: z.string(),
   }),
 });
+
+export const conversationTurnCompleted = eventType('conversation/turn.completed', {
+  schema: z.object({ conversationId: z.string(), messageId: z.string() }),
+});
+
+export const studyGenerateRequested = eventType('study/generate.requested', {
+  schema: z.object({ artifactId: z.string() }),
+});

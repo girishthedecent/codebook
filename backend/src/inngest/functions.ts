@@ -1,9 +1,12 @@
 import { NonRetriableError } from 'inngest';
 import { inngest } from '../config/inngest.config.js';
+import { afterTurn } from '../modules/chat/afterTurn.function.js';
 import { ingestSource } from '../modules/ingestion/ingest.function.js';
 import { isCleanupPrefix } from '../modules/sources/source.storage.js';
+import { generateStudyArtifact } from '../modules/study/study.function.js';
 import { deletePrefix } from '../utils/storage.js';
 import { sourceDeleted, workspaceDeleted } from './events.js';
+import { pruneRateLimits } from './pruneRateLimits.function.js';
 
 function cleanupStorage(prefix: string) {
   if (!isCleanupPrefix(prefix)) throw new NonRetriableError(`Refusing to delete "${prefix}"`);
@@ -26,4 +29,11 @@ const cleanupWorkspaceStorage = inngest.createFunction(
   },
 );
 
-export const functions = [ingestSource, cleanupSourceStorage, cleanupWorkspaceStorage];
+export const functions = [
+  ingestSource,
+  cleanupSourceStorage,
+  cleanupWorkspaceStorage,
+  pruneRateLimits,
+  afterTurn,
+  generateStudyArtifact,
+];

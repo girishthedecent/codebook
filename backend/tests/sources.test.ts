@@ -421,6 +421,7 @@ describe('reading', () => {
     const res = await alice.agent.get(`/api/v1/workspaces/${workspaceId}`);
     expect((res.body as { data: { counts: unknown } }).data.counts).toEqual({
       sources: { PENDING: 1, PROCESSING: 0, READY: 0, FAILED: 1 },
+      conversations: 0,
     });
   });
 

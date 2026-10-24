@@ -20,6 +20,16 @@ const originList = z
   )
   .pipe(z.array(httpUrl));
 
+const idList = z
+  .string()
+  .default('')
+  .transform((s) =>
+    s
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean),
+  );
+
 // Names Express understands, plus plain IPs and CIDR subnets.
 const PROXY_NAMES = new Set(['loopback', 'linklocal', 'uniquelocal']);
 
@@ -69,6 +79,9 @@ const baseSchema = z.object({
   GITHUB_CLIENT_ID: optional,
   GITHUB_CLIENT_SECRET: optional,
   TRUSTED_ORIGINS: originList,
+  // Users who may read /monitoring. Ids, not emails: sign-up doesn't verify email, so an
+  // address could be claimed by whoever registers it first.
+  ADMIN_USER_IDS: idList,
 
   // Providers and storage become required (in production) in the phases that use them.
   GITHUB_TOKEN: optional,

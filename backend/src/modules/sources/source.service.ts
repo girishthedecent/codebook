@@ -14,6 +14,7 @@ import {
 } from '../../utils/errors/app.error.js';
 import type { PaginationQuery } from '../../utils/helpers/pagination.helpers.js';
 import { assertPublicUrl } from '../../utils/network.js';
+import { assertPdfStorage } from '../../utils/quotas.js';
 import type { SseStream } from '../../utils/sse.js';
 import { deleteObject, putObject } from '../../utils/storage.js';
 import { assertWorkspaceAccess } from '../workspaces/workspace.service.js';
@@ -86,6 +87,7 @@ export async function createPdfSourceService(
 ) {
   const workspace = await assertWorkspaceAccess(userId, workspaceId);
   await assertPdfHeader(file.path);
+  await assertPdfStorage(workspace.userId, file.size);
 
   const origin: PdfOrigin = {
     storageKey: null,

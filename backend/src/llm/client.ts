@@ -2,6 +2,7 @@ import {
   generateText,
   NoObjectGeneratedError,
   Output,
+  streamText,
   type FlexibleSchema,
   type LanguageModel,
   type LanguageModelUsage,
@@ -15,6 +16,7 @@ import logger from '../config/logger.config.js';
 import { Prisma } from '../generated/prisma/client.js';
 import { UpstreamError } from '../utils/errors/app.error.js';
 import { modelsFor, textRoutes, type ModelRef, type TextRoute, type TextTask } from './models.js';
+import { isOpen, isQuotaError, noteQuotaError } from './circuitBreaker.js';
 import { estimateCost, type TokenCounts } from './pricing.js';
 import { languageModel } from './providers.js';
 import { describeError, withRetry } from './retry.js';
@@ -23,11 +25,12 @@ import { recordUsage } from './usage.repository.js';
 export type CallContext = {
   userId?: string;
   workspaceId?: string;
+  messageId?: string;
 };
 
 // System text only goes through `instructions`. The SDK also rejects system messages inside
 // `messages` at runtime, so user-supplied history can't smuggle one in.
-type ChatMessage = Exclude<ModelMessage, SystemModelMessage>;
+export type ChatMessage = Exclude<ModelMessage, SystemModelMessage>;
 
 type PromptInput = { instructions?: string } & (
   { prompt: string; messages?: never } | { messages: ChatMessage[]; prompt?: never }
@@ -94,6 +97,134 @@ export async function generateObject<OBJECT>(
   return { object, call };
 }
 
+export type StreamedToolCall = { toolCallId: string; toolName: string; input: unknown };
+
+export type StreamStepResult = {
+  text: string;
+  toolCalls: StreamedToolCall[];
+  // The assistant (and tool-call) messages to append before the next step.
+  responseMessages: ChatMessage[];
+  model: ModelRef;
+  call: CallInfo;
+};
+
+// Thrown when a stream fails after the client already saw part of it: retrying or falling
+// back would send the same text twice, so the step ends here.
+class StreamInterruptedError extends Error {
+  constructor(cause: unknown) {
+    super(`Stream interrupted: ${describeError(cause)}`, { cause });
+    this.name = 'StreamInterruptedError';
+  }
+}
+
+/**
+ * One streamed model call, for the agent's step loop. Text goes to `onText` as it arrives;
+ * tool calls come back for the caller to run (its tools have no `execute`). Retries and the
+ * fallback only apply until the first output. `models` overrides the task's route, so a
+ * turn can stick to the model that started it.
+ */
+export async function streamStep(
+  options: CallOptions & {
+    tools?: ToolSet;
+    models?: ModelRef[];
+    // The caller already moved past its primary model (the agent passes one model a step).
+    fallbackUsed?: boolean;
+    onText: (delta: string) => void;
+  },
+): Promise<StreamStepResult> {
+  const { task, abortSignal, ctx } = options;
+  const route = textRoutes[task];
+  const models = options.models ?? modelsFor(task, options.modelOverride);
+  const started = performance.now();
+  logPrompt(options);
+
+  let emitted = false;
+  let lastError: unknown;
+  let lastIndex = 0;
+  for (const [index, ref] of models.entries()) {
+    if (skipOpen(ref, index, models.length, task)) continue;
+    lastIndex = index;
+    try {
+      const value = await withRetry(
+        async (signal) => {
+          const result = streamText({
+            model: languageModel(ref),
+            ...promptFields(options),
+            tools: options.tools,
+            ...settingsFor(route),
+            abortSignal: signal,
+          });
+          try {
+            for await (const part of result.fullStream) {
+              if (part.type === 'text-delta') {
+                emitted = true;
+                options.onText(part.text);
+              } else if (part.type === 'tool-call') {
+                emitted = true;
+              } else if (part.type === 'error') {
+                throw part.error;
+              }
+            }
+          } catch (error) {
+            throw emitted ? new StreamInterruptedError(error) : error;
+          }
+          const [text, toolCalls, responseMessages, usage] = await Promise.all([
+            result.text,
+            result.toolCalls,
+            result.responseMessages,
+            result.usage,
+          ]);
+          return { text, toolCalls, responseMessages, usage };
+        },
+        { timeoutMs: route.timeoutMs, signal: abortSignal },
+      );
+      const fellBack = index > 0 || options.fallbackUsed === true;
+      const call = callInfo(ref, tokenCounts(value.usage), NO_SPENT, fellBack, started);
+      await recordUsage({ ...usageRow(task, call, ctx), ok: true });
+      return {
+        text: value.text,
+        toolCalls: value.toolCalls.map(({ toolCallId, toolName, input }) => ({
+          toolCallId,
+          toolName,
+          input,
+        })),
+        responseMessages: value.responseMessages as ChatMessage[],
+        model: ref,
+        call,
+      };
+    } catch (error) {
+      lastError = error;
+      if (isQuotaError(error)) noteQuotaError(ref);
+      if (abortSignal?.aborted || emitted) break;
+      logger.warn('Model call failed', {
+        task,
+        provider: ref.provider,
+        model: ref.model,
+        error: describeError(error),
+        willFallBack: index < models.length - 1,
+      });
+    }
+  }
+
+  const fellBack = lastIndex > 0 || options.fallbackUsed === true;
+  const call = callInfo(models[lastIndex]!, NO_TOKENS, NO_SPENT, fellBack, started);
+  await recordUsage({ ...usageRow(task, call, ctx), ok: false, error: describeError(lastError) });
+  if (abortSignal?.aborted) throw abortSignal.reason;
+  throw new UpstreamError('LLM', { task, interrupted: emitted }, { cause: lastError });
+}
+
+// A model whose quota keeps running out is skipped while its breaker is open, unless it is
+// the last one left: trying it beats failing without a call.
+function skipOpen(ref: ModelRef, index: number, count: number, task: TextTask) {
+  if (index === count - 1 || !isOpen(ref)) return false;
+  logger.debug('Skipping a model with an open circuit breaker', {
+    task,
+    provider: ref.provider,
+    model: ref.model,
+  });
+  return true;
+}
+
 /**
  * Tries the task's primary model (with retries), then its fallback. Writes one UsageEvent
  * either way. When every model fails the caller gets UPSTREAM_ERROR; the provider's own
@@ -112,6 +243,7 @@ async function callWithFallback<T>(options: CallOptions, attempt: Attempt<T>) {
   // at the model that used them and added to the call's totals.
   let spent: Spent = { tokens: NO_TOKENS, costUsd: new Prisma.Decimal(0) };
   for (const [index, ref] of models.entries()) {
+    if (skipOpen(ref, index, models.length, task)) continue;
     lastIndex = index;
     try {
       const { value, usage } = await withRetry(
@@ -123,6 +255,7 @@ async function callWithFallback<T>(options: CallOptions, attempt: Attempt<T>) {
       return { value, call };
     } catch (error) {
       lastError = error;
+      if (isQuotaError(error)) noteQuotaError(ref);
       // Only structured-output failures report usage; a timed-out call's tokens are unknown.
       if (NoObjectGeneratedError.isInstance(error) && error.usage) {
         const tokens = tokenCounts(error.usage);
@@ -148,7 +281,7 @@ async function callWithFallback<T>(options: CallOptions, attempt: Attempt<T>) {
   await recordUsage({ ...usageRow(task, call, ctx), ok: false, error: describeError(lastError) });
 
   if (abortSignal?.aborted) throw abortSignal.reason;
-  throw new UpstreamError('LLM', { task });
+  throw new UpstreamError('LLM', { task }, { cause: lastError });
 }
 
 function promptFields(options: PromptInput) {
@@ -168,6 +301,7 @@ function settingsFor(route: TextRoute) {
 }
 
 const NO_TOKENS: TokenCounts = { tokensIn: 0, tokensOut: 0, tokensCached: 0 };
+const NO_SPENT: Spent = { tokens: NO_TOKENS, costUsd: new Prisma.Decimal(0) };
 
 type Spent = { tokens: TokenCounts; costUsd: Prisma.Decimal };
 
@@ -210,6 +344,7 @@ function usageRow(task: TextTask, call: CallInfo, ctx: CallContext | undefined) 
     task,
     userId: ctx?.userId,
     workspaceId: ctx?.workspaceId,
+    messageId: ctx?.messageId,
     provider: call.provider,
     model: call.model,
     tokensIn: call.tokensIn,

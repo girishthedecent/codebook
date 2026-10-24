@@ -15,6 +15,8 @@ export type SearchOptions = {
   // For usage rows. Access is the caller's job; the queries filter by workspaceId.
   userId: string;
   workspaceId: string;
+  // The chat message the search runs for, so its model calls count toward that turn.
+  messageId?: string;
   query: string;
   // Earlier turns of the conversation, for the rewrite mode.
   history?: HistoryTurn[];
@@ -26,6 +28,8 @@ export type SearchOptions = {
   rerank?: boolean;
   topK?: number;
   expandParents?: boolean;
+  // Token budget for the parent blocks; defaults to retrieval.maxContextTokens.
+  maxContextTokens?: number;
   // Evals pin the query-mode model (no fallback) and compare reranker models.
   modelOverride?: ModelRef;
   rerankerModel?: string;

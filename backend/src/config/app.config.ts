@@ -160,6 +160,78 @@ export const appConfig = {
       memoSize: 500,
     },
   },
+  chat: {
+    maxMessageChars: 4_000,
+    // Tool steps plus the final answer, which runs without tools.
+    maxAgentSteps: 5,
+    // Calls the model may ask for in one step; the rest get a "not run" reply.
+    maxToolCallsPerStep: 4,
+    stepTimeoutMs: 60_000,
+    // What one step sends the model: rules, sources list, memory, summary, history and the
+    // tool results so far. History is trimmed first, then the oldest tool results.
+    maxInputTokens: 12_000,
+    historyMessages: 8,
+    historyTokens: 2_000,
+    // Older messages are folded into the rolling summary once they pass this.
+    summarizeAfterTokens: 3_000,
+    summaryDebounce: '30s',
+    // A cited sentence counts as supported when this share of its words is in the source.
+    supportOverlap: 0.3,
+  },
+  tools: {
+    resultTokens: 3_000,
+    searchCode: { maxMatches: 30, contextLines: 3, maxPatternChars: 200, timeoutMs: 2_000 },
+    readSource: { maxLines: 300, maxPages: 3, maxTokens: 3_000 },
+    tocDepth: 2,
+    web: {
+      apiUrl: 'https://api.tavily.com/search',
+      maxResults: 5,
+      timeoutMs: 10_000,
+      resultChars: 1_500,
+    },
+  },
+  study: {
+    // Gathered source text per generation; bigger selections are summarized first.
+    maxInputTokens: 12_000,
+    quiz: { min: 5, max: 20, default: 10 },
+    flashcards: { min: 5, max: 40, default: 15 },
+    mindmap: { maxNodes: 60, maxDepth: 4 },
+    // Parents sampled evenly across a source when no section, folder or topic is given.
+    sampleParents: 12,
+    topicResults: 20,
+    // A set still PENDING or RUNNING after this long is taken as stuck and can be regenerated.
+    staleAfterMs: 15 * 60_000,
+  },
+  limits: {
+    // At most `points` requests per window, counted per user (guests per IP, so a new guest
+    // account doesn't start over). Windows are fixed `windowSec` blocks, or calendar months.
+    windows: {
+      messagesHourly: { points: 30, windowSec: 60 * 60 },
+      messagesDaily: { points: 200, windowSec: 24 * 60 * 60 },
+      guestMessages: { points: 10, windowSec: 24 * 60 * 60 },
+      sourceCreate: { points: 20, windowSec: 24 * 60 * 60 },
+      resync: { points: 20, windowSec: 24 * 60 * 60 },
+      study: { points: 20, windowSec: 24 * 60 * 60 },
+      search: { points: 60, windowSec: 60 },
+      webSearch: { points: 20, windowSec: 24 * 60 * 60 },
+      // One key for the whole app, under Tavily's 1,000 free credits per (UTC) billing month.
+      webSearchMonthly: { points: 900, calendarMonth: true },
+    },
+    // Reranking keeps the CPU busy for seconds; searches beyond this many at once skip it.
+    concurrentReranks: 2,
+    openEventStreamsPerUser: 5,
+    pdfStorageBytesPerUser: 500 * 1024 * 1024,
+    // Tokens in + out of today's model calls (UTC day), summed from UsageEvent.
+    dailyTokensPerUser: 400_000,
+    // Counter rows are deleted by the daily prune once their window ended this long ago.
+    keepHitsHours: 48,
+  },
+  circuitBreaker: {
+    // A model that hits its quota this many times within the window is skipped for coolOffMs.
+    quotaErrors: 3,
+    windowMs: 60_000,
+    coolOffMs: 5 * 60_000,
+  },
   github: {
     apiUrl: 'https://api.github.com',
     timeoutMs: 10_000,

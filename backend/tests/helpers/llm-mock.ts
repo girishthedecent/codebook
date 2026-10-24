@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { APICallError } from 'ai';
-import { MockEmbeddingModelV4, MockLanguageModelV4 } from 'ai/test';
+import { convertArrayToReadableStream, MockEmbeddingModelV4, MockLanguageModelV4 } from 'ai/test';
 import type { ModelRef } from '../../src/llm/models.js';
 
 // Stand-in for src/llm/providers.ts. Use in a test file with:
@@ -77,6 +77,71 @@ export function promptModel(answer: (prompt: string) => string | Error) {
         warnings: [],
       };
     },
+  });
+}
+
+export type StreamTurn =
+  | Error
+  | {
+      text?: string;
+      toolCalls?: { name: string; input: unknown }[];
+      // Sent after the text: the stream breaks once the client has seen part of it.
+      failAfterText?: Error;
+    };
+
+/**
+ * A streaming model for the agent loop: plays `turns` in order, one per call, repeating
+ * the last. Text arrives a word at a time; tool calls come after it.
+ */
+export function streamingModel(turns: StreamTurn[], tokens: Tokens = { input: 100, output: 20 }) {
+  let call = 0;
+  return new MockLanguageModelV4({
+    doStream: async () => {
+      const turn = turns[Math.min(call++, turns.length - 1)]!;
+      if (turn instanceof Error) throw turn;
+      const parts: unknown[] = [{ type: 'stream-start', warnings: [] }];
+      if (turn.text) {
+        parts.push({ type: 'text-start', id: 't' });
+        for (const word of turn.text.split(/(?<= )/)) {
+          parts.push({ type: 'text-delta', id: 't', delta: word });
+        }
+        parts.push({ type: 'text-end', id: 't' });
+      }
+      if (turn.failAfterText) parts.push({ type: 'error', error: turn.failAfterText });
+      const toolCalls = turn.toolCalls ?? [];
+      toolCalls.forEach((toolCall, i) =>
+        parts.push({
+          type: 'tool-call',
+          toolCallId: `call-${call}-${i}`,
+          toolName: toolCall.name,
+          input: JSON.stringify(toolCall.input),
+        }),
+      );
+      parts.push({
+        type: 'finish',
+        finishReason: { unified: toolCalls.length > 0 ? 'tool-calls' : 'stop', raw: undefined },
+        usage: usage(tokens.input, tokens.output, tokens.cached),
+      });
+      return { stream: convertArrayToReadableStream(parts as never[]) };
+    },
+  });
+}
+
+/** Streams `text`, then waits until the call is aborted. */
+export function stallingStreamModel(text: string) {
+  return new MockLanguageModelV4({
+    doStream: async ({ abortSignal }) => ({
+      stream: new ReadableStream({
+        start(controller) {
+          controller.enqueue({ type: 'stream-start', warnings: [] });
+          controller.enqueue({ type: 'text-start', id: 't' });
+          controller.enqueue({ type: 'text-delta', id: 't', delta: text });
+          abortSignal?.addEventListener('abort', () => controller.error(abortSignal.reason), {
+            once: true,
+          });
+        },
+      }),
+    }),
   });
 }
 

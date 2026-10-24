@@ -6,7 +6,7 @@ export type SseStream = {
   send(event: string, data: unknown): void;
   close(): void;
   readonly closed: boolean;
-  /** Runs once, when either side closes the stream. */
+  /** Runs once, when either side closes the stream (at once if it is already closed). */
   onClose(fn: () => void): void;
 };
 
@@ -52,7 +52,9 @@ export function openSse(req: Request, res: Response): SseStream {
       return closed;
     },
     onClose(fn) {
-      closeHandlers.push(fn);
+      // Already closed (the client left before the stream opened): run it now.
+      if (closed) fn();
+      else closeHandlers.push(fn);
     },
   };
 

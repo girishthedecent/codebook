@@ -1,5 +1,6 @@
 import express from 'express';
 import { requireAuth } from '../../middlewares/auth.middleware.js';
+import { limit } from '../../middlewares/rateLimit.middleware.js';
 import { graphRouter } from '../graph/graph.router.js';
 import {
   validateQueryParams,
@@ -42,11 +43,18 @@ workspaceSourcesRouter.post(
   '/',
   (req, _res, next) => next(req.is('multipart/form-data') ? undefined : 'route'),
   requireWorkspaceWrite,
+  // Counted before the upload, so a refused PDF is never stored.
+  limit('sourceCreate'),
   receivePdf,
   validateRequestBody(uploadFieldsSchema),
   createPdfSourceHandler,
 );
-workspaceSourcesRouter.post('/', validateRequestBody(createSourceSchema), createSourceHandler);
+workspaceSourcesRouter.post(
+  '/',
+  validateRequestBody(createSourceSchema),
+  limit('sourceCreate'),
+  createSourceHandler,
+);
 
 // /sources/:sourceId
 export const sourceRouter = express.Router();
@@ -58,6 +66,7 @@ sourceRouter.delete('/:sourceId', validateRequestParams(sourceParamsSchema), del
 sourceRouter.post(
   '/:sourceId/resync',
   validateRequestParams(sourceParamsSchema),
+  limit('resync'),
   resyncSourceHandler,
 );
 sourceRouter.get(

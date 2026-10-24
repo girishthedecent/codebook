@@ -84,6 +84,12 @@ export function genericErrorHandler(err: unknown, req: Request, res: Response, n
     });
   }
 
+  const retryAfter = (appError.details as { retryAfterSeconds?: unknown } | undefined)
+    ?.retryAfterSeconds;
+  if (appError.statusCode === 429 && typeof retryAfter === 'number') {
+    res.set('Retry-After', String(retryAfter));
+  }
+
   res.status(appError.statusCode).json({
     success: false,
     message: appError.message,

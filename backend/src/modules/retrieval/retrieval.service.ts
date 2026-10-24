@@ -3,6 +3,7 @@ import { serverConfig } from '../../config/index.js';
 import logger from '../../config/logger.config.js';
 import { embedTexts, type EmbedKind } from '../../llm/embeddings.js';
 import { rerank as rerankDocs } from '../../llm/reranker.js';
+import { withRerankSlot } from '../../utils/rateLimit.js';
 import { BadRequestError } from '../../utils/errors/app.error.js';
 import { identifierWords } from '../ingestion/code/identifiers.js';
 import type { WorkspaceSettings } from '../workspaces/workspace.dto.js';
@@ -34,6 +35,12 @@ const config = appConfig.retrieval;
 /** Milliseconds since `start`, rounded for logs and debug output. */
 const since = (start: number) => Math.round(performance.now() - start);
 
+const callContext = ({ userId, workspaceId, messageId }: SearchOptions) => ({
+  userId,
+  workspaceId,
+  messageId,
+});
+
 export function rerankThresholds(model: string) {
   const thresholds = config.reranker.thresholds[model];
   if (!thresholds) throw new Error(`No rerank thresholds configured for ${model}`);
@@ -56,7 +63,7 @@ async function vectorLists(
   timings: StageTimings,
 ) {
   let started = performance.now();
-  const ctx = { userId: options.userId, workspaceId: options.workspaceId };
+  const ctx = callContext(options);
   const vectors: { kind: EmbedKind; vector: number[] }[] = [];
   for (const kind of ['query', 'document'] satisfies EmbedKind[]) {
     const texts = queries.filter((query) => query.kind === kind).map((query) => query.text);
@@ -103,7 +110,12 @@ function toRetrieved(chunk: ChunkRow, scores: RetrievedChunk['scores']): Retriev
  * Parent sections for the found children, best first, one block per parent, until the
  * token budget runs out (a block that doesn't fit is skipped; the first always goes in).
  */
-async function parentBlocks(workspaceId: string, results: RetrievedChunk[], score: Scorer) {
+async function parentBlocks(
+  workspaceId: string,
+  results: RetrievedChunk[],
+  score: Scorer,
+  maxTokens: number,
+) {
   const parentIds = [...new Set(results.flatMap((chunk) => chunk.parentId ?? []))];
   const parents = new Map((await findParents(workspaceId, parentIds)).map((p) => [p.id, p]));
 
@@ -137,7 +149,7 @@ async function parentBlocks(workspaceId: string, results: RetrievedChunk[], scor
   const kept: ContextBlock[] = [];
   let tokens = 0;
   for (const block of blocks.values()) {
-    if (kept.length > 0 && tokens + block.tokenCount > config.maxContextTokens) continue;
+    if (kept.length > 0 && tokens + block.tokenCount > maxTokens) continue;
     kept.push(block);
     tokens += block.tokenCount;
   }
@@ -177,7 +189,7 @@ export async function search(options: SearchOptions): Promise<SearchResult> {
   const expanded = await expandQuery(options.query, queryMode, {
     history: options.history,
     modelOverride: options.modelOverride,
-    ctx: { userId: options.userId, workspaceId: options.workspaceId },
+    ctx: callContext(options),
     signal: options.signal,
   });
   if (queryMode !== 'none') timings.queryMode = since(stageStart);
@@ -225,11 +237,15 @@ export async function search(options: SearchOptions): Promise<SearchResult> {
   let rerankState: SearchDebug['rerank'] = 'off';
   if ((options.rerank ?? config.rerankByDefault) && candidates.length > 0) {
     stageStart = performance.now();
-    const scores = await rerankDocs(expanded.rerankQuery, candidates.map(rerankText), {
-      model: rerankerModel,
-      ctx: { userId: options.userId, workspaceId: options.workspaceId },
-      signal: options.signal,
-    });
+    // Too many reranks running already: this search keeps the fused order.
+    const slot = await withRerankSlot(() =>
+      rerankDocs(expanded.rerankQuery, candidates.map(rerankText), {
+        model: rerankerModel,
+        ctx: callContext(options),
+        signal: options.signal,
+      }),
+    );
+    const scores = slot.ran ? slot.value : null;
     timings.rerank = since(stageStart);
     if (scores) {
       rerankState = 'used';
@@ -258,7 +274,12 @@ export async function search(options: SearchOptions): Promise<SearchResult> {
   const parents =
     options.expandParents === false || results.length === 0
       ? []
-      : await parentBlocks(options.workspaceId, results, score);
+      : await parentBlocks(
+          options.workspaceId,
+          results,
+          score,
+          options.maxContextTokens ?? config.maxContextTokens,
+        );
   timings.parents = since(stageStart);
   timings.total = since(started);
 

@@ -2,6 +2,8 @@ import type { Request, Response } from 'express';
 import { getAuthUser } from '../../middlewares/auth.middleware.js';
 import type { PaginationQuery } from '../../utils/helpers/pagination.helpers.js';
 import { successResponse } from '../../utils/helpers/response.helpers.js';
+import { TooManyRequestsError } from '../../utils/errors/app.error.js';
+import { takeEventStreamSlot } from '../../utils/rateLimit.js';
 import { openSse } from '../../utils/sse.js';
 import type { WorkspaceParams } from '../workspaces/workspace.dto.js';
 import {
@@ -82,7 +84,11 @@ export async function sourceEventsHandler(req: Request, res: Response) {
   const { sourceId } = res.locals.params as SourceParams;
   // Checked before the stream opens, so a missing source is a normal JSON 404.
   await getSourceService(user.id, sourceId);
-  watchSourceProgress(sourceId, openSse(req, res));
+  const release = takeEventStreamSlot(user.id);
+  if (!release) throw new TooManyRequestsError();
+  const stream = openSse(req, res);
+  stream.onClose(release);
+  watchSourceProgress(sourceId, stream);
 }
 
 export async function getTocHandler(_req: Request, res: Response) {

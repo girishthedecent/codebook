@@ -50,9 +50,11 @@ const GEMINI_FLASH_LITE: ModelRef = { provider: 'google', model: 'gemini-3.5-fla
 
 // Reasoning tokens count toward maxOutputTokens, so the limits leave room for them.
 export const textRoutes: Record<TextTask, TextRoute> = {
+  // Gemini first: every agent step re-sends the whole context, and Groq's free tier allows
+  // only 8K tokens a minute per model; Gemini's limits count requests instead.
   agent: {
-    primary: GPT_OSS_120B,
-    fallback: GEMINI_FLASH,
+    primary: GEMINI_FLASH,
+    fallback: GPT_OSS_120B,
     maxOutputTokens: 4_096,
     temperature: 0.2,
     reasoning: 'medium',
@@ -66,9 +68,10 @@ export const textRoutes: Record<TextTask, TextRoute> = {
     reasoning: 'medium',
     timeoutMs: 60_000,
   },
+  // One generation can be 8K tokens of output alone: more than Groq's minute allows.
   study: {
-    primary: GPT_OSS_120B,
-    fallback: GEMINI_FLASH,
+    primary: GEMINI_FLASH,
+    fallback: GPT_OSS_120B,
     maxOutputTokens: 8_192,
     temperature: 0.7,
     reasoning: 'medium',

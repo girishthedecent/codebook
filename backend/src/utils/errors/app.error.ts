@@ -17,8 +17,9 @@ export class AppError extends Error {
     readonly statusCode: number,
     readonly code: ErrorCode,
     readonly details?: unknown,
+    options?: ErrorOptions,
   ) {
-    super(message);
+    super(message, options);
     this.name = new.target.name;
   }
 }
@@ -67,8 +68,9 @@ export class TooManyRequestsError extends AppError {
 }
 
 export class UpstreamError extends AppError {
-  constructor(service: string, details?: unknown) {
-    super(`${service} request failed`, 502, 'UPSTREAM_ERROR', details);
+  // `cause` is the provider's error, for callers that react to its kind; never sent out.
+  constructor(service: string, details?: unknown, options?: ErrorOptions) {
+    super(`${service} request failed`, 502, 'UPSTREAM_ERROR', details, options);
   }
 }
 

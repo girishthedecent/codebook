@@ -68,6 +68,10 @@ describe('openSse', () => {
       },
     );
     expect(stream?.closed).toBe(true);
+    // A close handler added afterwards still runs, so slots taken for the stream are released.
+    let ran = false;
+    stream!.onClose(() => (ran = true));
+    expect(ran).toBe(true);
   });
 
   // Last in the file: once drained, every stream in this process closes at once.

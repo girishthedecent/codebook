@@ -1,13 +1,16 @@
 import express from 'express';
+import { limit } from '../../middlewares/rateLimit.middleware.js';
 import { requireAuth } from '../../middlewares/auth.middleware.js';
 import {
   validateQueryParams,
   validateRequestBody,
   validateRequestParams,
 } from '../../middlewares/validator.middleware.js';
+import { workspaceConversationsRouter } from '../chat/conversation.router.js';
 import { searchHandler } from '../retrieval/retrieval.controller.js';
 import { searchBodySchema } from '../retrieval/retrieval.validator.js';
 import { workspaceSourcesRouter } from '../sources/source.router.js';
+import { workspaceStudyRouter } from '../study/study.router.js';
 import {
   createWorkspaceHandler,
   deleteWorkspaceHandler,
@@ -50,10 +53,13 @@ workspaceRouter.post(
   '/:workspaceId/search',
   validateRequestParams(workspaceParamsSchema),
   validateRequestBody(searchBodySchema),
+  limit('search'),
   searchHandler,
 );
 
 // Behind this router's requireAuth; see source.router.ts.
 workspaceRouter.use('/:workspaceId/sources', workspaceSourcesRouter);
+workspaceRouter.use('/:workspaceId/conversations', workspaceConversationsRouter);
+workspaceRouter.use('/:workspaceId/study', workspaceStudyRouter);
 
 export default workspaceRouter;
