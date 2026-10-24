@@ -153,6 +153,9 @@ export async function streamStep(
             tools: options.tools,
             ...settingsFor(route),
             abortSignal: signal,
+            // The SDK prints stream errors to the console by default; they reach the loop
+            // below as error parts and are retried, passed to the fallback or logged there.
+            onError: () => {},
           });
           try {
             for await (const part of result.fullStream) {
