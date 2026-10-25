@@ -192,7 +192,12 @@ function StudyRow({
             // The open set is gone; leave its page rather than show a not-found.
             onDeleted={
               selected
-                ? () => void navigate({ to: '/w/$workspaceId/study', params: { workspaceId } })
+                ? () =>
+                    void navigate({
+                      to: '/w/$workspaceId/study',
+                      params: { workspaceId },
+                      search: { kind },
+                    })
                 : undefined
             }
           />

@@ -204,7 +204,13 @@ function Loaded({
         workspaceId={workspaceId}
         open={confirm}
         onOpenChange={setConfirm}
-        onDeleted={() => void navigate({ to: '/w/$workspaceId/study', params: { workspaceId } })}
+        onDeleted={() =>
+          void navigate({
+            to: '/w/$workspaceId/study',
+            params: { workspaceId },
+            search: { kind: search.kind },
+          })
+        }
       />
     </>
   );
