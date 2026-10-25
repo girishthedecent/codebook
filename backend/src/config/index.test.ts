@@ -59,7 +59,7 @@ describe('parseServerConfig', () => {
   });
 
   it('rejects storage and queue URLs without a scheme', () => {
-    expect(() => parseServerConfig({ ...base, S3_ENDPOINT: 'minio:9000' })).toThrow(/S3_ENDPOINT/);
+    expect(() => parseServerConfig({ ...base, S3_ENDPOINT: 's3:9000' })).toThrow(/S3_ENDPOINT/);
     expect(() =>
       parseServerConfig({ ...base, NODE_ENV: 'development', INNGEST_BASE_URL: 'localhost:8288' }),
     ).toThrow(/INNGEST_BASE_URL/);

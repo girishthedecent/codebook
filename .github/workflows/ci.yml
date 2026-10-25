@@ -33,8 +33,8 @@ jobs:
       BETTER_AUTH_SECRET: ci-only-secret-not-used-anywhere-else
       LIVE_TESTS: "0"
       S3_ENDPOINT: http://localhost:9010
-      S3_ACCESS_KEY: minio
-      S3_SECRET_KEY: minio12345
+      S3_ACCESS_KEY: codebook
+      S3_SECRET_KEY: codebook12345
       S3_FORCE_PATH_STYLE: "true"
 
     steps:
@@ -51,12 +51,12 @@ jobs:
           cache-dependency-path: backend/pnpm-lock.yaml
 
       # Storage tests upload real PDFs. A service container can't take a start command, so run it here.
-      # (MinIO no longer publishes its image; SeaweedFS speaks the same S3 API.)
+      # (SeaweedFS speaks the S3 API.)
       - name: Start object storage
         working-directory: .
         env:
-          AWS_ACCESS_KEY_ID: minio
-          AWS_SECRET_ACCESS_KEY: minio12345
+          AWS_ACCESS_KEY_ID: codebook
+          AWS_SECRET_ACCESS_KEY: codebook12345
           AWS_DEFAULT_REGION: us-east-1
         run: |
           docker run -d --name s3 -p 9010:8333 chrislusf/seaweedfs:4.48 server -s3 -dir=/data
