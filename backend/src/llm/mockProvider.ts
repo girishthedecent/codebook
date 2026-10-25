@@ -8,7 +8,8 @@ import { embeddingRoute, type ModelRef } from './models.js';
 //
 // Language model: with tools and no result yet, it searches the sources for the user's
 // question; given a result, it answers in two sentences citing [1]. A structured call
-// (responseFormat json) gets the smallest object its schema accepts.
+// (responseFormat json) gets the smallest object its schema accepts, except study sets,
+// whose checks need real counts, so those get a small valid set.
 
 // The provider-level call shape, taken from what the mock model's doGenerate receives.
 type MockOptions = NonNullable<ConstructorParameters<typeof MockLanguageModelV4>[0]>;
@@ -47,7 +48,8 @@ function toolResults(prompt: Prompt) {
 function decide(options: CallOptions): Reply {
   const { prompt, tools = [], responseFormat } = options;
   if (responseFormat?.type === 'json' && responseFormat.schema) {
-    return { kind: 'text', text: JSON.stringify(sampleFor(responseFormat.schema)) };
+    const value = studySet(responseFormat.schema) ?? sampleFor(responseFormat.schema);
+    return { kind: 'text', text: JSON.stringify(value) };
   }
   const results = toolResults(prompt);
   const search = tools.find((tool) => tool.name === 'search_sources');
@@ -62,6 +64,73 @@ function decide(options: CallOptions): Reply {
       ? 'The sources cover this directly: the passage explains it in plain terms [1]. In short, the answer follows from what that passage describes [1].'
       : 'The sources do not cover this, so there is nothing to cite. Try asking about what they contain.',
   };
+}
+
+/** A valid study set when the schema is one of the four study outputs, else undefined. */
+function studySet(schema: unknown) {
+  const keys = Object.keys((schema as JsonSchema).properties ?? {});
+  const has = (...names: string[]) => names.every((name) => keys.includes(name));
+  const cite = [1];
+
+  if (has('questions')) {
+    const topics = ['storage', 'replication', 'partitioning', 'transactions', 'consistency'];
+    return {
+      title: 'Sample quiz',
+      questions: topics.map((topic, i) => ({
+        question: `Which statement about ${topic} does the material support?`,
+        options: [
+          `A claim about ${topic}`,
+          'An unrelated claim',
+          'A reversed claim',
+          'A claim the material never makes',
+        ],
+        answerIndex: i % 4,
+        explanation: `The passage on ${topic} states this directly.`,
+        difficulty: (['easy', 'medium', 'hard'] as const)[i % 3],
+        citations: cite,
+      })),
+    };
+  }
+  if (has('cards')) {
+    return {
+      title: 'Sample flashcards',
+      cards: ['Leader', 'Follower', 'Replication lag', 'Quorum', 'Partition'].map((term) => ({
+        front: term,
+        back: `${term}: a short definition taken from the material.`,
+        citations: cite,
+      })),
+    };
+  }
+  if (has('nodes')) {
+    return {
+      title: 'Sample map',
+      nodes: [
+        { id: 'root', parentId: null, label: 'Main idea', citations: cite },
+        { id: 'a', parentId: 'root', label: 'First branch', citations: cite },
+        { id: 'b', parentId: 'root', label: 'Second branch', citations: cite },
+        { id: 'a1', parentId: 'a', label: 'Detail of the first branch', citations: cite },
+        { id: 'b1', parentId: 'b', label: 'Detail of the second branch', citations: cite },
+      ],
+    };
+  }
+  if (has('sections', 'keyTerms')) {
+    return {
+      title: 'Sample summary',
+      sections: [
+        {
+          heading: 'Overview',
+          bullets: [
+            { text: 'The material introduces the main ideas first.', citations: cite },
+            { text: 'Later sections build on them with detail.', citations: cite },
+          ],
+        },
+      ],
+      keyTerms: [
+        { term: 'Term', definition: 'A short definition from the material.', citations: cite },
+      ],
+    };
+  }
+  return undefined;
 }
 
 type JsonSchema = {
