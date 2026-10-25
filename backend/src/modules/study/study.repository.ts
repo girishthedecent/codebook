@@ -56,6 +56,22 @@ export async function updateArtifactIfExists(
 }
 
 /**
+ * Like updateArtifactIfExists, but only while the artifact is PENDING or RUNNING, so a
+ * run that was cancelled (or already finished) is never written over. Null when nothing
+ * was changed.
+ */
+export async function updateActiveArtifact(
+  artifactId: string,
+  data: Prisma.StudyArtifactUpdateManyMutationInput,
+) {
+  const [artifact] = await prismaClient.studyArtifact.updateManyAndReturn({
+    where: { id: artifactId, status: { in: ['PENDING', 'RUNNING'] } },
+    data,
+  });
+  return artifact ?? null;
+}
+
+/**
  * Puts the artifact back to PENDING unless a generation is under way (one that hasn't
  * moved since `staleBefore` doesn't count). Null when nothing was changed.
  */

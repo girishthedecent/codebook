@@ -1,0 +1,27 @@
+@base = http://localhost:4000
+@origin = http://localhost:4000
+
+### Sign in first (REST Client keeps the session cookie)
+POST {{base}}/api/auth/sign-in/email
+Content-Type: application/json
+Origin: {{origin}}
+
+{ "email": "reader@example.com", "password": "correct-horse-battery" }
+
+### Pick the workspace and the study set to work with
+@workspaceId = paste-a-workspace-id
+@studyId = paste-a-study-set-id
+
+### List study sets (?type=QUIZ|FLASHCARDS|SUMMARY|MINDMAP)
+GET {{base}}/api/v1/workspaces/{{workspaceId}}/study
+
+### Read one
+GET {{base}}/api/v1/study/{{studyId}}
+
+### Regenerate (409 while it is still generating)
+POST {{base}}/api/v1/study/{{studyId}}/regenerate
+Origin: {{origin}}
+
+### Cancel one that is still generating (marks it FAILED with "Cancelled."; 409 once finished)
+POST {{base}}/api/v1/study/{{studyId}}/cancel
+Origin: {{origin}}

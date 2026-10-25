@@ -9,6 +9,7 @@ import {
   type StudyParams,
 } from './study.dto.js';
 import {
+  cancelStudyService,
   createStudyService,
   deleteStudyService,
   getStudyService,
@@ -54,4 +55,11 @@ export async function regenerateStudyHandler(_req: Request, res: Response) {
   const { studyId } = res.locals.params as StudyParams;
   const artifact = await regenerateStudyService(user.id, studyId);
   res.status(202).json(successResponse('Study set queued', toStudyResponse(artifact)));
+}
+
+export async function cancelStudyHandler(_req: Request, res: Response) {
+  const user = getAuthUser(res);
+  const { studyId } = res.locals.params as StudyParams;
+  const artifact = await cancelStudyService(user.id, studyId);
+  res.json(successResponse('Study set cancelled', toStudyResponse(artifact)));
 }

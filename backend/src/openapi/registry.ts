@@ -631,6 +631,17 @@ function apiRoutes(): Route[] {
       responses: { 202: ok('Queued', s.studySchema) },
       errors: [400, 403, 404, 409, 429],
     },
+    {
+      method: 'post',
+      path: `${API}/study/{studyId}/cancel`,
+      tags: ['study'],
+      summary: 'Stop a study set that is still generating',
+      description: 'Marks it FAILED with the error "Cancelled."; 409 once it has finished.',
+      access: 'user',
+      request: { params: studyParamsSchema },
+      responses: { 200: ok('Cancelled', s.studySchema) },
+      errors: [400, 403, 404, 409],
+    },
 
     // Monitoring (admin)
     {

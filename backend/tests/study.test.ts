@@ -575,6 +575,84 @@ describe('reading and managing study sets', () => {
   });
 });
 
+describe('POST /study/:id/cancel', () => {
+  const cancel = (id: string, agent = alice) => agent.post(`/api/v1/study/${id}/cancel`);
+
+  it('cancels a pending set, which then shows as failed', async () => {
+    const res = await createStudy({ type: 'QUIZ', sourceIds: [book.sourceId] });
+    const id = (res.body as { data: { id: string } }).data.id;
+
+    const cancelled = await cancel(id);
+
+    expect(cancelled.status).toBe(200);
+    expect((await getStudy(id)).body).toMatchObject({ status: 'FAILED', error: 'Cancelled.' });
+  });
+
+  it('does not start a run for a set cancelled before it began', async () => {
+    studyModel(() => ({}));
+    const res = await createStudy({ type: 'QUIZ', sourceIds: [book.sourceId] });
+    const id = (res.body as { data: { id: string } }).data.id;
+    await cancel(id);
+
+    await run(id);
+
+    expect(prompts).toHaveLength(0);
+    expect((await getStudy(id)).body).toMatchObject({ status: 'FAILED', error: 'Cancelled.' });
+  });
+
+  it('rejects a finished set and leaves it alone', async () => {
+    studyModel((_prompt, numbers) => ({
+      title: 'Quiz',
+      questions: [question(1, [numbers[0]!])],
+    }));
+    const id = await generateStudy({ type: 'QUIZ', sourceIds: [book.sourceId], count: 5 });
+
+    expect((await cancel(id)).status).toBe(409);
+    expect((await getStudy(id)).body.status).toBe('DONE');
+  });
+
+  it('is not overwritten when the generation finishes after the cancel', async () => {
+    const res = await createStudy({ type: 'SUMMARY', sourceIds: [book.sourceId] });
+    const id = (res.body as { data: { id: string } }).data.id;
+    const model = promptModel((prompt) => {
+      const n = Number(/<source n="(\d+)"/.exec(prompt)![1]);
+      const cited = [n];
+      return JSON.stringify({
+        title: 'Late',
+        sections: [{ heading: 'H', bullets: [{ text: 'Too late.', citations: cited }] }],
+        keyTerms: [],
+      });
+    });
+    // The owner cancels while the model is still answering.
+    const answer = model.doGenerate.bind(model);
+    model.doGenerate = async (options) => {
+      const reply = await answer(options);
+      expect((await cancel(id)).status).toBe(200);
+      return reply;
+    };
+    useModels({ [STUDY.primary!.model]: model, [STUDY.fallback!.model]: model });
+
+    await run(id);
+
+    expect((await getStudy(id)).body).toMatchObject({
+      status: 'FAILED',
+      error: 'Cancelled.',
+      title: expect.not.stringContaining('Late'),
+    });
+  });
+
+  it('keeps other users out', async () => {
+    const res = await createStudy({ type: 'QUIZ', sourceIds: [book.sourceId] });
+    const id = (res.body as { data: { id: string } }).data.id;
+
+    expect((await cancel(id, bob)).status).toBe(404);
+    expect((await getStudy(id)).body.status).toBe('PENDING');
+
+    await prismaClient.workspace.update({ where: { id: workspaceId }, data: { isDemo: true } });
+    expect((await cancel(id, bob)).status).toBe(404);
+  });
+});
+
 describe('model failures', () => {
   const input: StudyInput = { sourceIds: ['s'], count: 5, difficulty: 'medium' };
   const run = () => generateOnce('QUIZ', input, '<source n="1">\nText\n</source>', [1], {});

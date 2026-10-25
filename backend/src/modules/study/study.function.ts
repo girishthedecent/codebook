@@ -5,7 +5,7 @@ import type { CitationRef } from '../citations/citations.types.js';
 import { gatherMaterial, groupRefs, renderGroup } from './study.gather.js';
 import { condenseGroup, generateStudy, LABELS } from './study.generate.js';
 import type { StudyData } from './study.schemas.js';
-import { failStudy, saveStudy, startStudy } from './study.service.js';
+import { failStudy, isStudyActive, saveStudy, startStudy } from './study.service.js';
 
 const GENERIC_FAILURE = 'Generation failed. Try again in a few minutes.';
 
@@ -14,6 +14,7 @@ const GENERIC_FAILURE = 'Generation failed. Try again in a few minutes.';
  * don't fit one prompt, then generate. Output that fails the checks gets one more attempt
  * with the problems spelled out; a second failure ends the run as FAILED with the reason.
  * Each model call is its own step, so a retried step doesn't pay for the others again.
+ * A cancelled set is checked for before each model call and never written over.
  */
 export const generateStudyArtifact = inngest.createFunction(
   {
@@ -33,7 +34,7 @@ export const generateStudyArtifact = inngest.createFunction(
     const { artifactId } = event.data;
 
     const artifact = await step.run('start', () => startStudy(artifactId));
-    if (!artifact) return { artifactId, outcome: 'gone' };
+    if (!artifact) return { artifactId, outcome: 'stopped' };
     const ctx = { userId: artifact.userId, workspaceId: artifact.workspaceId };
 
     const gathered = await step.run('gather', () => gatherMaterial(ctx, artifact.input));
@@ -44,27 +45,34 @@ export const generateStudyArtifact = inngest.createFunction(
     // Step results come back as JSON; refs are plain data, so nothing is lost.
     const refs = gathered.refs as CitationRef[];
 
+    // Steps that call a model skip the call, and return null, once the set was cancelled.
+    const whileActive = async <T>(work: () => Promise<T>) =>
+      (await isStudyActive(artifactId)) ? work() : null;
+
     const groups = groupRefs(refs);
-    const material =
+    const condensed =
       groups.length === 1
-        ? renderGroup(groups[0]!)
-        : (
-            await Promise.all(
-              groups.map((group, i) =>
-                step.run(`condense-${i + 1}`, () => condenseGroup(group, groups.length, ctx)),
+        ? [renderGroup(groups[0]!)]
+        : await Promise.all(
+            groups.map((group, i) =>
+              step.run(`condense-${i + 1}`, () =>
+                whileActive(() => condenseGroup(group, groups.length, ctx)),
               ),
-            )
-          ).join('\n\n');
+            ),
+          );
+    if (condensed.includes(null)) return { artifactId, outcome: 'cancelled' };
+    const material = condensed.join('\n\n');
 
     const numbers = refs.map((ref) => ref.n);
     const generateOnce = (feedback?: string[]) =>
       generateStudy(artifact.type, artifact.input, material, numbers, ctx, feedback);
 
-    let result = await step.run('generate', () => generateOnce());
-    if ('errors' in result) {
+    let result = await step.run('generate', () => whileActive(() => generateOnce()));
+    if (result && 'errors' in result) {
       const feedback = result.errors;
-      result = await step.run('generate-retry', () => generateOnce(feedback));
+      result = await step.run('generate-retry', () => whileActive(() => generateOnce(feedback)));
     }
+    if (!result) return { artifactId, outcome: 'cancelled' };
 
     if ('errors' in result) {
       const reason = `The generated ${LABELS[artifact.type]} didn't pass checks: ${result.errors.slice(0, 3).join(' ')}`;

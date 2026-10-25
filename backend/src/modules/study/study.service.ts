@@ -11,14 +11,19 @@ import { citedNumbers, defaultCount, LABELS, promptFor } from './study.generate.
 import {
   createArtifact,
   deleteArtifact,
+  findArtifact,
   findArtifactForUser,
   findTocPath,
   findWorkspaceSources,
   listArtifacts,
   requeueArtifact,
+  updateActiveArtifact,
   updateArtifactIfExists,
 } from './study.repository.js';
 import type { StudyData } from './study.schemas.js';
+
+// Shown on a set the owner stopped; the generation function leaves such a set alone.
+export const CANCELLED_MESSAGE = 'Cancelled.';
 
 // Stored citations keep this much of each passage: enough for the snippet and a preview.
 const STORED_TEXT_CHARS = 1_500;
@@ -78,6 +83,18 @@ export async function regenerateStudyService(userId: string, artifactId: string)
   return queueGeneration(queued);
 }
 
+export async function cancelStudyService(userId: string, artifactId: string) {
+  const artifact = await findArtifactForUser(userId, artifactId);
+  if (!artifact) throw new NotFoundError('Study set not found');
+  // Conditional, so a run that finishes at the same moment isn't turned into a failure.
+  const cancelled = await updateActiveArtifact(artifactId, {
+    status: 'FAILED',
+    error: CANCELLED_MESSAGE,
+  });
+  if (!cancelled) throw new ConflictError('This study set is not being generated');
+  return cancelled;
+}
+
 async function queueGeneration(artifact: StudyArtifact) {
   try {
     await inngest.send(studyGenerateRequested.create({ artifactId: artifact.id }));
@@ -99,9 +116,9 @@ export async function deleteStudyService(userId: string, artifactId: string) {
 
 // ---- called by the Inngest function -----------------------------------------------------
 
-/** Marks the run as started; null when the artifact was deleted in the meantime. */
+/** Marks the run as started; null when the artifact was deleted or cancelled meanwhile. */
 export async function startStudy(artifactId: string) {
-  const artifact = await updateArtifactIfExists(artifactId, { status: 'RUNNING', error: null });
+  const artifact = await updateActiveArtifact(artifactId, { status: 'RUNNING', error: null });
   if (!artifact) return null;
   return {
     type: artifact.type,
@@ -123,7 +140,7 @@ export async function saveStudy(
   const sources = refs
     .filter((ref) => cited.has(ref.n))
     .map((ref) => ({ ...ref, text: ref.text.slice(0, STORED_TEXT_CHARS) }));
-  await updateArtifactIfExists(artifactId, {
+  await updateActiveArtifact(artifactId, {
     status: 'DONE',
     error: null,
     title: data.title.slice(0, 200) || undefined,
@@ -134,9 +151,15 @@ export async function saveStudy(
   });
 }
 
+/** True while the run is still wanted: not deleted, not cancelled. */
+export async function isStudyActive(artifactId: string) {
+  const artifact = await findArtifact(artifactId);
+  return artifact?.status === 'PENDING' || artifact?.status === 'RUNNING';
+}
+
 /** `error` is shown to the user, so it never carries provider details. */
 export async function failStudy(artifactId: string, error: string) {
-  await updateArtifactIfExists(artifactId, { status: 'FAILED', error });
+  await updateActiveArtifact(artifactId, { status: 'FAILED', error });
 }
 
 const capitalize = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);

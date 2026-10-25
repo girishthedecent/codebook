@@ -9,6 +9,7 @@ import {
 import { forbidGuests } from '../demo/demo.middleware.js';
 import { workspaceParamsSchema } from '../workspaces/workspace.validator.js';
 import {
+  cancelStudyHandler,
   createStudyHandler,
   deleteStudyHandler,
   getStudyHandler,
@@ -54,4 +55,10 @@ studyRouter.post(
   validateRequestParams(studyParamsSchema),
   limit('study'),
   regenerateStudyHandler,
+);
+studyRouter.post(
+  '/:studyId/cancel',
+  noGuests,
+  validateRequestParams(studyParamsSchema),
+  cancelStudyHandler,
 );
