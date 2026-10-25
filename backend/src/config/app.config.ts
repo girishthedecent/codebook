@@ -170,6 +170,9 @@ export const appConfig = {
     // What one step sends the model: rules, sources list, memory, summary, history and the
     // tool results so far. History is trimmed first, then the oldest tool results.
     maxInputTokens: 12_000,
+    // The same, when the step runs on Groq: its free tier allows 8K tokens a minute per model,
+    // input and output together, so a step has to leave room for the reply and the next step.
+    groqInputTokens: 5_000,
     historyMessages: 8,
     historyTokens: 2_000,
     // Older messages are folded into the rolling summary once they pass this.

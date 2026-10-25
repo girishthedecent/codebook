@@ -138,7 +138,15 @@ export async function runAgent(input: AgentInput): Promise<AgentResult> {
         return await streamStep({
           task: 'agent',
           instructions: input.system,
-          messages: fitBudget(maxInputTokens, input.system, input.history, steps, build),
+          messages: fitBudget(
+            models[0]!.provider === 'groq'
+              ? Math.min(maxInputTokens, appConfig.chat.groqInputTokens)
+              : maxInputTokens,
+            input.system,
+            input.history,
+            steps,
+            build,
+          ),
           tools: final ? undefined : toolSet,
           models: [models[0]!],
           fallbackUsed: models[0] !== route[0],
