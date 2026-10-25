@@ -35,10 +35,10 @@ export async function gatherMaterial(owner: Owner, input: StudyInput): Promise<G
   const sourceIds = sources.map((source) => source.id);
   const titles = new Map(sources.map((source) => [source.id, source]));
 
-  let refs: NewCitation[];
-  if (input.topic) {
-    refs = await topicRefs(owner, sourceIds, input.topic);
-  } else {
+  // A focus the reranker finds nothing close to ("fit for an internship" over a résumé) would
+  // otherwise fail the set; with no match it falls back to a spread across the sources.
+  let refs: NewCitation[] = input.topic ? await topicRefs(owner, sourceIds, input.topic) : [];
+  if (refs.length === 0) {
     const candidates = await selectCandidates(sourceIds, input);
     if (candidates === null) return { error: 'The chosen section no longer exists.' };
     const budget = appConfig.study.maxInputTokens * MAX_GROUPS * SAMPLE_SHARE;
