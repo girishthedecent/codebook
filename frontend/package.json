@@ -15,7 +15,7 @@
     "format": "prettier --write .",
     "typecheck": "tsc -b --noEmit",
     "gen:api": "node --import tsx scripts/gen-api.ts",
-    "size": "size-limit",
+    "size": "size-limit && node --import tsx scripts/initial-size.ts",
     "lhci": "lhci autorun",
     "lhci:mobile": "lhci autorun --config=lighthouserc.mobile.json"
   },

@@ -21,7 +21,7 @@ Start the backend first (`cd ../backend && pnpm dev`). No environment variables 
 | `pnpm lint` | ESLint and Prettier check |
 | `pnpm typecheck` | `tsc -b` |
 | `pnpm gen:api` | Regenerate `src/api/schema.d.ts` from the backend's OpenAPI document |
-| `pnpm size` | Bundle budgets from `.size-limit.json` (run after `pnpm build`) |
+| `pnpm size` | Bundle budgets: entry and CSS from `.size-limit.json`, and first-visit JS (entry plus preloaded chunks) from `scripts/initial-size.ts`. Run after `pnpm build` |
 
 Lighthouse budgets live in `lighthouserc.json` (desktop) and `lighthouserc.mobile.json`; CI runs them with `@lhci/cli` against `pnpm preview`.
 
@@ -38,5 +38,5 @@ src/
   lib/        small helpers (cn, keyboard, formatting)
   styles/     tokens.css (design tokens) and base.css
   i18n/       all user-facing strings
-scripts/      gen-api
+scripts/      gen-api, prerender (landing page), initial-size (first-visit budget)
 ```

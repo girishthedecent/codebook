@@ -4,14 +4,6 @@ import tailwindcss from '@tailwindcss/vite';
 import { tanstackRouter } from '@tanstack/router-plugin/vite';
 import { fileURLToPath } from 'node:url';
 
-// Heavy libraries get their own chunks so they load only when a viewer or the graph opens.
-const ownChunk: Record<string, string> = {
-  'pdfjs-dist': 'pdf',
-  shiki: 'shiki',
-  '@shikijs': 'shiki',
-  '@xyflow': 'flow',
-};
-
 export default defineConfig({
   plugins: [
     // The router plugin has to run before react so generated routes exist when JSX compiles.
@@ -34,13 +26,5 @@ export default defineConfig({
   build: {
     target: 'es2023',
     sourcemap: false,
-    rollupOptions: {
-      output: {
-        manualChunks(id) {
-          const m = /node_modules\/(?:\.pnpm\/[^/]+\/node_modules\/)?(@[^/]+|[^/]+)/.exec(id);
-          return m ? ownChunk[m[1]!] : undefined;
-        },
-      },
-    },
   },
 });
