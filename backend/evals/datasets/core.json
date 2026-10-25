@@ -333,7 +333,7 @@
         "lineEnd": 824
       }
     ],
-    "tags": ["response", "redirect"],
+    "tags": ["response", "redirect", "gate"],
     "reviewed": true
   },
   {
@@ -350,7 +350,7 @@
         "lineEnd": 77
       }
     ],
-    "tags": ["response", "status", "validation"],
+    "tags": ["response", "status", "validation", "gate"],
     "reviewed": true
   },
   {
@@ -367,7 +367,7 @@
         "lineEnd": 158
       }
     ],
-    "tags": ["response", "send", "json"],
+    "tags": ["response", "send", "json", "gate"],
     "reviewed": true
   },
   {
@@ -401,7 +401,7 @@
         "lineEnd": 290
       }
     ],
-    "tags": ["response", "jsonp", "security"],
+    "tags": ["response", "jsonp", "security", "gate"],
     "reviewed": true
   },
   {
@@ -418,7 +418,7 @@
         "lineEnd": 304
       }
     ],
-    "tags": ["response", "jsonp", "security"],
+    "tags": ["response", "jsonp", "security", "gate"],
     "reviewed": true
   },
   {
@@ -435,7 +435,7 @@
         "lineEnd": 398
       }
     ],
-    "tags": ["response", "sendFile", "validation"],
+    "tags": ["response", "sendFile", "validation", "gate"],
     "reviewed": true
   },
   {
@@ -469,7 +469,7 @@
         "lineEnd": 763
       }
     ],
-    "tags": ["response", "cookie", "signing"],
+    "tags": ["response", "cookie", "signing", "gate"],
     "reviewed": true
   },
   {
@@ -486,7 +486,7 @@
         "lineEnd": 722
       }
     ],
-    "tags": ["response", "cookie"],
+    "tags": ["response", "cookie", "gate"],
     "reviewed": true
   },
   {
@@ -503,7 +503,7 @@
         "lineEnd": 97
       }
     ],
-    "tags": ["examples", "error-handling", "middleware"],
+    "tags": ["examples", "error-handling", "middleware", "gate"],
     "reviewed": true
   },
   {
@@ -537,7 +537,7 @@
         "lineEnd": 486
       }
     ],
-    "tags": ["request", "caching", "fresh"],
+    "tags": ["request", "caching", "fresh", "gate"],
     "reviewed": true
   },
   {
@@ -554,7 +554,7 @@
         "lineEnd": 458
       }
     ],
-    "tags": ["request", "hostname", "ipv6"],
+    "tags": ["request", "hostname", "ipv6", "gate"],
     "reviewed": true
   },
   {
@@ -571,7 +571,7 @@
         "lineEnd": 394
       }
     ],
-    "tags": ["request", "subdomains"],
+    "tags": ["request", "subdomains", "gate"],
     "reviewed": true
   },
   {
@@ -605,7 +605,7 @@
         "lineEnd": 214
       }
     ],
-    "tags": ["application", "middleware", "validation"],
+    "tags": ["application", "middleware", "validation", "gate"],
     "reviewed": true
   },
   {
@@ -628,7 +628,7 @@
         "lineEnd": 271
       }
     ],
-    "tags": ["utils", "query-parser", "settings"],
+    "tags": ["utils", "query-parser", "settings", "gate"],
     "reviewed": true
   },
   {
@@ -645,7 +645,7 @@
         "lineEnd": 565
       }
     ],
-    "tags": ["application", "views", "errors"],
+    "tags": ["application", "views", "errors", "gate"],
     "reviewed": true
   },
   {
@@ -769,7 +769,16 @@
         "lineEnd": 222
       }
     ],
-    "tags": ["response", "json", "send", "flow"],
+    "tags": [
+      "response",
+      "json",
+      "send",
+      "flow",
+      "gate",
+      "tool:trace_flow",
+      "tool:find_dependencies",
+      "tool:find_callers"
+    ],
     "reviewed": true
   },
   {
@@ -798,7 +807,16 @@
         "lineEnd": 130
       }
     ],
-    "tags": ["response", "redirect", "content-negotiation", "flow"],
+    "tags": [
+      "response",
+      "redirect",
+      "content-negotiation",
+      "flow",
+      "gate",
+      "tool:trace_flow",
+      "tool:find_dependencies",
+      "tool:find_callers"
+    ],
     "reviewed": true
   },
   {
@@ -827,7 +845,15 @@
         "lineEnd": 159
       }
     ],
-    "tags": ["views", "render", "flow"],
+    "tags": [
+      "views",
+      "render",
+      "flow",
+      "gate",
+      "tool:trace_flow",
+      "tool:find_dependencies",
+      "tool:find_callers"
+    ],
     "reviewed": true
   },
   {
@@ -856,7 +882,15 @@
         "lineEnd": 193
       }
     ],
-    "tags": ["etag", "settings", "caching", "flow"],
+    "tags": [
+      "etag",
+      "settings",
+      "caching",
+      "flow",
+      "tool:trace_flow",
+      "tool:find_dependencies",
+      "tool:find_callers"
+    ],
     "reviewed": true
   },
   {
@@ -885,7 +919,16 @@
         "lineEnd": 1011
       }
     ],
-    "tags": ["response", "download", "sendFile", "flow"],
+    "tags": [
+      "response",
+      "download",
+      "sendFile",
+      "flow",
+      "gate",
+      "tool:trace_flow",
+      "tool:find_dependencies",
+      "tool:find_callers"
+    ],
     "reviewed": true
   },
   {
@@ -914,7 +957,16 @@
         "lineEnd": 315
       }
     ],
-    "tags": ["proxy", "settings", "request", "flow"],
+    "tags": [
+      "proxy",
+      "settings",
+      "request",
+      "flow",
+      "gate",
+      "tool:trace_flow",
+      "tool:find_dependencies",
+      "tool:find_callers"
+    ],
     "reviewed": true
   },
   {
@@ -936,7 +988,7 @@
         "lineEnd": 503
       }
     ],
-    "tags": ["routing", "app.all"],
+    "tags": ["routing", "app.all", "gate"],
     "reviewed": true
   },
   {
@@ -958,7 +1010,7 @@
         "lineEnd": 258
       }
     ],
-    "tags": ["routing", "app.route"],
+    "tags": ["routing", "app.route", "gate"],
     "reviewed": true
   },
   {
@@ -980,7 +1032,7 @@
         "lineEnd": 332
       }
     ],
-    "tags": ["routing", "response", "sendStatus"],
+    "tags": ["routing", "response", "sendStatus", "gate"],
     "reviewed": true
   },
   {
@@ -1024,7 +1076,7 @@
         "lineEnd": 482
       }
     ],
-    "tags": ["routing", "methods", "settings"],
+    "tags": ["routing", "methods", "settings", "gate"],
     "reviewed": true
   },
   {
@@ -1034,7 +1086,7 @@
     "question": "Which HNSW index parameters, like M and ef_construction, trade recall against build time for vector similarity search?",
     "expectedAnswer": "The book does not cover HNSW or vector index tuning.",
     "expectedRefs": [],
-    "tags": ["vector-search", "indexing"],
+    "tags": ["vector-search", "indexing", "gate"],
     "reviewed": true
   },
   {
@@ -1044,7 +1096,7 @@
     "question": "How does a GraphQL server batch resolver calls to avoid the N+1 query problem against the database?",
     "expectedAnswer": "The book does not discuss GraphQL or resolver batching.",
     "expectedRefs": [],
-    "tags": ["graphql", "query-performance"],
+    "tags": ["graphql", "query-performance", "gate"],
     "reviewed": true
   },
   {
@@ -1054,7 +1106,7 @@
     "question": "How do I accept WebSocket upgrade requests on an Express app?",
     "expectedAnswer": "Neither the indexed Express code nor the routing guide covers WebSockets.",
     "expectedRefs": [],
-    "tags": ["websocket", "no-answer"],
+    "tags": ["websocket", "no-answer", "gate"],
     "reviewed": true
   },
   {
@@ -1074,7 +1126,129 @@
     "question": "How do I turn on gzip compression for Express responses?",
     "expectedAnswer": "Compression isn't part of the indexed Express code or the routing guide.",
     "expectedRefs": [],
-    "tags": ["compression", "no-answer"],
+    "tags": ["compression", "no-answer", "gate"],
     "reviewed": true
+  },
+  {
+    "id": "personal-001",
+    "type": "BOOK",
+    "split": "DEV",
+    "question": "What's the main limitation of the storage approach my project uses?",
+    "expectedAnswer": "With a Bitcask-style log and an in-memory hash index, every key has to fit in the hash table in memory (an on-disk hash map performs badly), and range queries are inefficient because each key must be looked up separately.",
+    "expectedRefs": [
+      {
+        "sourceKey": "book",
+        "pageStart": 95,
+        "pageEnd": 95
+      }
+    ],
+    "tags": ["personal", "storage", "hash-index"],
+    "reviewed": true,
+    "memories": [
+      {
+        "kind": "FACT",
+        "content": "The user's side project stores its data in an append-only log file with an in-memory hash map of key offsets (Bitcask-style).",
+        "importance": 4
+      }
+    ]
+  },
+  {
+    "id": "personal-002",
+    "type": "BOOK",
+    "split": "DEV",
+    "question": "Users of my app sometimes don't see a change they just saved after reloading. Why, and how do I fix it?",
+    "expectedAnswer": "Reads go to asynchronous replicas that may lag behind the leader, so a user can read a stale replica right after writing. The fix is read-after-write (read-your-writes) consistency, e.g. reading what the user may have modified (such as their own profile) from the leader and everything else from followers.",
+    "expectedRefs": [
+      {
+        "sourceKey": "book",
+        "pageStart": 178,
+        "pageEnd": 179
+      }
+    ],
+    "tags": ["personal", "replication", "consistency"],
+    "reviewed": true,
+    "memories": [
+      {
+        "kind": "FACT",
+        "content": "The user's app uses single-leader PostgreSQL replication with asynchronous replicas, and sends all reads to the replicas.",
+        "importance": 4
+      }
+    ]
+  },
+  {
+    "id": "personal-003",
+    "type": "BOOK",
+    "split": "DEV",
+    "question": "My team keeps changing the shape of our records. Which kinds of compatibility do we need so old and new code keep working during a rollout?",
+    "expectedAnswer": "Both directions: backward compatibility (newer code reads data written by older code) and forward compatibility (older code reads data written by newer code, ignoring fields it doesn't know). Backward is usually easy; forward is trickier.",
+    "expectedRefs": [
+      {
+        "sourceKey": "book",
+        "pageStart": 130,
+        "pageEnd": 130
+      }
+    ],
+    "tags": ["personal", "encoding", "schema-evolution"],
+    "reviewed": true,
+    "memories": [
+      {
+        "kind": "FACT",
+        "content": "The user's team stores events as JSON documents and rolls out new service versions gradually, so old and new versions run side by side.",
+        "importance": 3
+      }
+    ]
+  },
+  {
+    "id": "personal-004",
+    "type": "CODE",
+    "split": "DEV",
+    "question": "What status code does the redirect in my login flow send?",
+    "expectedAnswer": "302: res.redirect defaults the status to 302 (Found) when it's called with only a URL; a status is only used when passed as the first of two arguments.",
+    "expectedRefs": [
+      {
+        "sourceKey": "repo",
+        "path": "lib/response.js",
+        "lineStart": 815,
+        "lineEnd": 824
+      }
+    ],
+    "tags": ["personal", "response", "redirect"],
+    "reviewed": true,
+    "memories": [
+      {
+        "kind": "FACT",
+        "content": "In the user's Express app, the login handler ends with res.redirect('/login') and no status argument.",
+        "importance": 3
+      }
+    ]
+  },
+  {
+    "id": "personal-005",
+    "type": "CODE",
+    "split": "DEV",
+    "question": "Which HTTP methods does the catch-all route in my app answer, and how does Express set that up?",
+    "expectedAnswer": "All of them: app.all creates one route for the path and registers the same handlers on it for every HTTP method in the methods list.",
+    "expectedRefs": [
+      {
+        "sourceKey": "repo",
+        "path": "lib/application.js",
+        "lineStart": 494,
+        "lineEnd": 503
+      }
+    ],
+    "tags": ["personal", "routing", "app-all"],
+    "reviewed": true,
+    "memories": [
+      {
+        "kind": "PROFILE",
+        "content": "The user builds web APIs with Express.",
+        "importance": 3
+      },
+      {
+        "kind": "FACT",
+        "content": "The user's Express app registers a catch-all route with app.all('/api/*') for logging.",
+        "importance": 3
+      }
+    ]
   }
 ]

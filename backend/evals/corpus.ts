@@ -14,6 +14,7 @@ import { ConflictError } from '../src/utils/errors/app.error.js';
 import { getObjectBuffer } from '../src/utils/storage.js';
 import {
   bookPath,
+  CORPUS_VARIANTS,
   corpusVersion,
   ensureEvalUser,
   ensureEvalWorkspace,
@@ -27,27 +28,39 @@ import {
   type CorpusVariant,
 } from './corpusWorkspace.js';
 
-// pnpm evals:corpus [--dataset core] [--no-context] [--max-embeddings 300] [--skip-budget]
+// pnpm evals:corpus [--dataset core] [--variant context|nocontext|gate] [--no-context]
+//   [--max-embeddings 300] [--skip-budget] [--require-cached]
 //
 // Builds the eval workspace for a dataset through the real pipeline: creates the sources the
 // way the API does, which queues their ingest runs, and waits until each is READY or FAILED.
 // Needs the dev server and the Inngest dev server running. A rerun only adds what is missing
-// and resyncs failed sources.
+// and resyncs failed sources. --require-cached (CI, after loading the committed cache file)
+// fails as soon as the ingest makes any model or embedding call: everything must come from
+// the caches, so a stale cache file shows up as an error, never as quota spent.
 
 const POLL_MS = 5_000;
 const TIMEOUT_MS = 60 * 60 * 1000;
 
 async function main() {
   const { values } = parseArgs({
+    // `pnpm evals:corpus -- --variant gate` passes the "--" through.
+    args: process.argv.slice(2).filter((arg, i) => i > 0 || arg !== '--'),
     options: {
       dataset: { type: 'string', default: 'core' },
+      variant: { type: 'string' },
+      // Same as --variant nocontext.
       'no-context': { type: 'boolean', default: false },
       'max-embeddings': { type: 'string', default: '300' },
       'skip-budget': { type: 'boolean', default: false },
+      'require-cached': { type: 'boolean', default: false },
     },
   });
   const dataset = values.dataset;
-  const variant: CorpusVariant = values['no-context'] ? 'nocontext' : 'context';
+  const variant = (values.variant ??
+    (values['no-context'] ? 'nocontext' : 'context')) as CorpusVariant;
+  if (!CORPUS_VARIANTS.includes(variant)) {
+    throw new Error(`--variant must be one of ${CORPUS_VARIANTS.join(', ')}`);
+  }
   const maxEmbeddings = Number(values['max-embeddings']);
   if (!Number.isInteger(maxEmbeddings) || maxEmbeddings < 0) {
     throw new Error('--max-embeddings must be a whole number');
@@ -82,7 +95,9 @@ async function main() {
     const keys = toIngest.map(({ entry }) => entry.sourceKey).join(', ');
     console.log(`To ingest: ${keys}; about ${estimate} new embeddings`);
   }
-  if (!values['skip-budget']) {
+  // The estimate needs an indexed copy elsewhere (there is none in CI); --require-cached
+  // checks what the ingest really does instead.
+  if (!values['skip-budget'] && !values['require-cached']) {
     if (unknown.length > 0) {
       fail(
         `No indexed copy of ${unknown.join(', ')} to estimate its embeddings from. ` +
@@ -94,6 +109,7 @@ async function main() {
     }
   }
 
+  const started = new Date();
   const sourceIds: Record<string, string> = {};
   for (const { entry, row } of plan) {
     if (!row) {
@@ -109,7 +125,10 @@ async function main() {
     }
   }
 
-  const finished = await waitForSources(sourceIds);
+  const finished = await waitForSources(
+    sourceIds,
+    values['require-cached'] ? () => assertNoModelCalls(user.id, started) : undefined,
+  );
   let ok = true;
   for (const [key, source] of Object.entries(finished)) {
     const entry = spec.sources.find((candidate) => candidate.sourceKey === key)!;
@@ -203,7 +222,22 @@ async function bookFile(entry: Extract<CorpusSource, { type: 'PDF' }>, evalUserI
   return path;
 }
 
-async function waitForSources(sourceIds: Record<string, string>) {
+/** Fails once the eval user's ingest has tried a model or embedding call since `since`. */
+async function assertNoModelCalls(userId: string, since: Date) {
+  const calls = await prismaClient.usageEvent.groupBy({
+    by: ['task'],
+    where: { userId, type: { in: ['LLM', 'EMBEDDING'] }, createdAt: { gte: since } },
+    _count: true,
+  });
+  if (calls.length === 0) return;
+  const list = calls.map((row) => `${row._count} ${row.task}`).join(', ');
+  fail(
+    `The ingest called a model (${list}) although --require-cached was given: the cache ` +
+      'file is out of date. Export it again where the corpus is built and commit it.',
+  );
+}
+
+async function waitForSources(sourceIds: Record<string, string>, check?: () => Promise<void>) {
   const started = Date.now();
   let last = '';
   for (;;) {
@@ -229,6 +263,8 @@ async function waitForSources(sourceIds: Record<string, string>) {
       last = line;
     }
 
+    // After reading the statuses, so a call made just before the last one isn't missed.
+    await check?.();
     const rowsNow = Object.values(byKey);
     if (rowsNow.every((row) => row.status === 'READY' || row.status === 'FAILED')) return byKey;
     if (Date.now() - started > TIMEOUT_MS) fail('Still ingesting after an hour; check Inngest');

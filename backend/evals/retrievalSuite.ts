@@ -1,6 +1,3 @@
-import { execFileSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
 import prismaClient from '../src/config/db.config.js';
 import { serverConfig } from '../src/config/index.js';
 import { Prisma, type EvalCase, type EvalResult } from '../src/generated/prisma/client.js';
@@ -15,16 +12,20 @@ import type {
   SearchResult,
 } from '../src/modules/retrieval/retrieval.types.js';
 import { createPacer } from '../src/utils/pacer.js';
-import type { RetrievalConfig } from './config.js';
-import { loadCorpus } from './corpusWorkspace.js';
+import { configNames, loadConfig, retrievalConfigSchema, type RetrievalConfig } from './config.js';
+import { loadCorpus, type Corpus, type CorpusVariant } from './corpusWorkspace.js';
 import { expectedRefSchema } from './dataset.js';
 import { refHits, type MatchableChunk } from './matching.js';
+import { canonical, casesHash, errorMessage, gitSha, usageCost, withTimeout } from './runUtils.js';
 import {
   scoreRanking,
   summarize,
   type CaseOutcome,
   type RankingScores,
 } from './scorers/retrieval.js';
+import type { EvalSuite, StartedRun } from './suite.types.js';
+
+export { casesHash, codeVersion, gitSha } from './runUtils.js';
 
 // Runs one retrieval config over a dataset's cases: one EvalRun, one EvalResult per case.
 
@@ -63,71 +64,6 @@ export type StoredScores = Partial<RankingScores> & {
   weak: boolean;
   tainted: boolean;
 };
-
-/**
- * HEAD, or HEAD plus a hash of the uncommitted changes (tracked diff and untracked files), so
- * two different working trees never record the same version.
- */
-export function codeVersion(
-  head: string,
-  diff: string,
-  untracked: { path: string; content: Buffer }[],
-) {
-  if (!diff && untracked.length === 0) return head;
-  const hash = createHash('sha256').update(diff);
-  for (const file of untracked)
-    hash.update('\0').update(file.path).update('\0').update(file.content);
-  return `${head}-dirty-${hash.digest('hex').slice(0, 8)}`;
-}
-
-export function gitSha() {
-  const git = (...args: string[]) =>
-    execFileSync('git', args, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
-  try {
-    const untracked = git('ls-files', '--others', '--exclude-standard', '-z')
-      .split('\0')
-      .filter(Boolean)
-      .sort()
-      .map((path) => ({ path, content: readFileSync(path) }));
-    return codeVersion(git('rev-parse', 'HEAD').trim(), git('diff', 'HEAD'), untracked);
-  } catch {
-    return 'unknown';
-  }
-}
-
-/** A hash of what the selected cases ask and expect, so a resume can tell they changed. */
-export function casesHash(
-  cases: Pick<EvalCase, 'externalId' | 'type' | 'question' | 'expectedRefs'>[],
-) {
-  const fields = cases.map(({ externalId, type, question, expectedRefs }) => ({
-    externalId,
-    type,
-    question,
-    expectedRefs,
-  }));
-  return createHash('sha256').update(canonical(fields)).digest('hex').slice(0, 16);
-}
-
-function withTimeout<T>(promise: Promise<T>, signal: AbortSignal, ms: number) {
-  const timeout = new Promise<never>((_, reject) => {
-    signal.addEventListener('abort', () => reject(new Error(`Timed out after ${ms} ms`)), {
-      once: true,
-    });
-  });
-  return Promise.race([promise, timeout]);
-}
-
-/** JSON with object keys sorted, so a config read back from jsonb compares equal. */
-function canonical(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
-  if (value && typeof value === 'object') {
-    const entries = Object.entries(value as Record<string, unknown>)
-      .filter(([, item]) => item !== undefined)
-      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
-    return `{${entries.map(([key, item]) => `${JSON.stringify(key)}:${canonical(item)}`).join(',')}}`;
-  }
-  return JSON.stringify(value);
-}
 
 /**
  * Why a run can't be resumed with this dataset, config, corpus and code, or null. Mixing
@@ -169,14 +105,6 @@ export function resumeConflict(
     return `it ran on code ${run.gitSha}, this is ${current.gitSha}`;
   }
   return null;
-}
-
-async function usageCost(userId: string, from: Date, to: Date) {
-  const { _sum } = await prismaClient.usageEvent.aggregate({
-    where: { userId, createdAt: { gte: from, lte: to } },
-    _sum: { costUsd: true },
-  });
-  return _sum.costUsd ?? new Prisma.Decimal(0);
 }
 
 /** The ranked chunks with what matching needs. Chunks cut by the threshold are read back. */
@@ -280,7 +208,46 @@ export async function runSummary(runId: string) {
   return summarize(results.map((result) => outcomeOf(result, result.case)));
 }
 
-export async function runRetrieval(options: RunOptions) {
+// What a case needs from its run. Kept per process; a worker step in another process reads
+// it back from the run.
+type RetrievalRun = {
+  runId: string;
+  config: RetrievalConfig;
+  corpus: Corpus;
+  sourceKeys: Map<string, string>;
+  modelOverride: (typeof textRoutes)['rewrite']['primary'] | undefined;
+};
+
+const openRuns = new Map<string, RetrievalRun>();
+
+function runSettings(config: RetrievalConfig) {
+  const queryMode = config.search.queryMode;
+  return {
+    modelOverride: queryMode === 'none' ? undefined : textRoutes.rewrite.primary,
+    rerankerModel: config.search.rerank
+      ? (config.search.rerankerModel ?? serverConfig.RERANKER_MODEL)
+      : null,
+  };
+}
+
+function remember(runId: string, config: RetrievalConfig, corpus: Corpus) {
+  const run: RetrievalRun = {
+    runId,
+    config,
+    corpus,
+    sourceKeys: new Map(corpus.sources.map((source) => [source.sourceId, source.sourceKey])),
+    modelOverride: runSettings(config).modelOverride,
+  };
+  openRuns.set(runId, run);
+  return run;
+}
+
+/**
+ * Creates the run (or reopens one to resume) and returns the cases still to run. Every
+ * question is embedded up front, so no config's latency or cost includes the first,
+ * uncached embedding of a question: every config of a matrix measures the same thing.
+ */
+export async function startRetrieval(options: RunOptions): Promise<StartedRun> {
   const { config, log = () => {} } = options;
   const dataset = await prismaClient.evalDataset.findUnique({ where: { name: options.dataset } });
   if (!dataset) throw new Error(`No dataset "${options.dataset}": run pnpm evals:import first`);
@@ -291,13 +258,7 @@ export async function runRetrieval(options: RunOptions) {
     const list = notReady.map((source) => `${source.sourceKey} (${source.status})`).join(', ');
     throw new Error(`Corpus sources not ready: ${list}. Run pnpm evals:corpus first`);
   }
-  const sourceKeys = new Map(corpus.sources.map((source) => [source.sourceId, source.sourceKey]));
-
-  const queryMode = config.search.queryMode;
-  const modelOverride = queryMode === 'none' ? undefined : textRoutes.rewrite.primary;
-  const rerankerModel = config.search.rerank
-    ? (config.search.rerankerModel ?? serverConfig.RERANKER_MODEL)
-    : null;
+  const { modelOverride, rerankerModel } = runSettings(config);
 
   let selection: CaseSelection = { split: options.split, limit: options.limit, tags: options.tags };
   const resumed = options.resume
@@ -373,8 +334,8 @@ export async function runRetrieval(options: RunOptions) {
     });
     runId = run.id;
   }
+  remember(runId, config, corpus);
 
-  let segmentStart = new Date();
   try {
     const done = await prismaClient.evalResult.findMany({
       where: { runId },
@@ -384,8 +345,6 @@ export async function runRetrieval(options: RunOptions) {
     const todo = cases.filter((evalCase) => !doneIds.has(evalCase.id));
     log(`${config.name}: run ${runId}, ${todo.length} of ${cases.length} cases to run`);
 
-    // Embed every question up front, so no config's latency or cost includes the first,
-    // uncached embedding of a question: every config of a matrix measures the same thing.
     if (config.search.mode !== 'keyword' && todo.length > 0) {
       try {
         await embedTexts(
@@ -393,105 +352,183 @@ export async function runRetrieval(options: RunOptions) {
           { kind: 'query', ctx: { userId: corpus.userId, workspaceId: corpus.workspaceId } },
         );
       } catch (caught) {
-        const message = caught instanceof Error ? caught.message : String(caught);
-        log(`  Couldn't embed the questions ahead (${message}); cases embed their own`);
+        log(
+          `  Couldn't embed the questions ahead (${errorMessage(caught)}); cases embed their own`,
+        );
       }
-      segmentStart = new Date();
     }
-
-    // One case at a time: two at once would share the CPU (the reranker), latency would stop
-    // comparing across configs, and usage rows couldn't be told apart for the cost. Query
-    // modes are also spaced under the model's rate limit.
-    const pace = config.gapMs > 0 ? createPacer(config.gapMs) : null;
-    let finished = 0;
-
-    for (const evalCase of todo) {
-      await pace?.();
-      const refs = expectedRefSchema.array().parse(evalCase.expectedRefs);
-      const answerable = evalCase.type !== 'NO_ANSWER';
-      const started = new Date();
-      const startedAt = performance.now();
-      const signal = AbortSignal.timeout(config.timeoutMs);
-
-      let retrieved: StoredRetrieval = { ranked: [], debug: null };
-      let scores: StoredScores = { answerable, weak: false, tainted: false };
-      let error: string | null = null;
-      const searching = search({
-        userId: corpus.userId,
-        workspaceId: corpus.workspaceId,
-        query: evalCase.question,
-        mode: config.search.mode,
-        queryMode,
-        rerank: config.search.rerank,
-        rerankerModel: config.search.rerankerModel,
-        topK: config.search.topK,
-        expandParents: false,
-        modelOverride,
-        signal,
-      });
-      try {
-        const result = await withTimeout(searching, signal, config.timeoutMs);
-        const chunks = await rankedChunks(result, corpus.workspaceId, sourceKeys);
-        const hits = refHits(chunks, refs);
-        const { ranked: _, ...debug } = result.debug;
-        retrieved = { ranked: chunks.map((chunk, i) => ({ ...chunk, hits: hits[i]! })), debug };
-        scores = {
-          ...(answerable ? scoreRanking(hits, refs.length) : {}),
-          answerable,
-          weak: result.debug.weak,
-          tainted:
-            (config.search.rerank && result.debug.rerank === 'unavailable') ||
-            result.debug.queryModeError !== undefined ||
-            result.debug.fallbackUsed,
-        };
-      } catch (caught) {
-        error = caught instanceof Error ? caught.message : String(caught);
-      }
-      // A timed-out search keeps going until its next abort check; let it end, so it neither
-      // overlaps the next case nor puts its usage rows in that case's cost window.
-      await searching.catch(() => {});
-      const latencyMs = Math.round(performance.now() - startedAt);
-      const costUsd = await usageCost(corpus.userId, started, new Date());
-
-      await prismaClient.evalResult.create({
-        data: {
-          runId,
-          caseId: evalCase.id,
-          retrieved: retrieved as unknown as Prisma.InputJsonValue,
-          scores: scores as Prisma.InputJsonValue,
-          latencyMs,
-          costUsd,
-          error,
-        },
-      });
-
-      finished += 1;
-      const outcome = error
-        ? `error: ${error}`
-        : answerable
-          ? `recall@5 ${(scores.recall5 ?? 0).toFixed(2)}`
-          : `weak ${scores.weak}`;
-      log(`  ${finished}/${todo.length} ${evalCase.externalId} ${outcome} (${latencyMs} ms)`);
-    }
-
-    const summary = await runSummary(runId);
-    const segmentCost = await usageCost(corpus.userId, segmentStart, new Date());
-    await prismaClient.evalRun.update({
-      where: { id: runId },
-      data: {
-        status: 'DONE',
-        finishedAt: new Date(),
-        summary: summary as unknown as Prisma.InputJsonValue,
-        costUsd: { increment: segmentCost },
-      },
-    });
-    return { runId, summary };
+    return { runId, caseIds: todo.map((evalCase) => evalCase.id), gapMs: config.gapMs };
   } catch (caught) {
-    const message = caught instanceof Error ? caught.message : String(caught);
-    await prismaClient.evalRun.update({
-      where: { id: runId },
-      data: { status: 'FAILED', finishedAt: new Date(), notes: message },
-    });
+    await failRetrieval(runId, errorMessage(caught));
     throw caught;
   }
 }
+
+/** The run's config and corpus, read back from the run when this process didn't start it. */
+async function openRun(runId: string): Promise<RetrievalRun> {
+  const known = openRuns.get(runId);
+  if (known) return known;
+  const run = await prismaClient.evalRun.findUnique({
+    where: { id: runId },
+    include: { dataset: { select: { name: true } } },
+  });
+  if (!run || run.suite !== SUITE) throw new Error(`No ${SUITE} run ${runId}`);
+  const {
+    selection: _selection,
+    casesHash: _cases,
+    corpus,
+    ...stored
+  } = run.config as { selection?: unknown; casesHash?: unknown; corpus: StoredCorpus };
+  const config = retrievalConfigSchema.parse({ ...stored, corpus: corpus.variant });
+  // A worker that picked up new code halfway would mix two versions in one run.
+  const sha = gitSha();
+  if (run.gitSha !== sha) throw new Error(`Run ${runId} ran on code ${run.gitSha}, this is ${sha}`);
+  const current = await loadCorpus(run.dataset.name, corpus.variant);
+  if (current.corpusVersion !== corpus.corpusVersion) {
+    throw new Error(`The corpus of run ${runId} has changed since it started`);
+  }
+  return remember(runId, config, current);
+}
+
+type StoredCorpus = { variant: CorpusVariant; corpusVersion: string };
+
+/** Searches one case and stores its result; the run's cost grows by what the case spent. */
+export async function runRetrievalCase(runId: string, caseId: string) {
+  const { config, corpus, sourceKeys, modelOverride } = await openRun(runId);
+  const evalCase = await prismaClient.evalCase.findUniqueOrThrow({ where: { id: caseId } });
+  const stored = await prismaClient.evalResult.findUnique({
+    where: { runId_caseId: { runId, caseId } },
+  });
+  if (stored && stored.error === null) return { line: `${evalCase.externalId} already done` };
+  if (stored) await prismaClient.evalResult.delete({ where: { id: stored.id } });
+
+  const refs = expectedRefSchema.array().parse(evalCase.expectedRefs);
+  const answerable = evalCase.type !== 'NO_ANSWER';
+  const started = new Date();
+  const startedAt = performance.now();
+  const signal = AbortSignal.timeout(config.timeoutMs);
+
+  let retrieved: StoredRetrieval = { ranked: [], debug: null };
+  let scores: StoredScores = { answerable, weak: false, tainted: false };
+  let error: string | null = null;
+  const searching = search({
+    userId: corpus.userId,
+    workspaceId: corpus.workspaceId,
+    query: evalCase.question,
+    mode: config.search.mode,
+    queryMode: config.search.queryMode,
+    rerank: config.search.rerank,
+    rerankerModel: config.search.rerankerModel,
+    topK: config.search.topK,
+    expandParents: false,
+    modelOverride,
+    signal,
+  });
+  try {
+    const result = await withTimeout(searching, signal, config.timeoutMs);
+    const chunks = await rankedChunks(result, corpus.workspaceId, sourceKeys);
+    const hits = refHits(chunks, refs);
+    const { ranked: _, ...debug } = result.debug;
+    retrieved = { ranked: chunks.map((chunk, i) => ({ ...chunk, hits: hits[i]! })), debug };
+    scores = {
+      ...(answerable ? scoreRanking(hits, refs.length) : {}),
+      answerable,
+      weak: result.debug.weak,
+      tainted:
+        (config.search.rerank && result.debug.rerank === 'unavailable') ||
+        result.debug.queryModeError !== undefined ||
+        result.debug.fallbackUsed,
+    };
+  } catch (caught) {
+    error = errorMessage(caught);
+  }
+  // A timed-out search keeps going until its next abort check; let it end, so it neither
+  // overlaps the next case nor puts its usage rows in that case's cost window.
+  await searching.catch(() => {});
+  const latencyMs = Math.round(performance.now() - startedAt);
+  const costUsd = await usageCost(corpus.userId, started, new Date());
+
+  await prismaClient.$transaction([
+    prismaClient.evalResult.create({
+      data: {
+        runId,
+        caseId: evalCase.id,
+        retrieved: retrieved as unknown as Prisma.InputJsonValue,
+        scores: scores as Prisma.InputJsonValue,
+        latencyMs,
+        costUsd,
+        error,
+      },
+    }),
+    prismaClient.evalRun.update({
+      where: { id: runId },
+      data: { costUsd: { increment: costUsd } },
+    }),
+  ]);
+
+  const outcome = error
+    ? `error: ${error}`
+    : answerable
+      ? `recall@5 ${(scores.recall5 ?? 0).toFixed(2)}`
+      : `weak ${scores.weak}`;
+  return { line: `${evalCase.externalId} ${outcome} (${latencyMs} ms)` };
+}
+
+export async function finishRetrieval(runId: string) {
+  const summary = await runSummary(runId);
+  await prismaClient.evalRun.update({
+    where: { id: runId },
+    data: {
+      status: 'DONE',
+      finishedAt: new Date(),
+      summary: summary as unknown as Prisma.InputJsonValue,
+    },
+  });
+  openRuns.delete(runId);
+  return summary;
+}
+
+export async function failRetrieval(runId: string, message: string) {
+  openRuns.delete(runId);
+  await prismaClient.evalRun.update({
+    where: { id: runId },
+    data: { status: 'FAILED', finishedAt: new Date(), notes: message },
+  });
+}
+
+/**
+ * Runs a config over the selected cases in this process, one case at a time: two at once
+ * would share the CPU (the reranker), latency would stop comparing across configs, and
+ * usage rows couldn't be told apart for the cost. Query modes are also spaced under the
+ * model's rate limit.
+ */
+export async function runRetrieval(options: RunOptions) {
+  const { log = () => {} } = options;
+  const { runId, caseIds, gapMs } = await startRetrieval(options);
+  try {
+    const pace = gapMs > 0 ? createPacer(gapMs) : null;
+    for (const [i, caseId] of caseIds.entries()) {
+      await pace?.();
+      const { line } = await runRetrievalCase(runId, caseId);
+      log(`  ${i + 1}/${caseIds.length} ${line}`);
+    }
+    return { runId, summary: await finishRetrieval(runId) };
+  } catch (caught) {
+    await failRetrieval(runId, errorMessage(caught));
+    throw caught;
+  }
+}
+
+export const retrievalSuite: EvalSuite = {
+  suite: SUITE,
+  configNames: () => configNames(),
+  async start(options) {
+    const config = await loadConfig(options.config);
+    return startRetrieval({ ...options, config });
+  },
+  runCase: runRetrievalCase,
+  finish: async (runId) => {
+    await finishRetrieval(runId);
+  },
+  fail: failRetrieval,
+};

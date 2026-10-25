@@ -1,0 +1,7 @@
+{
+  "name": "memory-on",
+  "description": "Personal cases with their memories seeded and memory on.",
+  "useMemory": true,
+  "tags": ["personal"],
+  "excludeTags": []
+}

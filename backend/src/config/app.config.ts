@@ -202,6 +202,23 @@ export const appConfig = {
     // A set still PENDING or RUNNING after this long is taken as stuck and can be regenerated.
     staleAfterMs: 15 * 60_000,
   },
+  memory: {
+    // Profile lines kept per user; an ADD past this replaces the least important one.
+    profileCap: 15,
+    maxContentChars: 300,
+    // What a turn's system prompt gets: every profile line by importance, then the facts
+    // closest to the question, each within its own token budget.
+    profileTokenBudget: 300,
+    factTokenBudget: 300,
+    factTopK: 5,
+    // Cosine similarity a fact needs to count as related to the question.
+    factMinScore: 0.6,
+    // Extraction: the user's existing memories closest to the new turns, and how many
+    // exchanges of the conversation it reads.
+    extractCandidates: 10,
+    extractExchanges: 3,
+    debounceSec: 60,
+  },
   limits: {
     // At most `points` requests per window, counted per user (guests per IP, so a new guest
     // account doesn't start over). Windows are fixed `windowSec` blocks, or calendar months.
@@ -213,6 +230,8 @@ export const appConfig = {
       resync: { points: 20, windowSec: 24 * 60 * 60 },
       study: { points: 20, windowSec: 24 * 60 * 60 },
       search: { points: 60, windowSec: 60 },
+      // Each write embeds its text.
+      memoryWrites: { points: 100, windowSec: 24 * 60 * 60 },
       webSearch: { points: 20, windowSec: 24 * 60 * 60 },
       // One key for the whole app, under Tavily's 1,000 free credits per (UTC) billing month.
       webSearchMonthly: { points: 900, calendarMonth: true },

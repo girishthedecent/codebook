@@ -2,6 +2,7 @@ import { NonRetriableError } from 'inngest';
 import { inngest } from '../config/inngest.config.js';
 import { afterTurn } from '../modules/chat/afterTurn.function.js';
 import { ingestSource } from '../modules/ingestion/ingest.function.js';
+import { extractMemoriesFunction } from '../modules/memory/memory.function.js';
 import { isCleanupPrefix } from '../modules/sources/source.storage.js';
 import { generateStudyArtifact } from '../modules/study/study.function.js';
 import { deletePrefix } from '../utils/storage.js';
@@ -35,5 +36,6 @@ export const functions = [
   cleanupWorkspaceStorage,
   pruneRateLimits,
   afterTurn,
+  extractMemoriesFunction,
   generateStudyArtifact,
 ];

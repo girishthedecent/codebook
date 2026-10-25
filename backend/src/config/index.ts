@@ -97,6 +97,8 @@ const baseSchema = z.object({
   INNGEST_BASE_URL: httpUrl.optional(),
   INNGEST_EVENT_KEY: optional,
   INNGEST_SIGNING_KEY: optional,
+  // The eval worker (pnpm evals:worker): its own small Inngest app, next to the API.
+  EVALS_WORKER_PORT: z.coerce.number().int().min(1).max(65535).default(4001),
 
   GROQ_API_KEY: optional,
   GEMINI_API_KEY: optional,

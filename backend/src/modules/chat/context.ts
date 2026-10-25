@@ -1,7 +1,8 @@
 import prismaClient from '../../config/db.config.js';
 import type { Message, Workspace } from '../../generated/prisma/client.js';
 import type { ChatMessage } from '../../llm/client.js';
-import { agentSystemPrompt } from '../../llm/prompts/agentSystem.js';
+import { DEFAULT_AGENT_PROMPT, agentSystemPrompts } from '../../llm/prompts/agentSystem.js';
+import { memoryBlock } from '../memory/memory.recall.js';
 import { conversationHistory } from './conversation.service.js';
 import { agentTools } from './tools/index.js';
 
@@ -38,13 +39,29 @@ async function sourcesList(workspaceId: string) {
 }
 
 /** The template's preferred tools, as one line of the tool guide. */
-function workspaceHint(workspace: Workspace) {
+function workspaceHint(workspace: Workspace, available: ReadonlySet<string>) {
   const settings = workspace.settings as { preferredTools?: unknown } | null;
   const preferred = Array.isArray(settings?.preferredTools)
     ? settings.preferredTools.filter((name): name is string => typeof name === 'string')
     : [];
-  const known = preferred.filter((name) => toolNames.has(name));
+  const known = preferred.filter((name) => available.has(name));
   return known.length > 0 ? `- In this workspace, start with ${known.join(' or ')}.` : '';
+}
+
+/**
+ * Drops the tool guide's lines about tools this turn doesn't have (eval ablations), so the
+ * model isn't told to call something that isn't there. With every tool, nothing changes.
+ */
+export function fitToolGuide(system: string, available: ReadonlySet<string>) {
+  const start = system.indexOf('\nChoosing tools:\n');
+  if (start === -1) return system;
+  const end = system.indexOf('\n\n', start + 1);
+  const section = system.slice(start, end === -1 ? undefined : end);
+  const kept = section
+    .split('\n')
+    .filter((line) => [...toolNames].every((name) => available.has(name) || !line.includes(name)))
+    .join('\n');
+  return system.slice(0, start) + kept + (end === -1 ? '' : system.slice(end));
 }
 
 function toChatMessages(messages: Message[]): ChatMessage[] {
@@ -59,28 +76,50 @@ function toChatMessages(messages: Message[]): ChatMessage[] {
   return history;
 }
 
+export type AgentPromptId = keyof typeof agentSystemPrompts;
+
+export type ContextInput = {
+  workspace: Workspace;
+  conversationId: string;
+  questionId: string;
+  question: string;
+  userId: string;
+  isGuest: boolean;
+  useMemory: boolean;
+  promptId?: AgentPromptId;
+  // The tools this turn gets; every tool when left out.
+  toolNames?: string[];
+};
+
 /**
  * The agent's system prompt and the conversation before this question. The question is
  * saved before this runs, so it is left out of the history here and sent on its own.
  */
-export async function buildAgentContext(
-  workspace: Workspace,
-  conversationId: string,
-  questionId: string,
-) {
-  const [sources, { summary, recent }] = await Promise.all([
-    sourcesList(workspace.id),
-    conversationHistory(conversationId),
+export async function buildAgentContext(input: ContextInput) {
+  const prompt = agentSystemPrompts[input.promptId ?? DEFAULT_AGENT_PROMPT];
+  const [sources, { summary, recent }, memory] = await Promise.all([
+    sourcesList(input.workspace.id),
+    conversationHistory(input.conversationId),
+    memoryBlock({
+      userId: input.userId,
+      isGuest: input.isGuest,
+      question: input.question,
+      enabled: input.useMemory,
+    }),
   ]);
-  const system = agentSystemPrompt.render({
-    workspaceHint: workspaceHint(workspace),
-    sources,
-    // Phase 12 (memory) fills this.
-    memory: '(nothing yet)',
-    summary: summary?.trim() || '(none)',
-  });
+  const available = new Set(input.toolNames ?? toolNames);
+  const system = fitToolGuide(
+    prompt.render({
+      workspaceHint: workspaceHint(input.workspace, available),
+      sources,
+      memory,
+      summary: summary?.trim() || '(none)',
+    }),
+    available,
+  );
   return {
     system,
-    history: toChatMessages(recent.filter((message) => message.id !== questionId)),
+    promptId: prompt.id,
+    history: toChatMessages(recent.filter((message) => message.id !== input.questionId)),
   };
 }

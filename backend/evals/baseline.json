@@ -1,0 +1,32 @@
+{
+  "dataset": "core",
+  "config": "gate",
+  "split": "DEV",
+  "tags": ["gate"],
+  "corpusVersion": "acd1fb4319321119",
+  "sourceHashes": {
+    "repo": "d5ad6e2e943112f0d2171929f9a566a8edef2b1f79532a3953eda79901b09047",
+    "docs": "78c10e6100bf1c6ceaa524abc1d3d56519eca13f2201155ba306e20945474c32"
+  },
+  "casesHash": "dfe64f4d0362690b",
+  "cases": 28,
+  "metrics": {
+    "recall5": 0.8194444444444445,
+    "recall10": 0.9305555555555557,
+    "mrr": 0.8809523809523809,
+    "errors": 0,
+    "hit5": 0.9166666666666666,
+    "ndcg10": 0.8441482671570871,
+    "noAnswerAccuracy": 0.5,
+    "falseWeakRate": 0
+  },
+  "tolerances": {
+    "recall5": 0.03,
+    "recall10": 0.03,
+    "mrr": 0.03,
+    "errors": 0
+  },
+  "runId": "cmvncp3r70000bb9pfazv2yv6",
+  "gitSha": "1d9d59d1050cbc04853ebd04a2c97a59511863fc-dirty-d8c05063",
+  "createdAt": "2026-10-25T04:51:52.722Z"
+}

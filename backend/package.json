@@ -26,7 +26,14 @@
     "evals": "node --import tsx evals/runner.ts",
     "evals:corpus": "node --import tsx evals/corpus.ts",
     "evals:import": "node --import tsx evals/import.ts",
-    "evals:report": "node --import tsx evals/report.ts"
+    "evals:report": "node --import tsx evals/report.ts",
+    "evals:worker": "node --import tsx evals/worker.ts",
+    "evals:synth": "node --import tsx evals/synth.ts",
+    "evals:failures": "node --import tsx evals/failures.ts",
+    "evals:calibrate": "node --import tsx evals/calibrate.ts",
+    "evals:gate": "node --import tsx evals/gate.ts",
+    "evals:baseline": "node --import tsx evals/baseline.ts",
+    "evals:cache": "node --import tsx evals/cacheDump.ts"
   },
   "dependencies": {
     "@ai-sdk/google": "4.0.99",

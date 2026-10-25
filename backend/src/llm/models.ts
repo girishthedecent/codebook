@@ -123,9 +123,11 @@ export const textRoutes: Record<TextTask, TextRoute> = {
     timeoutMs: 30_000,
   },
   // No fallback: if the judge changed model halfway through an eval run, the scores in
-  // that run couldn't be compared. A failed case is better than a mixed run.
+  // that run couldn't be compared. A failed case is better than a mixed run. Not the agent's
+  // model (a judge favours its own answers), and not Groq: a judge call with its passages
+  // can pass Groq's 8K tokens a minute on its own.
   judge: {
-    primary: GEMINI_FLASH,
+    primary: GEMINI_FLASH_LITE,
     maxOutputTokens: 2_048,
     temperature: 0,
     reasoning: 'medium',

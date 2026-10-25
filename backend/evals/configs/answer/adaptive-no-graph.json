@@ -1,0 +1,5 @@
+{
+  "name": "adaptive-no-graph",
+  "description": "Ablation: the agent without the code graph tools.",
+  "tools": ["search_sources", "search_code", "read_source", "browse_toc", "list_files"]
+}

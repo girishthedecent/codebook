@@ -32,3 +32,17 @@ export const conversationTurnCompleted = eventType('conversation/turn.completed'
 export const studyGenerateRequested = eventType('study/generate.requested', {
   schema: z.object({ artifactId: z.string() }),
 });
+
+// Picked up by the eval worker (pnpm evals:worker), not by the API server.
+export const evalRunRequested = eventType('eval/run.requested', {
+  schema: z.object({
+    suite: z.string(),
+    config: z.string(),
+    dataset: z.string(),
+    split: z.enum(['DEV', 'HELDOUT']),
+    limit: z.int().positive().optional(),
+    tags: z.array(z.string()).optional(),
+    resume: z.string().optional(),
+    requestedBy: z.string(),
+  }),
+});

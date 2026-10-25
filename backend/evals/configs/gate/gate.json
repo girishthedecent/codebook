@@ -1,0 +1,10 @@
+{
+  "name": "gate",
+  "description": "The CI gate: hybrid search without the reranker (CPU) on the gate corpus, which has the repository and the docs page but not the book.",
+  "corpus": "gate",
+  "search": {
+    "mode": "hybrid",
+    "rerank": false,
+    "topK": 20
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "name": "vectorless-only",
+  "description": "The agent without embeddings: exact code search, files, the table of contents and the graph.",
+  "tools": [
+    "search_code",
+    "list_files",
+    "read_source",
+    "browse_toc",
+    "find_callers",
+    "find_dependencies",
+    "trace_flow"
+  ]
+}

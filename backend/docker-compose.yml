@@ -49,7 +49,8 @@ services:
 
   inngest:
     image: inngest/inngest
-    command: inngest dev -u http://host.docker.internal:4000/api/inngest
+    # The API app and the eval worker (pnpm evals:worker); the worker is only up while evals run.
+    command: inngest dev -u http://host.docker.internal:4000/api/inngest -u http://host.docker.internal:4001/api/inngest
     ports:
       - '8288:8288'
     extra_hosts:

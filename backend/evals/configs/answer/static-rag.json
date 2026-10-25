@@ -1,0 +1,5 @@
+{
+  "name": "static-rag",
+  "description": "No agent: one search_sources call with the question as asked, then the answer from those passages. Same model as adaptive-agent.",
+  "mode": "static"
+}

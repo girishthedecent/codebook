@@ -1,0 +1,37 @@
+@base = http://localhost:4000
+@origin = http://localhost:4000
+
+### Sign in first (REST Client keeps the session cookie)
+POST {{base}}/api/auth/sign-in/email
+Content-Type: application/json
+Origin: {{origin}}
+
+{ "email": "reader@example.com", "password": "correct-horse-battery" }
+
+### Add (embedded; importance 1-5, default 3)
+# @name created
+POST {{base}}/api/v1/memories
+Content-Type: application/json
+
+{ "kind": "PROFILE", "content": "The user is preparing for backend interviews.", "importance": 5 }
+
+###
+@memoryId = {{created.response.body.data.id}}
+
+### List (?kind=PROFILE|FACT, ?includeDeleted=1 to see deleted ones too)
+GET {{base}}/api/v1/memories
+
+### Edit (new content is embedded again)
+PATCH {{base}}/api/v1/memories/{{memoryId}}
+Content-Type: application/json
+
+{ "content": "The user is preparing for senior backend interviews.", "importance": 4 }
+
+### Delete (soft: it can be restored)
+DELETE {{base}}/api/v1/memories/{{memoryId}}
+
+### Restore
+POST {{base}}/api/v1/memories/{{memoryId}}/restore
+
+### Clear all (soft)
+DELETE {{base}}/api/v1/memories

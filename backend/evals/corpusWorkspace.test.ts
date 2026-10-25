@@ -11,6 +11,7 @@ import {
   loadCorpus,
   loadCorpusSpec,
   sourcesFor,
+  workspaceName,
   type CorpusSource,
 } from './corpusWorkspace.js';
 
@@ -48,6 +49,40 @@ describe('the corpus spec', () => {
 
   it('refuses another dataset name', () => {
     expect(() => loadCorpusSpec('other')).toThrow(/describes "core"/);
+  });
+
+  it('leaves the book out of the gate variant, which has its own workspace', () => {
+    expect(sourcesFor(spec, 'gate').map((source) => source.sourceKey)).not.toContain('book');
+    expect(workspaceName('core', 'gate')).toBe('eval-core-gate');
+    expect(workspaceName('core', 'context')).toBe('eval-core');
+  });
+
+  it("doesn't change the gate's version when only the book changes", () => {
+    const book = spec.sources.find((source) => source.sourceKey === 'book');
+    if (!book) return;
+    const moved = {
+      ...spec,
+      sources: spec.sources.map((source) =>
+        source === book ? { ...book, title: 'Another edition' } : source,
+      ),
+    };
+    expect(corpusVersion(moved, 'gate')).toBe(corpusVersion(spec, 'gate'));
+    expect(corpusVersion(moved, 'context')).not.toBe(corpusVersion(spec, 'context'));
+  });
+
+  it("doesn't change any variant's version when a source joins another variant", () => {
+    const widened = {
+      ...spec,
+      sources: spec.sources.map((source) =>
+        source.sourceKey === 'book'
+          ? { ...source, variants: [...source.variants, 'gate' as const] }
+          : source,
+      ),
+    };
+    expect(corpusVersion(widened, 'context')).toBe(corpusVersion(spec, 'context'));
+    expect(corpusVersion(widened, 'nocontext')).toBe(corpusVersion(spec, 'nocontext'));
+    // The variant the book joined does change: it has another source now.
+    expect(corpusVersion(widened, 'gate')).not.toBe(corpusVersion(spec, 'gate'));
   });
 
   it('has a corpus version per variant that only changes with the spec', () => {
@@ -171,7 +206,7 @@ describe('the eval workspace', () => {
   });
 
   it('loads the corpus with each sourceKey mapped to its source', async () => {
-    await expect(loadCorpus('core', 'nocontext')).rejects.toThrow(/--no-context/);
+    await expect(loadCorpus('core', 'nocontext')).rejects.toThrow(/--variant nocontext/);
 
     const user = await ensureEvalUser();
     const workspace = await ensureEvalWorkspace(user.id, 'core', 'nocontext');

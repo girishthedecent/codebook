@@ -6,14 +6,21 @@ import { Prisma, type Conversation, type Workspace } from '../../generated/prism
 import { inngest } from '../../config/inngest.config.js';
 import { conversationTurnCompleted } from '../../inngest/events.js';
 import type { ModelRef } from '../../llm/models.js';
-import { agentSystemPrompt } from '../../llm/prompts/agentSystem.js';
 import { AppError, NotFoundError } from '../../utils/errors/app.error.js';
 import { assertTokenBudget } from '../../utils/quotas.js';
 import { checkCitations, normalizeCitations } from '../citations/citationCheck.js';
 import { CitationRegistry } from '../citations/citationRegistry.js';
+import type { CheckedCitation, CitationRef } from '../citations/citations.types.js';
 import { assertWorkspaceAccess } from '../workspaces/workspace.service.js';
-import { runAgent, type AgentEvent, type AgentProgress, type AgentResult } from './agent.js';
-import { buildAgentContext } from './context.js';
+import {
+  runAgent,
+  type AgentEvent,
+  type AgentProgress,
+  type AgentResult,
+  type SavedToolCall,
+} from './agent.js';
+import { DEFAULT_AGENT_PROMPT } from '../../llm/prompts/agentSystem.js';
+import { buildAgentContext, type AgentPromptId } from './context.js';
 import { findConversationForUser } from './conversation.repository.js';
 import { agentTools } from './tools/index.js';
 
@@ -23,15 +30,58 @@ export type TurnEvent =
   | { type: 'done'; messageId: string; usage: TurnUsage; latencyMs: number }
   | { type: 'error'; code: string; message: string };
 
-type TurnUsage = { tokensIn: number; tokensOut: number; tokensCached: number; costUsd: string };
+export type TurnUsage = {
+  tokensIn: number;
+  tokensOut: number;
+  tokensCached: number;
+  costUsd: string;
+};
 
 export type PreparedTurn = {
   userId: string;
   conversation: Conversation;
   workspace: Workspace;
   isGuest: boolean;
+  // The eval user: no daily budget, and no title, summary or memory work after the turn.
+  isSystem: boolean;
   questionId: string;
   question: string;
+};
+
+export type TurnOptions = {
+  // The request's toggle; guests never use memory.
+  useMemory?: boolean;
+  // Eval configs only: what the agent may use, set per run.
+  experiment?: {
+    // Tool names the agent gets, in the usual order; unknown names are an error.
+    tools?: string[];
+    // One model pins the run to it (no fallback).
+    models?: ModelRef[];
+    promptId?: AgentPromptId;
+    staticRag?: boolean;
+    maxInputTokens?: number;
+  };
+};
+
+/** What a turn ended with, for callers that collect it instead of streaming it (evals). */
+export type TurnOutcome = {
+  messageId: string;
+  status: 'COMPLETE' | 'ERROR' | 'ABORTED';
+  answer: string;
+  citations: CheckedCitation[];
+  // Every passage the agent was shown, numbered as the answer cites them.
+  passages: readonly CitationRef[];
+  toolCalls: SavedToolCall[];
+  model: ModelRef | null;
+  promptId: string;
+  steps: number;
+  forcedFinal: boolean;
+  fallbackUsed: boolean;
+  weakRetrieval: boolean;
+  usage: TurnUsage;
+  latencyMs: number;
+  firstTokenMs: number | null;
+  error: string | null;
 };
 
 /**
@@ -47,9 +97,11 @@ function newMessageId() {
  * the daily token budget, and saving the question.
  */
 export async function prepareTurnService(
-  user: { id: string; isGuest?: boolean | null },
+  user: { id: string; isGuest?: boolean | null; isSystem?: boolean | null },
   conversationId: string,
   content: string,
+  // The request's toggle: off, the question is never read by memory extraction.
+  useMemory = true,
 ): Promise<PreparedTurn> {
   const userId = user.id;
   const conversation = await findConversationForUser(userId, conversationId);
@@ -57,9 +109,15 @@ export async function prepareTurnService(
   const workspace = await assertWorkspaceAccess(userId, conversation.workspaceId, {
     allowDemoRead: true,
   });
-  await assertTokenBudget(userId);
+  // The eval user runs whole datasets in a day; its spend is bounded by the run itself.
+  if (user.isSystem !== true) await assertTokenBudget(userId);
   const question = await prismaClient.message.create({
-    data: { conversationId, role: 'USER', content },
+    data: {
+      conversationId,
+      role: 'USER',
+      content,
+      memoryOff: !useMemory || user.isGuest === true,
+    },
   });
   await prismaClient.conversation.update({
     where: { id: conversationId },
@@ -70,6 +128,7 @@ export async function prepareTurnService(
     conversation,
     workspace,
     isGuest: user.isGuest === true,
+    isSystem: user.isSystem === true,
     questionId: question.id,
     question: content,
   };
@@ -98,34 +157,56 @@ function publicError(error: unknown) {
   return { code: 'INTERNAL', message: 'Something went wrong' };
 }
 
+function experimentTools(names: string[] | undefined) {
+  if (!names) return agentTools;
+  const unknown = names.filter((name) => !agentTools.some((tool) => tool.name === name));
+  if (unknown.length > 0) throw new Error(`Unknown agent tools: ${unknown.join(', ')}`);
+  return agentTools.filter((tool) => names.includes(tool.name));
+}
+
 /**
  * Runs one answer: the agent streams steps and tokens through `emit`, then the citations
  * are checked and the answer saved with what it cost. A failed or aborted answer is saved
- * too, with the text it had so far.
+ * too, with the text it had so far. Returns what was saved, for callers without a stream.
  */
 export async function runTurnService(
   turn: PreparedTurn,
   emit: (event: TurnEvent) => void,
   signal: AbortSignal,
-) {
+  options: TurnOptions = {},
+): Promise<TurnOutcome> {
   const started = performance.now();
   const messageId = newMessageId();
   const registry = new CitationRegistry();
+  const experiment = options.experiment ?? {};
+  const useMemory = options.useMemory !== false && !turn.isGuest;
+  const tools = experimentTools(experiment.tools);
+  let promptId: string = experiment.promptId ?? DEFAULT_AGENT_PROMPT;
   let partial = '';
   let result: AgentResult | undefined;
   const progress: AgentProgress = { toolCalls: [] };
 
   try {
-    const { system, history } = await buildAgentContext(
-      turn.workspace,
-      turn.conversation.id,
-      turn.questionId,
-    );
-    result = await runAgent({
-      system,
-      history,
+    const context = await buildAgentContext({
+      workspace: turn.workspace,
+      conversationId: turn.conversation.id,
+      questionId: turn.questionId,
       question: turn.question,
-      tools: agentTools,
+      userId: turn.userId,
+      isGuest: turn.isGuest,
+      useMemory,
+      promptId: experiment.promptId,
+      toolNames: tools.map((tool) => tool.name),
+    });
+    promptId = context.promptId;
+    result = await runAgent({
+      system: context.system,
+      history: context.history,
+      question: turn.question,
+      tools,
+      models: experiment.models,
+      maxInputTokens: experiment.maxInputTokens,
+      staticRag: experiment.staticRag,
       ctx: {
         userId: turn.userId,
         workspaceId: turn.workspace.id,
@@ -148,26 +229,49 @@ export async function runTurnService(
     // The text so far may already cite passages: keep what they point at.
     const content = normalizeCitations(partial);
     const report = checkCitations(content, registry, appConfig.chat.supportOverlap);
-    await saveAnswer(turn, messageId, {
+    const status = aborted ? 'ABORTED' : 'ERROR';
+    const message = aborted ? 'The client disconnected' : publicError(error).message;
+    const latencyMs = Math.round(performance.now() - started);
+    const usage = await saveAnswer(turn, messageId, promptId, {
       content,
-      status: aborted ? 'ABORTED' : 'ERROR',
-      error: aborted ? 'The client disconnected' : publicError(error).message,
-      latencyMs: Math.round(performance.now() - started),
+      memoryOff: !useMemory,
+      status,
+      error: message,
+      latencyMs,
       citations: report.citations,
       invalidCitations: report.invalid,
       toolCalls: progress.toolCalls,
       model: progress.model,
     });
     if (!aborted) emit({ type: 'error', ...publicError(error) });
-    return;
+    return {
+      messageId,
+      status,
+      answer: content,
+      citations: report.citations,
+      passages: registry.all(),
+      toolCalls: progress.toolCalls,
+      model: progress.model ?? null,
+      promptId,
+      steps: 0,
+      forcedFinal: false,
+      fallbackUsed: false,
+      weakRetrieval: false,
+      usage,
+      latencyMs,
+      firstTokenMs: null,
+      // The real cause, for eval logs: the client only ever sees the public message.
+      error: error instanceof Error ? error.message : String(error),
+    };
   }
 
   const answer = normalizeCitations(result.answer);
   const report = checkCitations(answer, registry, appConfig.chat.supportOverlap);
   emit({ type: 'citations', items: report.citations });
   const latencyMs = Math.round(performance.now() - started);
-  const usage = await saveAnswer(turn, messageId, {
+  const usage = await saveAnswer(turn, messageId, promptId, {
     content: answer,
+    memoryOff: !useMemory,
     status: 'COMPLETE',
     latencyMs,
     citations: report.citations,
@@ -176,12 +280,36 @@ export async function runTurnService(
   });
   emit({ type: 'done', messageId, usage, latencyMs });
 
+  // Eval turns would spend the quota of the models being measured on titles and summaries.
+  if (!turn.isSystem) await sendTurnCompleted(turn, messageId);
+
+  return {
+    messageId,
+    status: 'COMPLETE',
+    answer,
+    citations: report.citations,
+    passages: registry.all(),
+    toolCalls: result.toolCalls,
+    model: result.model,
+    promptId,
+    steps: result.steps,
+    forcedFinal: result.forcedFinal,
+    fallbackUsed: result.fallbackUsed,
+    weakRetrieval: result.weakRetrieval,
+    usage,
+    latencyMs,
+    firstTokenMs: result.firstTokenMs,
+    error: null,
+  };
+}
+
+async function sendTurnCompleted(turn: PreparedTurn, messageId: string) {
   try {
     await inngest.send(
       conversationTurnCompleted.create({ conversationId: turn.conversation.id, messageId }),
     );
   } catch (error) {
-    // Only the title and the summary wait on this; the answer is saved.
+    // Only the title, the summary and memory wait on this; the answer is saved.
     logger.warn('Could not send turn.completed', { error, messageId });
   }
 }
@@ -189,12 +317,14 @@ export async function runTurnService(
 async function saveAnswer(
   turn: PreparedTurn,
   messageId: string,
+  promptId: string,
   answer: {
     content: string;
+    memoryOff: boolean;
     status: 'COMPLETE' | 'ERROR' | 'ABORTED';
     error?: string;
     latencyMs: number;
-    citations?: unknown[];
+    citations?: CheckedCitation[];
     invalidCitations?: number;
     result?: AgentResult;
     // A failed turn's progress, when there is no result.
@@ -211,12 +341,13 @@ async function saveAnswer(
       conversationId: turn.conversation.id,
       role: 'ASSISTANT',
       content: answer.content,
+      memoryOff: answer.memoryOff,
       status: answer.status,
       error: answer.error,
       citations: (answer.citations ?? []) as Prisma.InputJsonValue,
       toolCalls: (result?.toolCalls ?? answer.toolCalls ?? []) as Prisma.InputJsonValue,
       model: model ? `${model.provider}/${model.model}` : null,
-      promptVersion: agentSystemPrompt.id,
+      promptVersion: promptId,
       tokensIn: usage.tokensIn,
       tokensOut: usage.tokensOut,
       tokensCached: usage.tokensCached,

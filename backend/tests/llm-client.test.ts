@@ -43,7 +43,7 @@ describe('routing', () => {
       [LITE]: textModel('lite'),
     });
 
-    const cases = { answer: 'big', cheap: 'small', contextualize: 'lite', judge: 'flash' } as const;
+    const cases = { answer: 'big', cheap: 'small', contextualize: 'lite', judge: 'lite' } as const;
     for (const [task, expected] of Object.entries(cases)) {
       const { text, call } = await generate({ task: task as keyof typeof cases, prompt: 'hi' });
       expect(text).toBe(expected);
@@ -169,7 +169,8 @@ describe('retries and fallback', () => {
 
   it('has no fallback for the judge', async () => {
     useModels({
-      [FLASH]: failingModel(apiError(400)),
+      [LITE]: failingModel(apiError(400)),
+      [FLASH]: textModel('flash'),
       [BIG]: textModel('big'),
       [SMALL]: textModel('small'),
     });
@@ -178,7 +179,7 @@ describe('retries and fallback', () => {
       UpstreamError,
     );
     const [row] = await usageRows();
-    expect(row).toMatchObject({ ok: false, model: FLASH, fallbackUsed: false });
+    expect(row).toMatchObject({ ok: false, model: LITE, fallbackUsed: false });
   });
 
   it('stops without a fallback when the caller aborts', async () => {
@@ -236,7 +237,7 @@ describe('generateObject', () => {
   const schema = z.object({ score: z.number().int().min(1).max(5) });
 
   it('returns the parsed object', async () => {
-    useModels({ [FLASH]: textModel('{"score":4}') });
+    useModels({ [LITE]: textModel('{"score":4}') });
     const { object } = await generateObject({ task: 'judge', schema, prompt: 'score' });
     expect(object).toEqual({ score: 4 });
   });

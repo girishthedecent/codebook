@@ -1,0 +1,7 @@
+{
+  "name": "long-context",
+  "description": "No retrieval: up to 120K tokens of the corpus text in one Gemini Flash prompt, each source cut to its share. One request uses most of a minute's free input tokens.",
+  "mode": "longContext",
+  "maxContextTokens": 120000,
+  "gapMs": 90000
+}

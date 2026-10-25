@@ -1,0 +1,10 @@
+{
+  "name": "model-gpt-oss-20b-6k5",
+  "description": "Model comparison: gpt-oss-20b on Groq, 6,500-token steps.",
+  "model": {
+    "provider": "groq",
+    "model": "openai/gpt-oss-20b"
+  },
+  "maxInputTokens": 6500,
+  "gapMs": 180000
+}

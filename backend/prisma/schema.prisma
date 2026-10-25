@@ -25,6 +25,7 @@ model User {
   workspaces     Workspace[]
   conversations  Conversation[]
   studyArtifacts StudyArtifact[]
+  memories       Memory[]
 
   @@unique([email])
   @@map("user")
@@ -405,6 +406,12 @@ enum EvalSplit {
   HELDOUT
 }
 
+enum EvalCaseOrigin {
+  MANUAL
+  SYNTHETIC
+  FAILURE
+}
+
 enum EvalRunStatus {
   RUNNING
   DONE
@@ -424,9 +431,9 @@ model EvalDataset {
 }
 
 model EvalCase {
-  id             String       @id @default(cuid())
+  id             String         @id @default(cuid())
   datasetId      String
-  dataset        EvalDataset  @relation(fields: [datasetId], references: [id], onDelete: Cascade)
+  dataset        EvalDataset    @relation(fields: [datasetId], references: [id], onDelete: Cascade)
   // The id in the dataset file, stable across imports.
   externalId     String
   question       String
@@ -437,11 +444,16 @@ model EvalCase {
   split          EvalSplit
   tags           String[]
   // Checked against the stored text after drafting; the report keeps the two apart.
-  reviewed       Boolean      @default(false)
+  reviewed       Boolean        @default(false)
   // Gone from the dataset file: kept for old runs' results, never run again.
-  retired        Boolean      @default(false)
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  retired        Boolean        @default(false)
+  // Written by hand, generated from the corpus, or taken from a failed answer.
+  origin         EvalCaseOrigin @default(MANUAL)
+  // What the eval user should be remembered as before the case runs (memory configs only):
+  // [{ kind, content, importance? }].
+  memories       Json           @default("[]")
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
   results        EvalResult[]
 
   @@unique([datasetId, externalId])
@@ -495,6 +507,16 @@ model EvalResult {
   @@index([caseId])
 }
 
+// A judge's verdict, keyed by judge prompt, judge model, case and answer hash, so a rerun of
+// the same answer never pays for the same judgement twice.
+model EvalJudgeCache {
+  key       String   @id
+  // The prompt id and model, e.g. judge-grounding@v1 groq/openai/gpt-oss-120b.
+  judge     String
+  value     Json
+  createdAt DateTime @default(now())
+}
+
 enum MessageRole {
   USER
   ASSISTANT
@@ -522,6 +544,8 @@ model Conversation {
   // reach the model once they fall out of the verbatim history.
   summary                 String?
   summarizedUpToMessageId String?
+  // Memory extraction has read the messages up to this one; it only learns from later ones.
+  memoryUpToMessageId     String?
   createdAt               DateTime  @default(now())
   updatedAt               DateTime  @updatedAt
   messages                Message[]
@@ -556,10 +580,43 @@ model Message {
   error            String?
   feedback         Feedback?
   feedbackNote     String?
+  // Assistant turns asked not to use memory: nothing is learned from them either.
+  memoryOff        Boolean       @default(false)
   createdAt        DateTime      @default(now())
+  memories         Memory[]
 
   @@index([conversationId, createdAt])
   @@index([createdAt])
+}
+
+enum MemoryKind {
+  PROFILE
+  FACT
+}
+
+// What CodeBook remembers about a user, across workspaces. The embedding is set with raw
+// SQL and searched exactly per user (no vector index, see the migration); deleted rows stay
+// until the user clears them for good.
+model Memory {
+  id              String                       @id @default(cuid())
+  userId          String
+  user            User                         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind            MemoryKind
+  // One fact or profile line.
+  content         String
+  embedding       Unsupported("vector(1536)")?
+  // The answer whose turn it was learned from; null when added by hand.
+  sourceMessageId String?
+  sourceMessage   Message?                     @relation(fields: [sourceMessageId], references: [id], onDelete: SetNull)
+  // 1 (trivia) to 5 (shapes every answer).
+  importance      Int                          @default(3)
+  lastUsedAt      DateTime?
+  deletedAt       DateTime?
+  createdAt       DateTime                     @default(now())
+  updatedAt       DateTime                     @updatedAt
+
+  @@index([userId, kind, deletedAt])
+  @@index([sourceMessageId])
 }
 
 enum StudyType {

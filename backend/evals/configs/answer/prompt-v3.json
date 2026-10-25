@@ -1,0 +1,5 @@
+{
+  "name": "prompt-v3",
+  "description": "adaptive-agent with agent-system@v3 (plan-first tool choice, plain refusals).",
+  "promptId": "agent-system@v3"
+}

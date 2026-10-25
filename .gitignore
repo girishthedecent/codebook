@@ -18,3 +18,7 @@ backend/evals/corpus/
 backend/evals/reports/*
 !backend/evals/reports/latest.md
 !backend/evals/reports/latest-heldout.md
+!backend/evals/reports/latest-answer.md
+# generated candidates quote the corpus or users' questions; labels quote judged claims
+backend/evals/datasets/*-candidates.json
+backend/evals/calibration/

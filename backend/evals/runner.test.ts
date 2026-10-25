@@ -9,12 +9,15 @@ import { search } from '../src/modules/retrieval/retrieval.service.js';
 import { resetDb } from '../tests/helpers/db.js';
 import { retrievalConfigSchema } from './config.js';
 import { loadCorpus } from './corpusWorkspace.js';
-import { importCases, type EvalCaseInput } from './dataset.js';
+import { evalCaseSchema, importCases, type EvalCaseInput } from './dataset.js';
 import { latestFile, loadRuns, writeReport } from './reportMarkdown.js';
 import { codeVersion, gitSha, resumeConflict, runRetrieval } from './retrievalSuite.js';
 
 vi.mock('../src/modules/retrieval/retrieval.service.js', () => ({ search: vi.fn() }));
-vi.mock('./corpusWorkspace.js', () => ({ loadCorpus: vi.fn() }));
+vi.mock('./corpusWorkspace.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./corpusWorkspace.js')>()),
+  loadCorpus: vi.fn(),
+}));
 vi.mock('../src/llm/embeddings.js', () => ({
   embedTexts: vi.fn(async (texts: string[]) => texts.map(() => [1, 0])),
 }));
@@ -53,7 +56,7 @@ const cases: EvalCaseInput[] = [
     tags: [],
     reviewed: false,
   },
-];
+].map((item) => evalCaseSchema.parse(item));
 
 function chunk(id: string, sourceId: string, fields: Partial<RetrievedChunk>): RetrievedChunk {
   return {

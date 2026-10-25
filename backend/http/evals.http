@@ -1,0 +1,36 @@
+@base = http://localhost:4000
+@origin = http://localhost:4000
+
+### Sign in as an admin (a user id listed in ADMIN_USER_IDS; everyone else gets 404 here)
+POST {{base}}/api/auth/sign-in/email
+Content-Type: application/json
+Origin: {{origin}}
+
+{ "email": "admin@example.com", "password": "correct-horse-battery" }
+
+### Datasets with their case counts
+GET {{base}}/api/v1/evals/datasets
+
+### Latest runs of a suite
+GET {{base}}/api/v1/evals/runs?suite=retrieval&limit=20
+
+### One run: config, models, prompt versions, summary
+@runId = replace-with-a-run-id
+GET {{base}}/api/v1/evals/runs/{{runId}}
+
+### Its failed cases (refs and scores, never passage text)
+GET {{base}}/api/v1/evals/runs/{{runId}}/results?failed=1
+
+### One case type only
+GET {{base}}/api/v1/evals/runs/{{runId}}/results?type=CODE
+
+### Two runs side by side: metric deltas (b − a) and the cases that changed
+@otherRunId = replace-with-another-run-id
+GET {{base}}/api/v1/evals/compare?runs={{runId}},{{otherRunId}}
+
+### Queue a run for the eval worker (pnpm evals:worker must be running)
+POST {{base}}/api/v1/evals/runs
+Content-Type: application/json
+Origin: {{origin}}
+
+{ "suite": "retrieval", "config": "hybrid", "split": "DEV", "limit": 10 }

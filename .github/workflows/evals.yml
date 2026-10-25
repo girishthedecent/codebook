@@ -1,0 +1,122 @@
+name: evals
+
+# The retrieval gate on every PR that touches the backend: build the gate corpus (the
+# express repository and its routing docs page; the book is never committed), search the gate
+# cases and compare with evals/baseline.json. Every embedding and context it needs comes from
+# the committed evals/cache/gate-cache.jsonl.gz, so the gate makes no model calls and needs no
+# API keys (PRs from forks get none). The answer suite only runs by hand: it spends free-tier
+# model quota.
+
+on:
+  pull_request:
+    paths:
+      - 'backend/src/**'
+      - 'backend/evals/**'
+  workflow_dispatch:
+    inputs:
+      config:
+        description: Answer config (evals/configs/answer/<name>.json)
+        default: adaptive-agent
+      limit:
+        description: Cases to run (gate cases only; the book isn't in CI)
+        default: '10'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: evals-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  evals:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: backend
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: codebook
+          POSTGRES_PASSWORD: codebook
+          POSTGRES_DB: codebook
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U codebook"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      NODE_ENV: development
+      LOG_LEVEL: warn
+      DATABASE_URL: postgresql://codebook:codebook@localhost:5432/codebook
+      BETTER_AUTH_SECRET: ci-only-secret-not-used-anywhere-else
+      APP_URL: http://localhost:4000
+      INNGEST_DEV: '1'
+      INNGEST_BASE_URL: http://localhost:8288
+      # For the repository download only (GitHub's own token, read-only on fork PRs).
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: backend/package.json
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: backend/pnpm-lock.yaml
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm db:deploy
+      - run: pnpm evals:import
+
+      - name: Load the committed model cache
+        run: pnpm evals:cache -- import
+
+      - name: Start the Inngest dev server
+        run: >-
+          docker run -d --name inngest --network host
+          inngest/inngest@sha256:96b95265d059cfe105c75939f0ebd5121fcb9fe477438dcd0efdbea18237bf1a
+          inngest dev -u http://localhost:4000/api/inngest --no-discovery
+
+      - name: Start the API
+        run: |
+          nohup node --import tsx src/server.ts > "$RUNNER_TEMP/server.log" 2>&1 &
+          for _ in $(seq 1 60); do
+            curl -sf http://localhost:4000/api/v1/health/ready > /dev/null && exit 0
+            sleep 1
+          done
+          echo 'The API did not become ready'; exit 1
+
+      # Fails instead of calling a model if the cache file is missing anything.
+      - name: Build the gate corpus
+        run: pnpm evals:corpus -- --variant gate --require-cached
+
+      - name: Retrieval gate
+        if: github.event_name == 'pull_request'
+        run: pnpm evals:gate
+
+      - name: Answer suite
+        if: github.event_name == 'workflow_dispatch'
+        # Inputs go through the environment, never into the script text.
+        env:
+          CONFIG: ${{ inputs.config }}
+          LIMIT: ${{ inputs.limit }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: >-
+          pnpm evals -- --suite answer --config "$CONFIG" --corpus gate --tags gate
+          --limit "$LIMIT"
+
+      - name: Server log
+        if: failure()
+        run: tail -n 200 "$RUNNER_TEMP/server.log" || true

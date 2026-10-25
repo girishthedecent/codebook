@@ -1,0 +1,9 @@
+{
+  "name": "model-gemini-flash-6k5",
+  "description": "Model comparison: Gemini Flash with a 6,500-token step budget, the most Groq's free tier takes in one request.",
+  "model": {
+    "provider": "google",
+    "model": "gemini-3.6-flash"
+  },
+  "maxInputTokens": 6500
+}

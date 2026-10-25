@@ -24,12 +24,12 @@ export type ReportRun = EvalRun & {
 
 const CASE_TYPES = ['BOOK', 'CODE', 'MULTI_HOP', 'CROSS_SOURCE', 'NO_ANSWER'] as const;
 
-const fixed = (value: number | null) => (value === null ? '–' : value.toFixed(3));
-const ms = (value: number) => `${Math.round(value)} ms`;
+export const fixed = (value: number | null) => (value === null ? '–' : value.toFixed(3));
+export const ms = (value: number) => `${Math.round(value)} ms`;
 // Markdown table cells can't hold pipes or line breaks.
-const cell = (text: string) => text.replace(/\|/g, '\\|').replace(/\s+/g, ' ').trim();
+export const cell = (text: string) => text.replace(/\|/g, '\\|').replace(/\s+/g, ' ').trim();
 
-function table(head: string[], rows: string[][]) {
+export function table(head: string[], rows: string[][]) {
   return [
     `| ${head.join(' | ')} |`,
     `| ${head.map(() => '---').join(' | ')} |`,

@@ -49,6 +49,11 @@ export type AgentInput = {
   onEvent: (event: AgentEvent) => void;
   // Filled in as the turn goes, so a failed turn can still save what it did.
   progress?: AgentProgress;
+  // Evals: the models to use instead of the agent route (one model means no fallback), a
+  // smaller input budget, and static RAG (one search with the question, then the answer).
+  models?: ModelRef[];
+  maxInputTokens?: number;
+  staticRag?: boolean;
 };
 
 export type AgentProgress = { toolCalls: SavedToolCall[]; model?: ModelRef };
@@ -97,7 +102,8 @@ export async function runAgent(input: AgentInput): Promise<AgentResult> {
     input.tools.map((t) => [t.name, tool({ description: t.description, inputSchema: t.input })]),
   );
 
-  const route = modelsFor('agent');
+  const route = input.models?.length ? input.models : modelsFor('agent');
+  const maxInputTokens = input.maxInputTokens ?? appConfig.chat.maxInputTokens;
   // Models with an open circuit breaker go last rather than first.
   let models = [...route.filter((ref) => !isOpen(ref)), ...route.filter((ref) => isOpen(ref))];
   // Set once the turn changes model after a tool step: from then on it is sent as text.
@@ -132,7 +138,7 @@ export async function runAgent(input: AgentInput): Promise<AgentResult> {
         return await streamStep({
           task: 'agent',
           instructions: input.system,
-          messages: fitBudget(input.system, input.history, steps, build),
+          messages: fitBudget(maxInputTokens, input.system, input.history, steps, build),
           tools: final ? undefined : toolSet,
           models: [models[0]!],
           fallbackUsed: models[0] !== route[0],
@@ -148,8 +154,38 @@ export async function runAgent(input: AgentInput): Promise<AgentResult> {
     }
   };
 
+  const callTool = async (index: number, call: StreamedToolCall) => {
+    const runStarted = performance.now();
+    const args = safeArgs(call.input);
+    onEvent({ type: 'step', index, tool: call.toolName, args, status: 'start' });
+    const { run, summary } = await runTool(byName.get(call.toolName), call, ctx);
+    const ms = Math.round(performance.now() - runStarted);
+    toolMs += ms;
+    saved.push({
+      step: index,
+      tool: call.toolName,
+      args,
+      ok: run.ok,
+      summary,
+      ms,
+      resultTokens: countTokens(run.text),
+    });
+    onEvent({ type: 'step', index, tool: call.toolName, args, status: 'end', ms, summary });
+    return run;
+  };
+
   let stepCount = 0;
-  for (let index = 1; index <= appConfig.chat.maxAgentSteps; index++) {
+  if (input.staticRag) {
+    // No choices for the model: search with the question as asked, then answer.
+    const query = input.question.slice(0, appConfig.retrieval.maxQueryChars);
+    const call = { toolCallId: 'static-search', toolName: 'search_sources', input: { query } };
+    steps.push({ response: [], runs: [await callTool(1, call)] });
+    const result = await callModel(true);
+    if (input.progress) input.progress.model = result.model;
+    stepCount = 2;
+  }
+
+  for (let index = 1; !input.staticRag && index <= appConfig.chat.maxAgentSteps; index++) {
     // Reaching the last step means the model was still calling tools: it now has to answer.
     const final = index === appConfig.chat.maxAgentSteps;
     stepCount = index;
@@ -169,23 +205,7 @@ export async function runAgent(input: AgentInput): Promise<AgentResult> {
         });
         continue;
       }
-      const runStarted = performance.now();
-      const args = safeArgs(call.input);
-      onEvent({ type: 'step', index, tool: call.toolName, args, status: 'start' });
-      const { run, summary } = await runTool(byName.get(call.toolName), call, ctx);
-      const ms = Math.round(performance.now() - runStarted);
-      toolMs += ms;
-      runs.push(run);
-      saved.push({
-        step: index,
-        tool: call.toolName,
-        args,
-        ok: run.ok,
-        summary,
-        ms,
-        resultTokens: countTokens(run.text),
-      });
-      onEvent({ type: 'step', index, tool: call.toolName, args, status: 'end', ms, summary });
+      runs.push(await callTool(index, call));
     }
     steps.push({ response: result.responseMessages, runs });
     separate = true;
@@ -203,7 +223,7 @@ export async function runAgent(input: AgentInput): Promise<AgentResult> {
     steps: stepCount,
     model: models[0]!,
     fallbackUsed: models[0] !== route[0],
-    forcedFinal: stepCount === appConfig.chat.maxAgentSteps,
+    forcedFinal: !input.staticRag && stepCount === appConfig.chat.maxAgentSteps,
     weakRetrieval: searches.length > 0 && searches.every((run) => run.weak),
     firstTokenMs,
     toolMs,
@@ -318,12 +338,13 @@ function messageTokens(message: ChatMessage) {
  * still starts at a user message), then replaces the oldest tool results with a note.
  */
 function fitBudget(
+  maxInputTokens: number,
   system: string,
   history: ChatMessage[],
   steps: Step[],
   build: (history: ChatMessage[]) => ChatMessage[],
 ): ChatMessage[] {
-  const budget = appConfig.chat.maxInputTokens - countTokens(system);
+  const budget = maxInputTokens - countTokens(system);
   const total = (list: ChatMessage[]) => list.reduce((sum, m) => sum + messageTokens(m), 0);
   let kept = history;
   let messages = build(kept);

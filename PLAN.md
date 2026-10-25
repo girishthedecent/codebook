@@ -1685,38 +1685,38 @@ Goal: conversations where an agent with 9 tools answers questions, streams steps
 Goal: CodeBook remembers the user (profile + facts), uses relevant memories in chat within a budget, and lets the user see and edit everything.
 
 **12.1 Schema**
-- [ ] `Memory` model + `MemoryKind`; raw SQL for `embedding vector(1536)` + HNSW index
-- [ ] Migration `memory`
+- [x] `Memory` model + `MemoryKind`; raw SQL for `embedding vector(1536)` + HNSW index — no vector index: recall scans one user's memories exactly (an HNSW index over all users is filtered by user after the search and can return fewer than k)
+- [x] Migration `memory` — `memory_evals`, plus `message_memory_off` and `memory_watermark`
 
 **12.2 Extraction**
-- [ ] Inngest function `extractMemories` on `conversation/turn.completed` (debounced per user)
-- [ ] Input: last user+assistant messages + existing similar memories (vector search top 10 over user's memories)
-- [ ] Prompt `memory-extract@v1` (cheap model, structured output): returns operations `[{ op: "ADD"|"UPDATE"|"DELETE"|"NONE", memoryId?, kind, content, importance }]`
+- [x] Inngest function `extractMemories` on `conversation/turn.completed` (debounced per user) — debounced per conversation, learns only from messages after the conversation's `memoryUpToMessageId` watermark; turns with memory off (`Message.memoryOff`) are never read
+- [x] Input: last user+assistant messages + existing similar memories (vector search top 10 over user's memories)
+- [x] Prompt `memory-extract@v1` (cheap model, structured output): returns operations `[{ op: "ADD"|"UPDATE"|"DELETE"|"NONE", memoryId?, kind, content, importance }]`
   - only durable facts about the **user** (goals, level, preferences, ongoing projects, languages used) — not facts from the books/code
   - never store secrets, credentials, or sensitive personal data (health, finances, etc.) — explicit rule + regex post-filter (reuse secret scanner)
-- [ ] Apply ops; embed new/updated contents; link `sourceMessageId`
-- [ ] Profile memories: `kind=PROFILE`, capped count (e.g. 15); facts unlimited but pruned by importance/age later
+- [x] Apply ops; embed new/updated contents; link `sourceMessageId` — model call and apply in separate steps; an ADD is idempotent on (sourceMessageId, content); UPDATE/DELETE only on memories the model was shown (labels m1..mN, never ids)
+- [x] Profile memories: `kind=PROFILE`, capped count (e.g. 15); facts unlimited but pruned by importance/age later
 
 **12.3 Retrieval into chat**
-- [ ] Always include PROFILE memories (sorted by importance) up to `profileTokenBudget` (e.g. 300 tokens)
-- [ ] Plus top-k FACT memories by vector similarity to the current question (k=5, min score) up to `factTokenBudget` (e.g. 300 tokens)
-- [ ] Rendered in a `<memory>` block marked as data (untrusted rule applies)
-- [ ] Update `lastUsedAt` for included memories
-- [ ] Toggle per request `useMemory` (default on) — evals compare on/off
+- [x] Always include PROFILE memories (sorted by importance) up to `profileTokenBudget` (e.g. 300 tokens)
+- [x] Plus top-k FACT memories by vector similarity to the current question (k=5, min score) up to `factTokenBudget` (e.g. 300 tokens)
+- [x] Rendered in a `<memory>` block marked as data (untrusted rule applies) — named in the untrusted list of `agent-system@v2`, which chat now uses
+- [x] Update `lastUsedAt` for included memories
+- [x] Toggle per request `useMemory` (default on) — evals compare on/off
 
 **12.4 Endpoints**
-- [ ] `GET /api/v1/memories?kind=` (excludes soft-deleted unless `?includeDeleted=1`)
-- [ ] `POST /api/v1/memories` `{ kind, content }` (manual add; embedded)
-- [ ] `PATCH /api/v1/memories/:id` `{ content?, importance? }` (re-embed on content change)
-- [ ] `DELETE /api/v1/memories/:id` (soft), `POST /api/v1/memories/:id/restore`, `DELETE /api/v1/memories` (clear all, soft)
+- [x] `GET /api/v1/memories?kind=` (excludes soft-deleted unless `?includeDeleted=1`)
+- [x] `POST /api/v1/memories` `{ kind, content }` (manual add; embedded)
+- [x] `PATCH /api/v1/memories/:id` `{ content?, importance? }` (re-embed on content change)
+- [x] `DELETE /api/v1/memories/:id` (soft), `POST /api/v1/memories/:id/restore`, `DELETE /api/v1/memories` (clear all, soft)
 
 **12.5 Tests**
-- [ ] Mocked extractor: "I'm preparing for backend interviews" → PROFILE memory added
-- [ ] Conflicting fact → UPDATE op applied, not duplicated
-- [ ] Secret in message → not stored
-- [ ] Memory used in next conversation (assert it's in the assembled context)
-- [ ] Budget respected; another user's memories never retrieved
-- [ ] CRUD + restore
+- [x] Mocked extractor: "I'm preparing for backend interviews" → PROFILE memory added
+- [x] Conflicting fact → UPDATE op applied, not duplicated
+- [x] Secret in message → not stored
+- [x] Memory used in next conversation (assert it's in the assembled context)
+- [x] Budget respected; another user's memories never retrieved
+- [x] CRUD + restore
 
 **Done when:** a fact told in one conversation shows up (correctly) in a later one, and can be edited/deleted.
 
@@ -1774,63 +1774,65 @@ Goal: generate quiz, flashcards, mind map and summary from chosen sources/sectio
 Goal: measure end-to-end answer quality, citation quality, agent behavior, cost and latency; compare static vs adaptive, models, prompt versions, memory, and long-context vs RAG; gate CI.
 
 **14.1 Answer runner**
-- [ ] Suite `answer`: runs each case through the **real chat pipeline** (agent + tools) in a fresh eval conversation (no memory unless config says so), non-streaming mode (same code path, collector instead of SSE)
-- [ ] Stores answer, citations, tool trajectory, tokens, cost, latency in `EvalResult`
+- [x] Suite `answer`: runs each case through the **real chat pipeline** (agent + tools) in a fresh eval conversation (no memory unless config says so), non-streaming mode (same code path, collector instead of SSE)
+- [x] Stores answer, citations, tool trajectory, tokens, cost, latency in `EvalResult`
 
 **14.2 Judge scorers** (`evals/scorers/judge.ts`, task `judge` = Gemini; different provider than answer model)
-- [ ] `faithfulness@v1`: split answer into claims → for each claim, is it supported by the cited/retrieved source texts? → score = supported / total (structured output with per-claim verdicts saved for inspection)
-- [ ] `correctness@v1`: compare answer to `expectedAnswer` → 0 / 0.5 / 1 with reason
-- [ ] `citation-accuracy@v1`: for each citation, does the cited source support the sentence it's attached to? → precision; plus **citation recall** = expected refs that were cited
-- [ ] `no-answer`: for NO_ANSWER cases, did the system decline / say it's not in the sources?
+- [x] `faithfulness@v1`: split answer into claims → for each claim, is it supported by the cited/retrieved source texts? → score = supported / total (structured output with per-claim verdicts saved for inspection) — one call `judge-grounding@v1` gives per-claim and per-citation verdicts (faithfulness and citation precision)
+- [x] `correctness@v1`: compare answer to `expectedAnswer` → 0 / 0.5 / 1 with reason — `judge-correctness@v1`. **Judge = Gemini Flash-Lite**, not a different provider: Groq refuses a single request over 8K tokens. Runs answered by a Gemini model are marked `sameProviderJudge` in the report
+- [x] `citation-accuracy@v1`: for each citation, does the cited source support the sentence it's attached to? → precision; plus **citation recall** = expected refs that were cited
+- [x] `no-answer`: for NO_ANSWER cases, did the system decline / say it's not in the sources?
 - [ ] Judge calibration: you label ~20 judge outputs by hand → report agreement % in README (honest number)
-- [ ] Judge results cached by (judge prompt version, model, case, answer hash)
+- [x] Judge results cached by (judge prompt version, model, case, answer hash) — keyed by prompt id + model + the full rendered judge input
 
 **14.3 Agent trajectory scorer** (`evals/scorers/trajectory.ts`)
-- [ ] Per case optional `expectedTools` (e.g. MULTI_HOP → `trace_flow` or `find_callers`; TOC questions → `browse_toc`)
-- [ ] Metrics: expected tool used (yes/no), steps count, redundant calls (same tool+args twice), tool errors, hit max steps
+- [x] Per case optional `expectedTools` (e.g. MULTI_HOP → `trace_flow` or `find_callers`; TOC questions → `browse_toc`) — case tags `tool:<name>` (any of)
+- [x] Metrics: expected tool used (yes/no), steps count, redundant calls (same tool+args twice), tool errors, hit max steps
 
 **14.4 Experiments (configs)**
-- [ ] `static-rag`: no agent — one `search_sources` (hybrid+rerank) then answer
-- [ ] `adaptive-agent`: full agent with all tools (default)
-- [ ] `adaptive-no-graph`, `adaptive-no-toc` (ablations)
-- [ ] `vectorless-only`: agent with only `search_code`, `list_files`, `read_source`, `browse_toc`, graph tools (no embeddings)
-- [ ] Models: answer model A vs B vs C (Groq models + Gemini)
-- [ ] Prompt versions: `answer-system@v1` vs `@v2`
-- [ ] Memory on/off (on a small set of personalized cases)
-- [ ] `long-context`: no retrieval — stuff whole book/repo (truncated to model window) into Gemini → answer; compare accuracy, cost, latency vs RAG
+- [x] `static-rag`: no agent — one `search_sources` (hybrid+rerank) then answer
+- [x] `adaptive-agent`: full agent with all tools (default)
+- [x] `adaptive-no-graph`, `adaptive-no-toc` (ablations)
+- [x] `vectorless-only`: agent with only `search_code`, `list_files`, `read_source`, `browse_toc`, graph tools (no embeddings)
+- [x] Models: answer model A vs B vs C (Groq models + Gemini) — all at the same 6.5K input budget (Groq's free tier refuses bigger requests)
+- [x] Prompt versions: `answer-system@v1` vs `@v2` — `agent-system@v2` (chat default: v1 + memory rule) vs `@v3` (plan-first tools, plain refusals); config `prompt-v3`
+- [x] Memory on/off (on a small set of personalized cases)
+- [x] `long-context`: no retrieval — stuff whole book/repo (truncated to model window) into Gemini → answer; compare accuracy, cost, latency vs RAG
 
 **14.5 Synthetic data**
-- [ ] `pnpm evals:synth -- --source book --n 30`: cheap/strong model reads random parent chunks → generates question + answer + ref (structured) → writes to `evals/datasets/synthetic-candidates.json`
+- [x] `pnpm evals:synth -- --source book --n 30`: cheap/strong model reads random parent chunks → generates question + answer + ref (structured) → writes to `evals/datasets/synthetic-candidates.json`
 - [ ] You review → accepted ones imported with `origin=SYNTHETIC`
-- [ ] Never mix unreviewed synthetic cases into the gate set
+- [x] Never mix unreviewed synthetic cases into the gate set
 
 **14.6 Failure loop**
-- [ ] `pnpm evals:failures`: pulls DOWN-voted messages, messages with invalid citations, and `weak` retrievals from DB → writes candidate cases (question + context) to `evals/datasets/failure-candidates.json` for review → import with `origin=FAILURE`
+- [x] `pnpm evals:failures`: pulls DOWN-voted messages, messages with invalid citations, and `weak` retrievals from DB → writes candidate cases (question + context) to `evals/datasets/failure-candidates.json` for review → import with `origin=FAILURE`
 
 **14.7 Eval API** (for the future dashboard)
-- [ ] `GET /api/v1/evals/datasets`, `GET /api/v1/evals/runs?suite=`, `GET /api/v1/evals/runs/:id` (summary), `GET /api/v1/evals/runs/:id/results?type=&failed=1`, `GET /api/v1/evals/compare?runs=a,b` (metric deltas + per-case diffs)
-- [ ] `POST /api/v1/evals/runs` → triggers run via Inngest function `runEval` (admin only — env `ADMIN_EMAILS`)
+- [x] `GET /api/v1/evals/datasets`, `GET /api/v1/evals/runs?suite=`, `GET /api/v1/evals/runs/:id` (summary), `GET /api/v1/evals/runs/:id/results?type=&failed=1`, `GET /api/v1/evals/compare?runs=a,b` (metric deltas + per-case diffs)
+- [x] `POST /api/v1/evals/runs` → triggers run via Inngest function `runEval` (admin only — env `ADMIN_EMAILS`) — admin = `ADMIN_USER_IDS`; the whole `/evals` router is admin-only (404 otherwise). Runs execute in a separate eval worker (`pnpm evals:worker`, its own Inngest app), so eval code never ships in the API build; one run at a time (singleton + 409)
 
 **14.8 Reports**
-- [ ] Report adds: faithfulness, correctness, citation precision/recall, no-answer accuracy, trajectory metrics, cost/query, p50/p95 latency, by type
+- [x] Report adds: faithfulness, correctness, citation precision/recall, no-answer accuracy, trajectory metrics, cost/query, p50/p95 latency, by type
 - [ ] Headline table for README: static vs adaptive, by question type
 
 **14.9 CI gate**
-- [ ] `.github/workflows/evals.yml` on PR (paths: `backend/src/**`, `backend/evals/**`):
+- [x] `.github/workflows/evals.yml` on PR (paths: `backend/src/**`, `backend/evals/**`): — gate corpus = repo + docs only (DDIA is never committed); the gate's embeddings and contexts are committed (`evals/cache/gate-cache.jsonl.gz`, 1.6 MB), so the PR gate makes no model calls and needs no secrets
   - service Postgres; restore caches (embedding + context cache dump, keyed by corpus version) via `actions/cache`
   - ingest corpus (cache hits → almost no API calls)
   - run **retrieval** suite on a fixed `gate` subset (~25 DEV cases) → compare with committed `evals/baseline.json` → fail if any gated metric drops more than its tolerance (e.g. recall@5 −3 pts, MRR −0.03)
   - post the Markdown report as a PR comment / job summary
-- [ ] Answer suite runs manually (`workflow_dispatch`) because of free-tier limits
+- [x] Answer suite runs manually (`workflow_dispatch`) because of free-tier limits
 - [ ] Secrets in GitHub: `GEMINI_API_KEY`, `GROQ_API_KEY`
-- [ ] `pnpm evals:baseline` updates `baseline.json` intentionally (reviewed in PR)
+- [x] `pnpm evals:baseline` updates `baseline.json` intentionally (reviewed in PR)
 
 **14.10 Tests**
-- [ ] Judge scorers with mocked judge outputs → aggregation correct
-- [ ] Trajectory scorer unit tests
-- [ ] Gate comparison logic unit tests (pass / fail / tolerance)
+- [x] Judge scorers with mocked judge outputs → aggregation correct
+- [x] Trajectory scorer unit tests
+- [x] Gate comparison logic unit tests (pass / fail / tolerance)
 
 **Done when:** full report exists with static vs adaptive, model comparison, long-context vs RAG; CI fails on a deliberately broken retrieval change and passes when reverted.
+
+> 2026-10-25 (user): the answer eval **runs** are deferred (hundreds of free-tier calls). Everything to run them is built: `pnpm evals -- --suite answer --config <name>` per config in `evals/configs/answer/`, then `pnpm evals:report -- --suite answer`. The headline table goes into the README when they have run.
 
 ---
 
@@ -2348,6 +2350,7 @@ One line per phase: `date · phase · commit · notes / deviations`.
 | 2026-10-24 | 9 Retrieval + 10 Evals part 1 | 24b8131 | Planned together (plan reviewed once, 14 findings), built in parallel by me and nine agents on per-agent test databases (`codebook_agent{1..6}_test`), two code reviews (10 findings fixed). Hybrid search (vector + OR keyword query, weighted RRF), MiniLM reranker (opt-in), weak flag, parent blocks, rewrite / HyDE / decompose, debug endpoint; eval schema, 60 verified golden cases, runner with resume and taint, reports per split. DEV: vector-only 0.925 R@5, hybrid + rerank 0.984 R@10; contextual retrieval +10.5 points R@5 on code (19 cases). Defaults from the numbers: keyword ¼, reranker off. Long CPU-bound evals reset the machine twice → evals run on 2 cores. 620 tests pass |
 | 2026-10-24 | M4 review | 24b8131 | Cross-review of Phases 9–10 with three parallel reviewers (security & scoping, cross-module consistency, data & eval validity). No blocking issue: every query is workspace-scoped, no error leaks internals, the ingestion ↔ retrieval contract and the context-switch hashes hold. Fixed: demo visitors can't turn reranking on (CPU), searches stop when the client disconnects, the query-mode memo is per user, HyDE/query embeddings never wait on the ingestion quota, a child whose parent was re-indexed away is skipped; evals run one case at a time with question embeddings warmed first (latency comparable), runs record `HEAD-dirty-<diff hash>` and resume refuses changed code, cases or reranker; corrected overstated eval claims (contextual retrieval +10.5 points on 19 cases, decisions cite DEV only). Tests added for the reranker-off default, the keyword weight, demo rerank refusal, the startup model check, repo/website context switch, per-split reports |
 | 2026-10-24 | 11 Chat + 13 Study + 15 Limits | 267603b | Wave 2: planned together (plan review moved the agent to **Gemini Flash first** and our own step loop: Groq's 8K tokens/min can't carry a multi-step context), one migration written first, then built in parallel by me (agent loop, context, SSE turn route, citations, wiring) and five agents on their own test databases, tests pinned to 2 cores. Agent: one streamed call per step, tools run in between (≤4 per step), a turn sticks to one model, a switch after a tool step flattens the turn to text (`<tool_result>` blocks, neutralized like `<source>`), last step without tools, input trimmed to 12K tokens (old history, then old tool results), empty answer = failed turn; partial answers saved ERROR/ABORTED with their citations and tool calls; old `[n]` stripped from history (numbers are per turn). Citation check is lexical: markers parsed outside code, marker-only sentences joined to the previous one, gpt-oss's `【n†…】` normalized. Turn cost summed from `UsageEvent.messageId` (retrieval calls included). Study: generation in Inngest with one retry carrying the validation errors, condense step for big inputs, owner-only writes. Limits: own fixed-window Postgres limiter (monthly web-search cap on the calendar month, prune by window end), `Retry-After` from the error handler, circuit breaker per model inside each attempt, concurrent-rerank and `/events` slots, guests by IP and no web search for guests; usage and admin monitoring (`ADMIN_USER_IDS`, 404 for others). Three parallel reviews (chat, tools/limits/usage, study): no critical findings, all fixed. Live check over DDIA + express: cited, supported answers; Gemini Flash's free tier allows only **5 requests a minute**, so busy turns fall back to gpt-oss (worked as designed). Not done: the live end-to-end test file and the extra log events (15.5) |
+| 2026-10-25 | 12 Memory + 14 Evals part 2 | (this commit) | Wave 3: contracts and three migrations first (Memory without a vector index: exact per-user scan; EvalCase origin + memories; judge cache; Message.memoryOff; Conversation.memoryUpToMessageId), then five forks, plan review (13 findings) and three code reviews (21 findings) folded in. Memory: extraction per conversation after a watermark, labels instead of ids, secret/sensitive filter, importance-aware profile cap, budgeted recall in a `<memory>` block; chat now uses `agent-system@v2` (v1 + memory in the untrusted list), `@v3` is the eval experiment; the tool guide lists only the tools a turn gets. Evals: answer suite through the real turn service (pinned model, no fallback, no web_search), static RAG, ablations, 3 models at one 6.5K budget, long-context with ref coverage, memory on/off with seeded personal cases; judges on **Gemini Flash-Lite** (Groq refuses >8K-token requests) with same-provider runs flagged; eval API admin-only, runs in a separate eval worker (own Inngest app, singleton); CI gate on repo + docs from a committed 1.6 MB cache (no keys, no model calls): baseline recall@5 0.819 / MRR 0.881, a broken keyword weight fails it (MRR 0.619), the revert passes. Live: a fact told in one chat appears in the next chat's context, then edited and deleted. Answer eval runs deferred (user). 917 tests |
 
 **Later** (ideas parked during the build, not in scope):
 - M4 review (Phase 15): per-user rate limit on search and a process-wide cap on concurrent reranks / searches (each vector search holds a pooled connection; decompose holds up to four in turn)
@@ -2361,4 +2364,7 @@ One line per phase: `date · phase · commit · notes / deviations`.
 - Wave 2: Gemini Flash's free tier is 5 requests a minute, so a 3-step turn uses most of a minute's budget; revisit routing (or a paid tier) with real traffic. An interrupted stream records zero tokens (the SDK gives no usage)
 - Wave 2: PDF storage quota can overshoot under parallel uploads (bounded by `sourceCreate`); an advisory lock if it matters
 - Wave 2: `UsageEvent` and `Source` have no index on `createdAt` alone (monitoring scans the composite ones)
+- Wave 3: answer eval runs deferred (see Phase 14); judge calibration labels; synthetic candidates reviewed by hand
+- Wave 3: the judge is Gemini Flash-Lite, the same provider as the default agent model (marked `sameProviderJudge`); a cross-provider judge with enough free quota would remove the bias
+- Wave 3: two simultaneous profile adds can leave one line over the cap until the next add; the CLI eval runner doesn't take the worker's run slot
 - `/api/v1/health/ready`: own timeout on the `SELECT 1` so a silently dropped pooled connection can't hang it (Phase 15 monitoring)

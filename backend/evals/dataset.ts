@@ -2,7 +2,12 @@ import { readFile } from 'node:fs/promises';
 import { z } from 'zod';
 import prismaClient from '../src/config/db.config.js';
 import type { Prisma } from '../src/generated/prisma/client.js';
-import { EvalCaseType, EvalSplit } from '../src/generated/prisma/enums.js';
+import {
+  EvalCaseOrigin,
+  EvalCaseType,
+  EvalSplit,
+  MemoryKind,
+} from '../src/generated/prisma/enums.js';
 
 // The golden-set file format (evals/datasets/<name>.json) and its import into EvalCase rows.
 
@@ -36,6 +41,18 @@ export const evalCaseSchema = z
     expectedRefs: z.array(expectedRefSchema),
     tags: z.array(z.string().trim().min(1)).default([]),
     reviewed: z.boolean().default(false),
+    // Synthetic and failure cases come from the candidate files once reviewed.
+    origin: z.enum(EvalCaseOrigin).default('MANUAL'),
+    // Seeded as the eval user's memories before the case runs, for memory-on configs.
+    memories: z
+      .array(
+        z.strictObject({
+          kind: z.enum(MemoryKind),
+          content: z.string().trim().min(1).max(300),
+          importance: z.int().min(1).max(5).default(3),
+        }),
+      )
+      .default([]),
   })
   .superRefine((value, ctx) => {
     if (value.type === 'NO_ANSWER' && value.expectedRefs.length > 0) {
@@ -99,6 +116,8 @@ export async function importCases(
         split: item.split,
         tags: item.tags,
         reviewed: item.reviewed,
+        origin: item.origin,
+        memories: item.memories,
         retired: false,
       };
       await tx.evalCase.upsert({

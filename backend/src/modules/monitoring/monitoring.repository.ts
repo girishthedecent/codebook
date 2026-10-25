@@ -140,7 +140,7 @@ const FAILED_FIELDS = {
   conversation: { select: { workspaceId: true, userId: true } },
 } as const;
 
-/** Answers that went wrong one way or another, newest first. */
+/** Answers that went wrong one way or another, newest first. Eval runs aren't users' failures. */
 export async function findFailedAnswers(page: PageQuery) {
   return prismaClient.message.findMany({
     where: {
@@ -148,6 +148,7 @@ export async function findFailedAnswers(page: PageQuery) {
         page.where,
         {
           role: 'ASSISTANT',
+          conversation: { user: { isSystem: false } },
           OR: [
             { feedback: 'DOWN' },
             { status: 'ERROR' },

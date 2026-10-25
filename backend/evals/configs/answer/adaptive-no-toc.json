@@ -1,0 +1,13 @@
+{
+  "name": "adaptive-no-toc",
+  "description": "Ablation: the agent without browse_toc.",
+  "tools": [
+    "search_sources",
+    "search_code",
+    "read_source",
+    "list_files",
+    "find_callers",
+    "find_dependencies",
+    "trace_flow"
+  ]
+}

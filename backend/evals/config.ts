@@ -5,6 +5,7 @@ import { appConfig } from '../src/config/app.config.js';
 import { EvalCaseType } from '../src/generated/prisma/enums.js';
 import { QUERY_MODES } from '../src/modules/retrieval/retrieval.types.js';
 import { SEARCH_MODES } from '../src/modules/workspaces/workspace.validator.js';
+import { CORPUS_VARIANTS } from './corpusWorkspace.js';
 
 // A retrieval eval config: evals/configs/retrieval/<name>.json.
 
@@ -13,7 +14,7 @@ export const CONFIG_DIR = 'evals/configs/retrieval';
 export const retrievalConfigSchema = z.strictObject({
   name: z.string().regex(/^[a-z0-9-]+$/),
   description: z.string().optional(),
-  corpus: z.enum(['context', 'nocontext']).default('context'),
+  corpus: z.enum(CORPUS_VARIANTS).default('context'),
   search: z.strictObject({
     mode: z.enum(SEARCH_MODES),
     rerank: z.boolean(),
@@ -38,6 +39,15 @@ export const retrievalConfigSchema = z.strictObject({
 export type RetrievalConfig = z.infer<typeof retrievalConfigSchema>;
 
 export async function loadConfig(name: string, dir = CONFIG_DIR): Promise<RetrievalConfig> {
+  return readConfig(retrievalConfigSchema, name, dir);
+}
+
+/** Reads and validates `<dir>/<name>.json`; the file's own name must match. */
+export async function readConfig<Schema extends z.ZodType<{ name: string }>>(
+  schema: Schema,
+  name: string,
+  dir: string,
+): Promise<z.infer<Schema>> {
   if (!/^[a-z0-9-]+$/.test(name)) throw new Error(`Bad config name "${name}"`);
   let raw: string;
   try {
@@ -45,7 +55,7 @@ export async function loadConfig(name: string, dir = CONFIG_DIR): Promise<Retrie
   } catch {
     throw new Error(`No config "${name}" in ${dir}`);
   }
-  const parsed = retrievalConfigSchema.safeParse(JSON.parse(raw));
+  const parsed = schema.safeParse(JSON.parse(raw));
   if (!parsed.success) throw new Error(`Config ${name}:\n${z.prettifyError(parsed.error)}`);
   if (parsed.data.name !== name) {
     throw new Error(`Config ${name}.json is named "${parsed.data.name}"`);

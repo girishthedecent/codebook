@@ -13,8 +13,8 @@ import type { SendMessageInput } from './turn.validator.js';
 export async function sendMessageHandler(req: Request, res: Response) {
   const user = getAuthUser(res);
   const { conversationId } = res.locals.params as ConversationParams;
-  const { content } = req.body as SendMessageInput;
-  const turn = await prepareTurnService(user, conversationId, content);
+  const { content, useMemory } = req.body as SendMessageInput;
+  const turn = await prepareTurnService(user, conversationId, content, useMemory);
 
   const stream = openSse(req, res);
   // A client that goes away (even during the checks above) or a shutdown stops the model and
@@ -22,7 +22,9 @@ export async function sendMessageHandler(req: Request, res: Response) {
   const aborted = new AbortController();
   stream.onClose(() => aborted.abort());
   try {
-    await runTurnService(turn, ({ type, ...data }) => stream.send(type, data), aborted.signal);
+    await runTurnService(turn, ({ type, ...data }) => stream.send(type, data), aborted.signal, {
+      useMemory,
+    });
   } catch (error) {
     logger.error('Could not finish the chat turn', { error, conversationId });
     stream.send('error', { code: 'INTERNAL', message: 'Something went wrong' });

@@ -9,11 +9,12 @@ import type { SourceStatus, SourceType } from '../src/generated/prisma/enums.js'
 import { sha256 } from '../src/utils/hash.js';
 
 // Where an eval corpus lives: one system user, a workspace per dataset and variant (with and
-// without contextual retrieval) and the sources listed in datasets/corpus.json. The runner
-// reads it with loadCorpus; `pnpm evals:corpus` builds it.
+// without contextual retrieval, and `gate`: the sources CI can build, without the book) and
+// the sources listed in datasets/corpus.json. The runner reads it with loadCorpus;
+// `pnpm evals:corpus` builds it.
 
-export type CorpusVariant = 'context' | 'nocontext';
-export const CORPUS_VARIANTS = ['context', 'nocontext'] as const;
+export const CORPUS_VARIANTS = ['context', 'nocontext', 'gate'] as const;
+export type CorpusVariant = (typeof CORPUS_VARIANTS)[number];
 
 export const EVAL_USER_EMAIL = 'eval@codebook.local';
 
@@ -23,7 +24,8 @@ export type SourceKey = (typeof SOURCE_KEYS)[number];
 // `title` is the title the source ends up with (a web page's <title>, the service's name for
 // a repository). It is part of every embedding input, so it must match the copy the caches
 // were filled from. `variants` leaves a source out of a variant: the book without contexts
-// would need all its chunks embedded again, most of a day's free quota.
+// would need all its chunks embedded again, most of a day's free quota, and the book is never
+// committed, so the CI gate can't have it.
 const common = {
   sourceKey: z.enum(SOURCE_KEYS),
   title: z.string().trim().min(1).max(200),
@@ -88,10 +90,14 @@ export function sourcesFor(spec: CorpusSpec, variant: CorpusVariant) {
 }
 
 export function workspaceName(dataset: string, variant: CorpusVariant) {
-  return variant === 'context' ? `eval-${dataset}` : `eval-${dataset}-nocontext`;
+  return variant === 'context' ? `eval-${dataset}` : `eval-${dataset}-${variant}`;
 }
 
-/** Changes whenever the corpus or the way it is ingested changes; every run records it. */
+/**
+ * Changes whenever the variant's sources or the way they are ingested change; every run
+ * records it. Only the variant's own sources count, without their `variants` lists: the
+ * gate's version doesn't move when the book does, and adding a variant moves no other.
+ */
 export function corpusVersion(spec: CorpusSpec, variant: CorpusVariant) {
   const { version, graph, website, repo } = appConfig.ingestion;
   const versions = {
@@ -100,7 +106,11 @@ export function corpusVersion(spec: CorpusSpec, variant: CorpusVariant) {
     website: website.version,
     scanner: repo.scannerVersion,
   };
-  return sha256(JSON.stringify(spec), variant, JSON.stringify(versions)).slice(0, 16);
+  const sources = {
+    dataset: spec.dataset,
+    sources: sourcesFor(spec, variant).map(({ variants: _, ...source }) => source),
+  };
+  return sha256(JSON.stringify(sources), variant, JSON.stringify(versions)).slice(0, 16);
 }
 
 /** The URL as the sources service stores it (no fragment). */
@@ -215,7 +225,7 @@ export async function loadCorpus(dataset: string, variant: CorpusVariant): Promi
   const workspace =
     user && (await prismaClient.workspace.findFirst({ where: { userId: user.id, name } }));
   if (!user || !workspace) {
-    const flag = variant === 'nocontext' ? ' -- --no-context' : '';
+    const flag = variant === 'context' ? '' : ` -- --variant ${variant}`;
     throw new Error(`No eval workspace "${name}": run pnpm evals:corpus${flag} first`);
   }
 

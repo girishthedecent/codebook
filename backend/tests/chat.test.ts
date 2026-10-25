@@ -120,7 +120,7 @@ describe('chat turns', () => {
       content: text,
       status: 'COMPLETE',
       model: `google/${PRIMARY}`,
-      promptVersion: 'agent-system@v1',
+      promptVersion: 'agent-system@v2',
       invalidCitations: 0,
       tokensIn: 200,
       tokensOut: 40,
@@ -319,5 +319,107 @@ describe('chat turns', () => {
     const second = JSON.stringify(models[PRIMARY]!.doStreamCalls[1]!.prompt);
     expect(second).toContain('Salts are random data.');
     expect(second).not.toContain('[1]');
+  });
+});
+
+describe('turn options', () => {
+  const run = async (
+    options: Parameters<typeof runTurnService>[3],
+    user: { id: string; isSystem?: boolean } = { id: alice.userId },
+  ) => {
+    const turn = await prepareTurnService(user, conversationId, 'What is a salt?');
+    return runTurnService(turn, () => {}, new AbortController().signal, options);
+  };
+
+  it('static RAG searches once with the question, then answers without tools', async () => {
+    const models = play([{ text: 'A salt is random data mixed into each password [1].' }]);
+
+    const outcome = await run({ experiment: { staticRag: true } });
+
+    expect(outcome).toMatchObject({ status: 'COMPLETE', forcedFinal: false, steps: 2 });
+    expect(outcome.toolCalls).toEqual([
+      expect.objectContaining({
+        step: 1,
+        tool: 'search_sources',
+        args: { query: 'What is a salt?' },
+      }),
+    ]);
+    expect(outcome.passages).toHaveLength(1);
+    expect(outcome.citations).toEqual([expect.objectContaining({ n: 1, valid: true })]);
+    const calls = models[PRIMARY]!.doStreamCalls;
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.tools ?? []).toHaveLength(0);
+    expect(JSON.stringify(calls[0]!.prompt)).toContain('<tool_result tool=\\"search_sources\\"');
+  });
+
+  it('gives the agent only the listed tools and pins one model without a fallback', async () => {
+    const models = play([apiError(400)], [{ text: 'unused' }]);
+
+    const outcome = await run({
+      experiment: { tools: ['search_code', 'read_source'], models: [textRoutes.agent.primary] },
+    });
+
+    expect(outcome.status).toBe('ERROR');
+    expect(models[FALLBACK]!.doStreamCalls).toHaveLength(0);
+    const names = (models[PRIMARY]!.doStreamCalls[0]!.tools ?? []).map((tool) => tool.name);
+    expect(names).toEqual(['search_code', 'read_source']);
+    await expect(run({ experiment: { tools: ['no_such_tool'] } })).rejects.toThrow('no_such_tool');
+  });
+
+  it('renders the chosen prompt version and saves it on the answer', async () => {
+    const models = play([{ text: 'Salts are random data.' }]);
+
+    const outcome = await run({ experiment: { promptId: 'agent-system@v3' } });
+
+    expect(outcome.promptId).toBe('agent-system@v3');
+    expect(JSON.stringify(models[PRIMARY]!.doStreamCalls[0]!.prompt)).toContain(
+      'Before the first call',
+    );
+    const [saved] = await answers();
+    expect(saved!.promptVersion).toBe('agent-system@v3');
+  });
+
+  it('lets the eval user past the daily budget and sends no after-turn event for it', async () => {
+    play([{ text: 'Salts are random data.' }]);
+    await prismaClient.usageEvent.create({
+      data: {
+        userId: alice.userId,
+        type: 'LLM',
+        task: 'agent',
+        provider: 'google',
+        model: PRIMARY,
+        tokensIn: appConfig.limits.dailyTokensPerUser,
+        tokensOut: 0,
+        costUsd: 0,
+        latencyMs: 1,
+        ok: true,
+      },
+    });
+
+    await expect(
+      prepareTurnService({ id: alice.userId }, conversationId, 'What is a salt?'),
+    ).rejects.toMatchObject({ statusCode: 429 });
+    const outcome = await run({}, { id: alice.userId, isSystem: true });
+
+    expect(outcome.status).toBe('COMPLETE');
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('marks both messages of a useMemory=false turn as off limits to memory', async () => {
+    play([{ text: 'Salts are random data.' }]);
+
+    await alice.agent
+      .post(`/api/v1/conversations/${conversationId}/messages`)
+      .send({ content: 'What is a salt?', useMemory: false })
+      .buffer(true);
+
+    const messages = await prismaClient.message.findMany({
+      where: { conversationId },
+      orderBy: { createdAt: 'asc' },
+    });
+    expect(messages.map(({ role, memoryOff }) => ({ role, memoryOff }))).toEqual([
+      { role: 'USER', memoryOff: true },
+      { role: 'ASSISTANT', memoryOff: true },
+    ]);
   });
 });

@@ -1,0 +1,10 @@
+{
+  "name": "model-gpt-oss-120b-6k5",
+  "description": "Model comparison: gpt-oss-120b on Groq, 6,500-token steps. Groq's free 8K tokens a minute allow about one step a minute.",
+  "model": {
+    "provider": "groq",
+    "model": "openai/gpt-oss-120b"
+  },
+  "maxInputTokens": 6500,
+  "gapMs": 180000
+}

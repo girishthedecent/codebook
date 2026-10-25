@@ -1,0 +1,4 @@
+{
+  "name": "adaptive-agent",
+  "description": "The chat agent with every tool but web search, on the agent route's primary model."
+}

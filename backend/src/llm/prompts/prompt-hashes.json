@@ -5,11 +5,18 @@
   "hyde@v1": "d4a6e18b72bd70f1",
   "decompose@v1": "17bace7a6d1813b3",
   "agent-system@v1": "970c45cf873f48ed",
+  "agent-system@v2": "efc19a1a027b2c6e",
+  "agent-system@v3": "ca8986a098576c5f",
   "title@v1": "d9df9fb2feb400d0",
   "summarize-conversation@v1": "05d4408bda55c112",
   "study-quiz@v1": "a7728de4ddf8ea58",
   "study-flashcards@v1": "dcf921fa34b87d1f",
   "study-mindmap@v1": "721b0101a366b818",
   "study-summary@v1": "6ab0a12f5fb3ce50",
-  "study-condense@v1": "347f992cd6cb54e0"
+  "study-condense@v1": "347f992cd6cb54e0",
+  "memory-extract@v1": "12f29cae89754a09",
+  "judge-correctness@v1": "ec8b321fd3071780",
+  "judge-grounding@v1": "e64720ec86c347cd",
+  "long-context-answer@v1": "24a3a48f60cba929",
+  "eval-synth-question@v1": "301bebf68b8e4fe2"
 }
