@@ -1,0 +1,53 @@
+@base = http://localhost:4000
+@origin = http://localhost:4000
+
+# The demo is built by `pnpm db:seed -- --demo`.
+
+### What the demo holds (no session needed)
+# @name demo
+GET {{base}}/api/v1/demo
+
+###
+@workspaceId = {{demo.response.body.data.workspace.id}}
+@sourceId = {{demo.response.body.data.sources[0].id}}
+
+### Sign in as a guest (REST Client keeps the session cookie; capped per IP)
+POST {{base}}/api/auth/sign-in/anonymous
+Content-Type: application/json
+Origin: {{origin}}
+
+{}
+
+### Who am I (isGuest: true)
+GET {{base}}/api/v1/me
+
+### Start a conversation in the demo
+# @name conversation
+POST {{base}}/api/v1/workspaces/{{workspaceId}}/conversations
+Content-Type: application/json
+
+{ "title": "Demo questions" }
+
+###
+@conversationId = {{conversation.response.body.data.id}}
+
+### Ask (streams SSE; guests get a few messages a day per IP)
+POST {{base}}/api/v1/conversations/{{conversationId}}/messages
+Content-Type: application/json
+
+{ "content": "How does leader-based replication handle a failed follower?" }
+
+### A book page: visitors get a short excerpt (excerpt: true)
+GET {{base}}/api/v1/sources/{{sourceId}}/content?page=160
+
+### Search: hits are cut to snippets, no parent sections
+POST {{base}}/api/v1/workspaces/{{workspaceId}}/search
+Content-Type: application/json
+
+{ "query": "replication lag", "mode": "keyword" }
+
+### Refused for guests (403)
+POST {{base}}/api/v1/workspaces
+Content-Type: application/json
+
+{ "name": "Mine" }

@@ -11,6 +11,13 @@ import { assertTokenBudget } from '../../utils/quotas.js';
 import { checkCitations, normalizeCitations } from '../citations/citationCheck.js';
 import { CitationRegistry } from '../citations/citationRegistry.js';
 import type { CheckedCitation, CitationRef } from '../citations/citations.types.js';
+import {
+  answerCacheKey,
+  findCachedAnswer,
+  storeCachedAnswer,
+  type CachedAnswer,
+} from '../demo/answerCache.js';
+import { excerptOf } from '../demo/excerpt.js';
 import { assertWorkspaceAccess } from '../workspaces/workspace.service.js';
 import {
   runAgent,
@@ -21,7 +28,8 @@ import {
 } from './agent.js';
 import { DEFAULT_AGENT_PROMPT } from '../../llm/prompts/agentSystem.js';
 import { buildAgentContext, type AgentPromptId } from './context.js';
-import { findConversationForUser } from './conversation.repository.js';
+import { findConversationForUser, replaceDefaultTitle } from './conversation.repository.js';
+import { DEFAULT_TITLE } from './conversation.service.js';
 import { agentTools } from './tools/index.js';
 
 export type TurnEvent =
@@ -186,6 +194,21 @@ export async function runTurnService(
   let result: AgentResult | undefined;
   const progress: AgentProgress = { toolCalls: [] };
 
+  // Demo visitors' first questions: a repeat is answered from the cache, without the model.
+  let cacheKey: string | null = null;
+  let cached: CachedAnswer | null = null;
+  try {
+    cacheKey = options.experiment ? null : await answerCacheKey(turn, useMemory);
+    cached = cacheKey ? await findCachedAnswer(cacheKey) : null;
+  } catch (error) {
+    // The cache only saves model calls; without it the agent answers as usual.
+    logger.warn('Could not look up the demo answer cache', {
+      error,
+      workspaceId: turn.workspace.id,
+    });
+  }
+  if (cached) return replayCachedAnswer(turn, cached, messageId, emit, started);
+
   try {
     const context = await buildAgentContext({
       workspace: turn.workspace,
@@ -278,6 +301,16 @@ export async function runTurnService(
     invalidCitations: report.invalid,
     result,
   });
+  if (cacheKey) {
+    await storeCachedAnswer(cacheKey, turn.workspace.id, {
+      content: answer,
+      citations: report.citations,
+      invalidCitations: report.invalid,
+      model: `${result.model.provider}/${result.model.model}`,
+      promptId,
+      passages: registry.all().map((passage) => passage.text),
+    });
+  }
   emit({ type: 'done', messageId, usage, latencyMs });
 
   // Eval turns would spend the quota of the models being measured on titles and summaries.
@@ -299,6 +332,57 @@ export async function runTurnService(
     usage,
     latencyMs,
     firstTokenMs: result.firstTokenMs,
+    error: null,
+  };
+}
+
+const TITLE_FROM_QUESTION_CHARS = 60;
+
+/**
+ * Sends a cached answer the way a live one streams (text, citations, done) and saves it as
+ * this conversation's answer. No model runs at all, so turn.completed isn't sent and the
+ * conversation is named after the question instead of by the title model.
+ */
+async function replayCachedAnswer(
+  turn: PreparedTurn,
+  cached: CachedAnswer,
+  messageId: string,
+  emit: (event: TurnEvent) => void,
+  started: number,
+): Promise<TurnOutcome> {
+  emit({ type: 'token', text: cached.content });
+  emit({ type: 'citations', items: cached.citations });
+  const latencyMs = Math.round(performance.now() - started);
+  const usage = await saveAnswer(turn, messageId, cached.promptId, {
+    content: cached.content,
+    memoryOff: true,
+    status: 'COMPLETE',
+    latencyMs,
+    citations: cached.citations,
+    modelName: cached.model,
+  });
+  emit({ type: 'done', messageId, usage, latencyMs });
+  await replaceDefaultTitle(
+    turn.conversation.id,
+    DEFAULT_TITLE,
+    excerptOf(turn.question, TITLE_FROM_QUESTION_CHARS).text,
+  );
+  return {
+    messageId,
+    status: 'COMPLETE',
+    answer: cached.content,
+    citations: cached.citations,
+    passages: [],
+    toolCalls: [],
+    model: null,
+    promptId: cached.promptId,
+    steps: 0,
+    forcedFinal: false,
+    fallbackUsed: false,
+    weakRetrieval: false,
+    usage,
+    latencyMs,
+    firstTokenMs: null,
     error: null,
   };
 }
@@ -330,11 +414,14 @@ async function saveAnswer(
     // A failed turn's progress, when there is no result.
     toolCalls?: unknown[];
     model?: ModelRef;
+    // A cached answer's model, as it was saved.
+    modelName?: string | null;
   },
 ) {
   const usage = await turnUsage(messageId);
   const { result } = answer;
   const model = result?.model ?? answer.model;
+  const modelName = model ? `${model.provider}/${model.model}` : (answer.modelName ?? null);
   await prismaClient.message.create({
     data: {
       id: messageId,
@@ -346,7 +433,7 @@ async function saveAnswer(
       error: answer.error,
       citations: (answer.citations ?? []) as Prisma.InputJsonValue,
       toolCalls: (result?.toolCalls ?? answer.toolCalls ?? []) as Prisma.InputJsonValue,
-      model: model ? `${model.provider}/${model.model}` : null,
+      model: modelName,
       promptVersion: promptId,
       tokensIn: usage.tokensIn,
       tokensOut: usage.tokensOut,

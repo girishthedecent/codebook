@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { appConfig } from '../../../config/app.config.js';
+import { excerptOf } from '../../demo/excerpt.js';
 import { countLines } from '../../ingestion/code/lines.js';
 import { findFile, findPageText, findTocSection } from '../../sources/sourceContent.repository.js';
 import type { AgentTool, ToolResult } from './tool.types.js';
@@ -26,6 +27,12 @@ type Args = z.infer<typeof input>;
 
 // Pages of a book are joined by \f.
 const pageBreaks = (text: string) => text.split('\f').length - 1;
+
+// Only the demo's owner reads its book in full (see demo/excerpt.ts).
+const excerptsOnly = (source: ToolSourceRow, ctx: Parameters<AgentTool['execute']>[1]) =>
+  source.type === 'PDF' && !ctx.isOwner;
+const EXCERPT_NOTE =
+  '\nThis is the public demo: a book is only shown as short excerpts, here and in search results. Search for the specific point with search_sources rather than reading pages.';
 
 async function readLines(
   source: ToolSourceRow,
@@ -90,6 +97,7 @@ async function readPages(
   out: ToolText,
   ctx: Parameters<AgentTool['execute']>[1],
 ): Promise<ToolResult> {
+  if (excerptsOnly(source, ctx)) return readPageExcerpt(source, args.page, out, ctx);
   const last = Math.min(args.pageEnd ?? args.page, args.page + maxPages - 1);
   const pages: string[] = [];
   for (let p = args.page; p <= last; p++) {
@@ -132,8 +140,22 @@ async function readSection(
       summary: 'no such section',
     };
 
-  const { text, cut } = cutToTokens(section.text, maxTokens);
   const title = `${section.number ? `${section.number} ` : ''}${section.title}`;
+  if (excerptsOnly(source, ctx)) {
+    const n = out.addSource(ctx.registry, {
+      kind: 'PAGES',
+      sourceId: source.id,
+      sourceTitle: source.title,
+      sourceType: source.type,
+      heading: title,
+      pageStart: section.pageStart ?? undefined,
+      pageEnd: section.pageStart ?? undefined,
+      text: excerptOf(section.text.replaceAll('\f', '\n')).text,
+    });
+    return { text: out.join() + EXCERPT_NOTE, summary: `${title} (excerpt) [${n}]` };
+  }
+
+  const { text, cut } = cutToTokens(section.text, maxTokens);
   const pageEnd =
     cut && section.pageStart !== null ? section.pageStart + pageBreaks(text) : section.pageEnd;
   const n = out.addSource(ctx.registry, {
@@ -150,6 +172,30 @@ async function readSection(
     ? `\nOnly the start of the section fits; read its later pages with page/pageEnd${section.pageEnd ? ` (it ends on p. ${section.pageEnd})` : ''}, or open a subsection.`
     : '';
   return { text: out.join() + note, summary: `${title} [${n}]` };
+}
+
+async function readPageExcerpt(
+  source: ToolSourceRow,
+  page: number,
+  out: ToolText,
+  ctx: Parameters<AgentTool['execute']>[1],
+): Promise<ToolResult> {
+  const text = await findPageText(source.id, page);
+  if (text === null)
+    return { text: `"${source.title}" has no page ${page}.`, summary: 'no such page' };
+  const n = out.addSource(ctx.registry, {
+    kind: 'PAGES',
+    sourceId: source.id,
+    sourceTitle: source.title,
+    sourceType: source.type,
+    pageStart: page,
+    pageEnd: page,
+    text: excerptOf(text).text,
+  });
+  return {
+    text: out.join() + EXCERPT_NOTE,
+    summary: `${source.title} p. ${page} (excerpt) [${n}]`,
+  };
 }
 
 export const readSource: AgentTool<typeof input> = {

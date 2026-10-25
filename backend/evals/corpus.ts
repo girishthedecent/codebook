@@ -1,19 +1,15 @@
-import { existsSync } from 'node:fs';
-import { stat, writeFile } from 'node:fs/promises';
-import { setTimeout as sleep } from 'node:timers/promises';
 import { parseArgs } from 'node:util';
 import prismaClient from '../src/config/db.config.js';
-import { serverConfig } from '../src/config/index.js';
-import type { Source } from '../src/generated/prisma/client.js';
+import { resyncSourceService } from '../src/modules/sources/source.service.js';
 import {
-  createPdfSourceService,
-  createSourceService,
-  resyncSourceService,
-} from '../src/modules/sources/source.service.js';
-import { ConflictError } from '../src/utils/errors/app.error.js';
-import { getObjectBuffer } from '../src/utils/storage.js';
+  assertNoModelCalls,
+  checkServices,
+  createCorpusSource,
+  CorpusError,
+  fail,
+  waitForSources,
+} from './corpusIngest.js';
 import {
-  bookPath,
   CORPUS_VARIANTS,
   corpusVersion,
   ensureEvalUser,
@@ -24,7 +20,6 @@ import {
   loadCorpusSpec,
   localPdfKey,
   sourcesFor,
-  type CorpusSource,
   type CorpusVariant,
 } from './corpusWorkspace.js';
 
@@ -37,9 +32,6 @@ import {
 // and resyncs failed sources. --require-cached (CI, after loading the committed cache file)
 // fails as soon as the ingest makes any model or embedding call: everything must come from
 // the caches, so a stale cache file shows up as an error, never as quota spent.
-
-const POLL_MS = 5_000;
-const TIMEOUT_MS = 60 * 60 * 1000;
 
 async function main() {
   const { values } = parseArgs({
@@ -67,7 +59,7 @@ async function main() {
   }
 
   const spec = loadCorpusSpec(dataset);
-  await checkServices();
+  await checkServices('evals:corpus');
 
   const user = await ensureEvalUser();
   const workspace = await ensureEvalWorkspace(user.id, dataset, variant);
@@ -113,7 +105,7 @@ async function main() {
   const sourceIds: Record<string, string> = {};
   for (const { entry, row } of plan) {
     if (!row) {
-      const source = await createSource(user.id, workspace.id, entry);
+      const source = await createCorpusSource(user.id, workspace.id, entry);
       console.log(`${entry.sourceKey}: created "${source.title}"`);
       sourceIds[entry.sourceKey] = source.id;
     } else {
@@ -144,139 +136,6 @@ async function main() {
   }
   if (!ok) process.exitCode = 1;
 }
-
-/** Both servers must be up: the API runs the ingest steps Inngest calls. */
-async function checkServices() {
-  if (!serverConfig.INNGEST_DEV) {
-    fail('evals:corpus runs against the local dev setup (INNGEST_DEV=1)');
-  }
-  const api = new URL('/api/v1/health/ready', serverConfig.APP_URL).href;
-  const inngest = serverConfig.INNGEST_BASE_URL ?? 'http://localhost:8288';
-  if (!(await reachable(api))) fail(`The dev server isn't answering at ${api}: run pnpm dev`);
-  if (!(await reachable(inngest))) {
-    fail(`The Inngest dev server isn't answering at ${inngest}: run docker compose up -d`);
-  }
-}
-
-async function reachable(url: string) {
-  try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(3_000) });
-    return res.ok;
-  } catch {
-    return false;
-  }
-}
-
-async function createSource(userId: string, workspaceId: string, entry: CorpusSource) {
-  try {
-    switch (entry.type) {
-      case 'PDF': {
-        const path = await bookFile(entry, userId);
-        const { size } = await stat(path);
-        return await createPdfSourceService(
-          userId,
-          workspaceId,
-          { path, originalName: entry.location.file, size },
-          { title: entry.title },
-        );
-      }
-      case 'GITHUB_REPO':
-        return await createSourceService(userId, workspaceId, {
-          type: entry.type,
-          ...entry.location,
-        });
-      case 'WEBSITE':
-        return await createSourceService(userId, workspaceId, {
-          type: entry.type,
-          ...entry.location,
-        });
-    }
-  } catch (error) {
-    if (error instanceof ConflictError) {
-      fail(`${entry.sourceKey}: ${error.message} (another run of this script?)`);
-    }
-    throw error;
-  }
-}
-
-/**
- * The book's file in evals/corpus/. When it isn't there yet, it is copied from storage, from
- * the copy uploaded as a normal source; the folder is gitignored.
- */
-async function bookFile(entry: Extract<CorpusSource, { type: 'PDF' }>, evalUserId: string) {
-  const path = bookPath(entry);
-  if (existsSync(path)) return path;
-
-  // No local file to hash: an upload of the same file name or title.
-  const uploads = await prismaClient.source.findMany({
-    where: { type: 'PDF', workspace: { userId: { not: evalUserId } } },
-    select: { type: true, title: true, origin: true },
-  });
-  const upload = uploads.find((row) => isSpecSource(entry, row));
-  const storageKey = (upload?.origin as { storageKey?: string | null } | undefined)?.storageKey;
-  const file = storageKey ? await getObjectBuffer(storageKey) : null;
-  if (!file) fail(`Put the book at evals/corpus/${entry.location.file}`);
-
-  await writeFile(path, file);
-  console.log(`Copied ${entry.location.file} from storage into evals/corpus/`);
-  return path;
-}
-
-/** Fails once the eval user's ingest has tried a model or embedding call since `since`. */
-async function assertNoModelCalls(userId: string, since: Date) {
-  const calls = await prismaClient.usageEvent.groupBy({
-    by: ['task'],
-    where: { userId, type: { in: ['LLM', 'EMBEDDING'] }, createdAt: { gte: since } },
-    _count: true,
-  });
-  if (calls.length === 0) return;
-  const list = calls.map((row) => `${row._count} ${row.task}`).join(', ');
-  fail(
-    `The ingest called a model (${list}) although --require-cached was given: the cache ` +
-      'file is out of date. Export it again where the corpus is built and commit it.',
-  );
-}
-
-async function waitForSources(sourceIds: Record<string, string>, check?: () => Promise<void>) {
-  const started = Date.now();
-  let last = '';
-  for (;;) {
-    const rows = await prismaClient.source.findMany({
-      where: { id: { in: Object.values(sourceIds) } },
-    });
-    const byKey: Record<string, Source> = {};
-    for (const [key, id] of Object.entries(sourceIds)) {
-      const row = rows.find((candidate) => candidate.id === id);
-      if (!row) fail(`${key} was deleted while ingesting`);
-      byKey[key] = row;
-    }
-
-    const line = Object.entries(byKey)
-      .map(([key, row]) =>
-        row.status === 'PROCESSING'
-          ? `${key} ${row.stage} ${row.progress}%`
-          : `${key} ${row.status}`,
-      )
-      .join(' · ');
-    if (line !== last) {
-      console.log(`${new Date().toISOString().slice(11, 19)} ${line}`);
-      last = line;
-    }
-
-    // After reading the statuses, so a call made just before the last one isn't missed.
-    await check?.();
-    const rowsNow = Object.values(byKey);
-    if (rowsNow.every((row) => row.status === 'READY' || row.status === 'FAILED')) return byKey;
-    if (Date.now() - started > TIMEOUT_MS) fail('Still ingesting after an hour; check Inngest');
-    await sleep(POLL_MS);
-  }
-}
-
-function fail(message: string): never {
-  throw new CorpusError(message);
-}
-
-class CorpusError extends Error {}
 
 try {
   await main();

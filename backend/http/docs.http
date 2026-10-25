@@ -1,0 +1,10 @@
+@base = http://localhost:4000
+
+### The OpenAPI 3.1 document
+GET {{base}}/openapi.json
+
+### Swagger UI (open in a browser; /docs redirects here)
+GET {{base}}/docs/
+
+### Swagger UI's settings, pointed at /openapi.json
+GET {{base}}/docs/swagger-ui-init.js

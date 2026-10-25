@@ -61,17 +61,23 @@ export async function usagePerDay(from: Date, to: Date) {
       SELECT generate_series(date_trunc('day', b."from"), b."to" - interval '1 millisecond',
                              interval '1 day') AS day
       FROM bounds b
+    ), totals AS (
+      -- One pass over the range; joining each day to the events would compare every
+      -- day with every event.
+      SELECT date_trunc('day', u."createdAt") AS day, count(*) AS calls,
+        sum(u."tokensIn") AS "tokensIn", sum(u."tokensOut") AS "tokensOut",
+        sum(u."costUsd") AS "costUsd"
+      FROM "UsageEvent" u, bounds b
+      WHERE u."createdAt" >= b."from" AND u."createdAt" < b."to"
+      GROUP BY 1
     )
     SELECT to_char(d.day, 'YYYY-MM-DD') AS day,
-      count(u.id)::int AS calls,
-      coalesce(sum(u."tokensIn"), 0)::int AS "tokensIn",
-      coalesce(sum(u."tokensOut"), 0)::int AS "tokensOut",
-      trim_scale(coalesce(sum(u."costUsd"), 0))::text AS "costUsd"
-    FROM days d CROSS JOIN bounds b
-    LEFT JOIN "UsageEvent" u
-      ON u."createdAt" >= greatest(d.day, b."from")
-     AND u."createdAt" < least(d.day + interval '1 day', b."to")
-    GROUP BY d.day
+      coalesce(t.calls, 0)::int AS calls,
+      coalesce(t."tokensIn", 0)::int AS "tokensIn",
+      coalesce(t."tokensOut", 0)::int AS "tokensOut",
+      trim_scale(coalesce(t."costUsd", 0))::text AS "costUsd"
+    FROM days d
+    LEFT JOIN totals t ON t.day = d.day
     ORDER BY d.day
   `;
 }

@@ -1,6 +1,8 @@
 import { appConfig } from '../../config/app.config.js';
 import { countLines } from '../ingestion/code/lines.js';
 import { BadRequestError, NotFoundError } from '../../utils/errors/app.error.js';
+import { assertWithinLimit } from '../../utils/rateLimit.js';
+import { excerptOf } from '../demo/excerpt.js';
 import type { ListFilesQuery, SourceContentQuery } from './source.dto.js';
 import { getSourceService } from './source.service.js';
 import {
@@ -39,12 +41,19 @@ export async function listFilesService(userId: string, sourceId: string, query: 
   return listDocuments(sourceId, query);
 }
 
+/**
+ * A page, section or line range of a source. A book in the demo workspace is read by its
+ * visitors as short excerpts, and only so many a day per IP.
+ */
 export async function getContentService(
   userId: string,
   sourceId: string,
   query: SourceContentQuery,
+  clientIp: string | undefined,
 ) {
   const source = await getSourceService(userId, sourceId);
+  const excerpt = source.type === 'PDF' && source.workspace.userId !== userId;
+  if (excerpt) await assertWithinLimit('demoContent', `ip:${clientIp ?? 'unknown'}`);
 
   if (query.path !== undefined) {
     // A book is one document of \f-joined pages; its "lines" would mean nothing. Repository
@@ -60,13 +69,17 @@ export async function getContentService(
   if (query.page !== undefined) {
     const text = await findPageText(sourceId, query.page);
     if (text === null) throw new NotFoundError('Page not found');
-    return { page: query.page, text };
+    return { page: query.page, ...shown(text, excerpt) };
   }
 
   const section = await findTocSection(sourceId, query.tocNodeId!);
   if (!section) throw new NotFoundError('Section not found');
   const { text, ...tocNode } = section;
-  return { tocNode, text: text.replaceAll('\f', '\n') };
+  return { tocNode, ...shown(text.replaceAll('\f', '\n'), excerpt) };
+}
+
+function shown(text: string, excerpt: boolean) {
+  return excerpt ? { text: excerptOf(text).text, excerpt: true } : { text };
 }
 
 /** Lines `from`…`to` of a file or page (1-based, inclusive), at most `maxLines` of them. */

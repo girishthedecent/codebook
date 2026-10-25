@@ -38,14 +38,22 @@ async function sourcesList(workspaceId: string) {
     .join('\n');
 }
 
-/** The template's preferred tools, as one line of the tool guide. */
-function workspaceHint(workspace: Workspace, available: ReadonlySet<string>) {
+// Visitors of the demo (everyone but its owner): its book is copyrighted.
+const DEMO_HINT =
+  '- This is the public demo workspace: quote at most two short lines from a source, and summarize instead of copying longer passages.';
+
+/** The template's preferred tools, and on the demo how much to quote, as tool guide lines. */
+function workspaceHint(workspace: Workspace, userId: string, available: ReadonlySet<string>) {
   const settings = workspace.settings as { preferredTools?: unknown } | null;
   const preferred = Array.isArray(settings?.preferredTools)
     ? settings.preferredTools.filter((name): name is string => typeof name === 'string')
     : [];
   const known = preferred.filter((name) => available.has(name));
-  return known.length > 0 ? `- In this workspace, start with ${known.join(' or ')}.` : '';
+  const lines = [
+    known.length > 0 ? `- In this workspace, start with ${known.join(' or ')}.` : '',
+    workspace.isDemo && workspace.userId !== userId ? DEMO_HINT : '',
+  ];
+  return lines.filter(Boolean).join('\n');
 }
 
 /**
@@ -110,7 +118,7 @@ export async function buildAgentContext(input: ContextInput) {
   const available = new Set(input.toolNames ?? toolNames);
   const system = fitToolGuide(
     prompt.render({
-      workspaceHint: workspaceHint(input.workspace, available),
+      workspaceHint: workspaceHint(input.workspace, input.userId, available),
       sources,
       memory,
       summary: summary?.trim() || '(none)',

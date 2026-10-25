@@ -1,3 +1,4 @@
+import { APIError } from 'better-auth/api';
 import express from 'express';
 import request from 'supertest';
 import { describe, expect, it, vi } from 'vitest';
@@ -56,6 +57,24 @@ describe('genericErrorHandler', () => {
     const dup = await post(prismaError('P2002'));
     expect(dup.status).toBe(409);
     expect(dup.body.code).toBe('CONFLICT');
+  });
+
+  it("keeps a better-auth APIError's 4xx status and message", async () => {
+    const res = await post(
+      new APIError('UNPROCESSABLE_ENTITY', { message: 'User already exists' }),
+    );
+    expect(res.status).toBe(422);
+    expect(res.body).toMatchObject({ code: 'VALIDATION_ERROR', message: 'User already exists' });
+
+    const forbidden = await post(new APIError('FORBIDDEN', { message: 'Not yours' }));
+    expect(forbidden.status).toBe(403);
+    expect(forbidden.body.code).toBe('FORBIDDEN');
+  });
+
+  it('keeps a better-auth APIError of 5xx a hidden 500', async () => {
+    const res = await post(new APIError('INTERNAL_SERVER_ERROR', { message: 'db password wrong' }));
+    expect(res.status).toBe(500);
+    expect(JSON.stringify(res.body)).not.toContain('password');
   });
 
   it('hides the message of unexpected errors', async () => {

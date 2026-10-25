@@ -1,5 +1,6 @@
 import { betterAuth } from 'better-auth';
 import { prismaAdapter } from 'better-auth/adapters/prisma';
+import { anonymous } from 'better-auth/plugins';
 import prismaClient from './db.config.js';
 import { serverConfig } from './index.js';
 import logger from './logger.config.js';
@@ -29,6 +30,35 @@ export const auth = betterAuth({
   session: {
     expiresIn: 7 * DAY,
     updateAge: DAY,
+  },
+
+  // Guests of the demo workspace: one account per visit, no email or password.
+  plugins: [
+    anonymous({
+      emailDomainName: 'guest.codebook.invalid',
+      generateName: () => 'Guest',
+      // A guest who signs up keeps their demo conversations; the plugin then deletes the
+      // guest account.
+      onLinkAccount: async ({ anonymousUser, newUser }) => {
+        await prismaClient.conversation.updateMany({
+          where: { userId: anonymousUser.user.id },
+          data: { userId: newUser.user.id },
+        });
+      },
+    }),
+  ],
+
+  databaseHooks: {
+    user: {
+      create: {
+        // isGuest is what the rest of the app checks; the plugin only knows isAnonymous.
+        before: async (user) => {
+          if ((user as { isAnonymous?: boolean }).isAnonymous) {
+            return { data: { ...user, isGuest: true } };
+          }
+        },
+      },
+    },
   },
 
   user: {

@@ -25,9 +25,16 @@ describe('email sign-up / sign-in', () => {
     expect(me.status).toBe(200);
     expect(me.body).toMatchObject({
       success: true,
-      data: { email: 'reader@example.com', name: 'Test Reader', image: null },
+      data: { email: 'reader@example.com', name: 'Test Reader', image: null, isGuest: false },
     });
-    expect(Object.keys(me.body.data).sort()).toEqual(['createdAt', 'email', 'id', 'image', 'name']);
+    expect(Object.keys(me.body.data).sort()).toEqual([
+      'createdAt',
+      'email',
+      'id',
+      'image',
+      'isGuest',
+      'name',
+    ]);
   });
 
   it('ignores isGuest / isSystem sent in the sign-up body', async () => {

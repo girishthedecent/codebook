@@ -11,7 +11,9 @@ import { attachClientIpMiddleware } from './middlewares/clientIp.middleware.js';
 import { attachCorrelationIdMiddleware } from './middlewares/correlation.middleware.js';
 import { genericErrorHandler, notFoundHandler } from './middlewares/error.middleware.js';
 import { requireTrustedOrigin } from './middlewares/origin.middleware.js';
+import { limit, perIp } from './middlewares/rateLimit.middleware.js';
 import { requestLoggerMiddleware } from './middlewares/requestLogger.middleware.js';
+import { docsRouter } from './openapi/docs.router.js';
 import v1Router from './routers/v1/index.router.js';
 
 export function createApp() {
@@ -32,6 +34,8 @@ export function createApp() {
   );
   app.use(attachClientIpMiddleware);
 
+  // A new guest account per call, so they are capped per IP ahead of better-auth.
+  app.post('/api/auth/sign-in/anonymous', limit('guestSignIn', perIp));
   // Before express.json(): better-auth gets the body as text, not parsed JSON.
   app.all('/api/auth/*splat', readAuthBody, authHandler);
 
@@ -45,6 +49,7 @@ export function createApp() {
 
   app.use(express.json({ limit: appConfig.http.jsonLimit }));
   app.use('/api/v1', requireTrustedOrigin, v1Router);
+  app.use(docsRouter);
 
   app.use(notFoundHandler);
   app.use(genericErrorHandler);

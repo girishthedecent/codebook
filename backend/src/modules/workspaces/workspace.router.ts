@@ -7,6 +7,7 @@ import {
   validateRequestParams,
 } from '../../middlewares/validator.middleware.js';
 import { workspaceConversationsRouter } from '../chat/conversation.router.js';
+import { forbidGuests } from '../demo/demo.middleware.js';
 import { searchHandler } from '../retrieval/retrieval.controller.js';
 import { searchBodySchema } from '../retrieval/retrieval.validator.js';
 import { workspaceSourcesRouter } from '../sources/source.router.js';
@@ -30,7 +31,12 @@ const workspaceRouter = express.Router();
 workspaceRouter.use(requireAuth);
 
 workspaceRouter.get('/', validateQueryParams(listWorkspacesQuerySchema), listWorkspacesHandler);
-workspaceRouter.post('/', validateRequestBody(createWorkspaceSchema), createWorkspaceHandler);
+workspaceRouter.post(
+  '/',
+  forbidGuests('Guests can only use the demo workspace. Sign up to create your own.'),
+  validateRequestBody(createWorkspaceSchema),
+  createWorkspaceHandler,
+);
 
 workspaceRouter.get(
   '/:workspaceId',

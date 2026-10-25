@@ -1885,24 +1885,24 @@ Goal: a public, read-only sample workspace anyone can query as a guest, safely a
 **Prerequisite:** demo content chosen by you (books/repos you add later — see §10).
 
 **16.1 Seed**
-- [ ] `prisma/seed.ts` (`pnpm db:seed -- --demo`): system user (`isSystem`), demo workspace (`isDemo`), sources from `demo.json` spec, ingested via the real pipeline
-- [ ] Idempotent (re-running doesn't duplicate)
+- [x] `prisma/seed.ts` (`pnpm db:seed -- --demo`): system user (`isSystem`), demo workspace (`isDemo`), sources from `demo.json` spec, ingested via the real pipeline — sources picked from the eval corpus spec by `sourceKey` (`prisma/demo.json`), so titles match the caches; stops on any model call unless `--allow-model-calls`; DDIA added only when an indexed copy exists
+- [x] Idempotent (re-running doesn't duplicate)
 
 **16.2 Guest access**
-- [ ] better-auth anonymous sign-in (plugin) → guest user `isGuest=true` (verify plugin availability in installed version; fallback: signed guest cookie issued by `/api/v1/demo/session`)
-- [ ] `GET /api/v1/demo` → demo workspace info + sources (public, no auth)
-- [ ] Guests can: create conversations **in the demo workspace only**, ask questions, read sources/TOC/graph of demo sources
-- [ ] Guests cannot: create workspaces/sources, study tools (or limited: 2/day), memory (disabled for guests)
-- [ ] Demo workspace is read-only for everyone except system user (assert in workspace/source services)
-- [ ] `toAppError` maps better-auth `APIError` (thrown when services call `auth.api.*`) to its 4xx status instead of a 500 (from the M1 review)
+- [x] better-auth anonymous sign-in (plugin) → guest user `isGuest=true` (verify plugin availability in installed version; fallback: signed guest cookie issued by `/api/v1/demo/session`) — plugin keeps its `isAnonymous` column; a `user.create.before` hook sets `isGuest`; `onLinkAccount` moves the guest's conversations; sign-in capped per IP (`guestSignIn`, 5/day) ahead of better-auth
+- [x] `GET /api/v1/demo` → demo workspace info + sources (public, no auth)
+- [x] Guests can: create conversations **in the demo workspace only**, ask questions, read sources/TOC/graph of demo sources
+- [x] Guests cannot: create workspaces/sources, study tools (or limited: 2/day), memory (disabled for guests) — no study at all (403)
+- [x] Demo workspace is read-only for everyone except system user (assert in workspace/source services)
+- [x] `toAppError` maps better-auth `APIError` (thrown when services call `auth.api.*`) to its 4xx status instead of a 500 (from the M1 review)
 
 **16.3 Limits**
-- [ ] Guest message limit per IP + per guest (Phase 15)
-- [ ] Optional cache: identical demo questions within 24h → serve stored answer (exact match on normalized question) to save quota
-- [ ] Guest users + conversations auto-deleted after 7 days (Inngest cron `cleanupGuests`)
+- [x] Guest message limit per IP + per guest (Phase 15) — per IP only (guests are keyed by IP); demo visitors' book reads are excerpts (600 chars on `/content` with `demoContent` 30/day per IP, `read_source`, `search_sources`; 300 per debug-search hit)
+- [x] Optional cache: identical demo questions within 24h → serve stored answer (exact match on normalized question) to save quota — `AnswerCache`, first question of a demo conversation with memory off; key = workspace + normalized question + prompt + sources' ingest state; never stores answers with web/invalid citations or that copy a passage verbatim (~250+ chars); a hit names the conversation from the question
+- [x] Guest users + conversations auto-deleted after 7 days (Inngest cron `cleanupGuests`)
 
 **16.4 Tests**
-- [ ] Guest can ask in demo, cannot write elsewhere, limits enforced, cleanup removes old guests
+- [x] Guest can ask in demo, cannot write elsewhere, limits enforced, cleanup removes old guests
 
 **Done when:** a fresh guest session can ask the demo workspace a question and get a cited answer.
 
@@ -1913,39 +1913,39 @@ Goal: a public, read-only sample workspace anyone can query as a guest, safely a
 Goal: secure, documented, demo-ready backend.
 
 **17.1 Security review checklist**
-- [ ] Every route: auth middleware present (except health, auth, demo, inngest, docs)
-- [ ] Every repository query scoped by user/workspace (grep review + tests per module)
-- [ ] Inngest endpoint signature verification on in non-dev (`INNGEST_SIGNING_KEY`)
-- [ ] SSRF guard used for all outbound user-provided URLs (repo, web)
-- [ ] Upload: size, magic bytes, storage keys not user-controlled
-- [ ] Tarball extraction guards (paths, links, counts, bytes)
-- [ ] Regex DoS guard on `search_code`
-- [ ] Secrets: never logged (test: logger output for an auth request contains no cookie/token), never stored from repos, never in Inngest event payloads
-- [ ] Prompt injection: untrusted blocks escaped; tools re-check scope; agent can't call tools outside workspace
-- [ ] Helmet headers, CORS allowlist, cookie flags (confirm `Secure` on the session cookie with `NODE_ENV=production`)
-- [ ] Known and accepted: sign-up answers 422 for an existing email (better-auth default), so emails can be enumerated; rate limiting is the mitigation without email verification
-- [ ] Dependency audit (`pnpm audit`), lockfile committed
-- [ ] Error responses never include stack traces / SQL
+- [x] Every route: auth middleware present (except health, auth, demo, inngest, docs)
+- [x] Every repository query scoped by user/workspace (grep review + tests per module)
+- [x] Inngest endpoint signature verification on in non-dev (`INNGEST_SIGNING_KEY`)
+- [x] SSRF guard used for all outbound user-provided URLs (repo, web)
+- [x] Upload: size, magic bytes, storage keys not user-controlled
+- [x] Tarball extraction guards (paths, links, counts, bytes)
+- [x] Regex DoS guard on `search_code`
+- [x] Secrets: never logged (test: logger output for an auth request contains no cookie/token), never stored from repos, never in Inngest event payloads
+- [x] Prompt injection: untrusted blocks escaped; tools re-check scope; agent can't call tools outside workspace
+- [x] Helmet headers, CORS allowlist, cookie flags (confirm `Secure` on the session cookie with `NODE_ENV=production`)
+- [x] Known and accepted: sign-up answers 422 for an existing email (better-auth default), so emails can be enumerated; rate limiting is the mitigation without email verification
+- [x] Dependency audit (`pnpm audit`), lockfile committed — undici upgraded to 8.12.2; multer 2.5.0 and body-parser 2.4.0 wait for the two-week rule (after 2026-11-05), see `docs/security.md`
+- [x] Error responses never include stack traces / SQL
 
 **17.2 OpenAPI**
-- [ ] Install `@asteasolutions/zod-to-openapi`; register all request/response schemas + routes in `openapi/registry.ts`
-- [ ] `GET /openapi.json`; docs UI at `/docs` (Scalar or Swagger UI via CDN-free package)
-- [ ] SSE endpoints documented with event types
-- [ ] Test: generated spec is valid (openapi schema validation)
+- [x] Install `@asteasolutions/zod-to-openapi`; register all request/response schemas + routes in `openapi/registry.ts` — 9.1.0, OpenAPI 3.1; validity via `@apidevtools/swagger-parser`; a test checks every mounted route is documented and vice versa
+- [x] `GET /openapi.json`; docs UI at `/docs` (Scalar or Swagger UI via CDN-free package) — swagger-ui-express 5.0.1, assets allowlisted, own CSP on `/docs` only
+- [x] SSE endpoints documented with event types
+- [x] Test: generated spec is valid (openapi schema validation)
 
 **17.3 Performance pass**
-- [ ] `EXPLAIN ANALYZE` main queries (vector, keyword, graph CTEs, monitoring) on real data; add/adjust indexes
-- [ ] HNSW `ef_search` tuned from eval results (recall vs latency)
-- [ ] Reranker warm-up and batch size tuned; p95 latency recorded
+- [x] `EXPLAIN ANALYZE` main queries (vector, keyword, graph CTEs, monitoring) on real data; add/adjust indexes
+- [x] HNSW `ef_search` tuned from eval results (recall vs latency) — kept at 80: at current sizes the planner uses exact scans; forced-index recall@10 0.982 on DDIA (`docs/performance.md`)
+- [x] Reranker warm-up and batch size tuned; p95 latency recorded — batch 8 kept, p95 ≈ 5.6 s per rerank on 2 cores
 
 **17.4 README**
-- [ ] Pitch + problem + what it does
-- [ ] Architecture diagram (modules, ingestion pipeline, agent loop)
-- [ ] Adaptive agentic RAG explanation (tools + when the agent uses each)
-- [ ] **Eval results table** (static vs adaptive, retrieval configs, contextual on/off, long-context vs RAG, models) with dates and corpus description
-- [ ] Honest limitations (resolution rate of code graph, free-tier models, no OCR, public repos only)
-- [ ] Local setup, env vars, accounts needed, running evals
-- [ ] API overview + link to `/docs`
+- [x] Pitch + problem + what it does
+- [x] Architecture diagram (modules, ingestion pipeline, agent loop)
+- [x] Adaptive agentic RAG explanation (tools + when the agent uses each)
+- [x] **Eval results table** (static vs adaptive, retrieval configs, contextual on/off, long-context vs RAG, models) with dates and corpus description — retrieval tables filled; the answer table is marked pending (runs deferred)
+- [x] Honest limitations (resolution rate of code graph, free-tier models, no OCR, public repos only)
+- [x] Local setup, env vars, accounts needed, running evals
+- [x] API overview + link to `/docs`
 
 **17.5 Final checks**
 - [ ] Fresh clone → follow README → everything works (do it for real)

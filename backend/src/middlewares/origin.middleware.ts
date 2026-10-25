@@ -3,7 +3,12 @@ import { serverConfig } from '../config/index.js';
 import { ForbiddenError } from '../utils/errors/app.error.js';
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
-const allowed = new Set([new URL(serverConfig.APP_URL).origin, ...serverConfig.TRUSTED_ORIGINS]);
+// The API's own origin too: the docs page at /docs sends its "Try it out" requests from there.
+const allowed = new Set([
+  new URL(serverConfig.APP_URL).origin,
+  new URL(serverConfig.BETTER_AUTH_URL).origin,
+  ...serverConfig.TRUSTED_ORIGINS,
+]);
 
 /**
  * CSRF guard for cookie-authenticated writes. A cross-site page can send a multipart form

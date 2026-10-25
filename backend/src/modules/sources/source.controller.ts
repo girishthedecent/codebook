@@ -104,9 +104,10 @@ export async function listFilesHandler(_req: Request, res: Response) {
   res.json(successResponse('Files', page));
 }
 
-export async function getContentHandler(_req: Request, res: Response) {
+export async function getContentHandler(req: Request, res: Response) {
   const user = getAuthUser(res);
   const { sourceId } = res.locals.params as SourceParams;
   const query = res.locals.query as SourceContentQuery;
-  res.json(successResponse('Content', await getContentService(user.id, sourceId, query)));
+  const content = await getContentService(user.id, sourceId, query, req.ip);
+  res.json(successResponse('Content', content));
 }

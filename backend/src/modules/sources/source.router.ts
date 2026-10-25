@@ -1,6 +1,7 @@
 import express from 'express';
 import { requireAuth } from '../../middlewares/auth.middleware.js';
 import { limit } from '../../middlewares/rateLimit.middleware.js';
+import { forbidGuests } from '../demo/demo.middleware.js';
 import { graphRouter } from '../graph/graph.router.js';
 import {
   validateQueryParams,
@@ -37,6 +38,9 @@ export const workspaceSourcesRouter = express.Router({ mergeParams: true });
 workspaceSourcesRouter.use(validateRequestParams(workspaceParamsSchema));
 
 workspaceSourcesRouter.get('/', validateQueryParams(listSourcesQuerySchema), listSourcesHandler);
+
+// Ahead of both POST routes below, so a guest's upload is refused before it is read.
+workspaceSourcesRouter.post('/', forbidGuests('Guests cannot add sources'));
 
 // PDFs arrive as multipart uploads, repos and websites as JSON, on the same path.
 workspaceSourcesRouter.post(

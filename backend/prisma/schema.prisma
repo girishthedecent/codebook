@@ -20,6 +20,8 @@ model User {
   updatedAt      DateTime        @updatedAt
   isGuest        Boolean         @default(false)
   isSystem       Boolean         @default(false)
+  // Set by better-auth's anonymous plugin; a hook mirrors it into isGuest.
+  isAnonymous    Boolean?        @default(false)
   sessions       Session[]
   accounts       Account[]
   workspaces     Workspace[]
@@ -99,6 +101,7 @@ model Workspace {
   sources        Source[]
   conversations  Conversation[]
   studyArtifacts StudyArtifact[]
+  answerCache    AnswerCache[]
 
   @@index([userId, createdAt])
 }
@@ -505,6 +508,23 @@ model EvalResult {
 
   @@unique([runId, caseId])
   @@index([caseId])
+}
+
+// A demo answer kept for repeat questions, so the same first question to the demo workspace
+// within the TTL is answered without model calls. The key is a hash of what the answer
+// depends on: workspace, normalized question, prompt and the sources' ingest state.
+model AnswerCache {
+  key         String    @id
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  content     String
+  // The checked citations, as the turn saved them.
+  citations   Json
+  model       String?
+  promptId    String
+  createdAt   DateTime  @default(now())
+
+  @@index([createdAt])
 }
 
 // A judge's verdict, keyed by judge prompt, judge model, case and answer hash, so a rerun of

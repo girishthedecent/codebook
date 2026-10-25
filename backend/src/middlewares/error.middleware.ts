@@ -1,3 +1,4 @@
+import { isAPIError } from 'better-auth/api';
 import type { NextFunction, Request, Response } from 'express';
 import { ZodError } from 'zod';
 import logger from '../config/logger.config.js';
@@ -5,6 +6,7 @@ import { Prisma } from '../generated/prisma/client.js';
 import {
   AppError,
   BadRequestError,
+  type ErrorCode,
   ConflictError,
   InternalServerError,
   NotFoundError,
@@ -27,6 +29,15 @@ const BODY_PARSER_ERRORS = new Set([
   'parameters.too.many',
 ]);
 
+const AUTH_ERROR_CODES: Record<number, ErrorCode> = {
+  401: 'UNAUTHENTICATED',
+  403: 'FORBIDDEN',
+  404: 'NOT_FOUND',
+  409: 'CONFLICT',
+  413: 'PAYLOAD_TOO_LARGE',
+  429: 'RATE_LIMITED',
+};
+
 function isBodyParserError(err: unknown): err is { type: string } {
   const type = (err as { type?: unknown } | null)?.type;
   return typeof type === 'string' && BODY_PARSER_ERRORS.has(type);
@@ -43,6 +54,17 @@ export function toAppError(err: unknown): AppError {
   if (err instanceof Prisma.PrismaClientKnownRequestError) {
     if (err.code === 'P2025') return new NotFoundError();
     if (err.code === 'P2002') return new ConflictError('Resource already exists');
+  }
+
+  // Thrown by better-auth when a service calls auth.api.* (its own routes answer for
+  // themselves). Its 4xx messages are written for users; anything else stays a 500.
+  if (isAPIError(err) && err.statusCode >= 400 && err.statusCode < 500) {
+    const message = (err.body as { message?: unknown } | undefined)?.message;
+    return new AppError(
+      typeof message === 'string' && message ? message : 'Request failed',
+      err.statusCode,
+      AUTH_ERROR_CODES[err.statusCode] ?? 'VALIDATION_ERROR',
+    );
   }
 
   if (isBodyParserError(err)) {

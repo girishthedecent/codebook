@@ -1,0 +1,9 @@
+{
+  "dataset": "core",
+  "description": "Designing Data-Intensive Applications, the Express.js repository and its routing guide. Sign in as a guest and ask a question.",
+  "sources": [
+    { "sourceKey": "book", "optional": true },
+    { "sourceKey": "repo" },
+    { "sourceKey": "docs" }
+  ]
+}

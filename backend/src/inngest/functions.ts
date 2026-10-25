@@ -1,6 +1,7 @@
 import { NonRetriableError } from 'inngest';
 import { inngest } from '../config/inngest.config.js';
 import { afterTurn } from '../modules/chat/afterTurn.function.js';
+import { cleanupGuests } from '../modules/demo/guestCleanup.function.js';
 import { ingestSource } from '../modules/ingestion/ingest.function.js';
 import { extractMemoriesFunction } from '../modules/memory/memory.function.js';
 import { isCleanupPrefix } from '../modules/sources/source.storage.js';
@@ -38,4 +39,5 @@ export const functions = [
   afterTurn,
   extractMemoriesFunction,
   generateStudyArtifact,
+  cleanupGuests,
 ];

@@ -16,5 +16,5 @@
     "sourceMap": true,
     "noEmit": true
   },
-  "include": ["src", "tests", "evals", "prisma.config.ts", "vitest.config.ts"]
+  "include": ["src", "tests", "evals", "prisma/*.ts", "prisma.config.ts", "vitest.config.ts"]
 }

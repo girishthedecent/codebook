@@ -219,6 +219,17 @@ export const appConfig = {
     extractExchanges: 3,
     debounceSec: 60,
   },
+  demo: {
+    // The demo workspace's owner, made by `pnpm db:seed -- --demo` (no password, never signs in).
+    ownerEmail: 'demo@codebook.local',
+    workspaceName: 'CodeBook demo',
+    // Visitors who don't own the demo read short excerpts, never whole pages of a book.
+    excerptChars: 600,
+    // Repeat first questions are answered from AnswerCache for this long.
+    answerCacheTtlSec: 24 * 60 * 60,
+    // Guests and everything they made are deleted this long after the account was created.
+    guestTtlDays: 7,
+  },
   limits: {
     // At most `points` requests per window, counted per user (guests per IP, so a new guest
     // account doesn't start over). Windows are fixed `windowSec` blocks, or calendar months.
@@ -226,6 +237,10 @@ export const appConfig = {
       messagesHourly: { points: 30, windowSec: 60 * 60 },
       messagesDaily: { points: 200, windowSec: 24 * 60 * 60 },
       guestMessages: { points: 10, windowSec: 24 * 60 * 60 },
+      // New guest accounts per IP (POST /api/auth/sign-in/anonymous).
+      guestSignIn: { points: 5, windowSec: 24 * 60 * 60 },
+      // Source content (excerpt) requests per IP from demo visitors.
+      demoContent: { points: 30, windowSec: 24 * 60 * 60 },
       sourceCreate: { points: 20, windowSec: 24 * 60 * 60 },
       resync: { points: 20, windowSec: 24 * 60 * 60 },
       study: { points: 20, windowSec: 24 * 60 * 60 },

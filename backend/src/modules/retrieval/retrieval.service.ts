@@ -5,6 +5,7 @@ import { embedTexts, type EmbedKind } from '../../llm/embeddings.js';
 import { rerank as rerankDocs } from '../../llm/reranker.js';
 import { withRerankSlot } from '../../utils/rateLimit.js';
 import { BadRequestError } from '../../utils/errors/app.error.js';
+import { excerptOf } from '../demo/excerpt.js';
 import { identifierWords } from '../ingestion/code/identifiers.js';
 import type { WorkspaceSettings } from '../workspaces/workspace.dto.js';
 import { assertWorkspaceAccess } from '../workspaces/workspace.service.js';
@@ -309,9 +310,12 @@ export async function search(options: SearchOptions): Promise<SearchResult> {
   return { results, parents, debug };
 }
 
+// As long as a citation's snippet.
+const DEMO_SNIPPET_CHARS = 300;
+
 /**
  * The debug search endpoint: anyone may search the demo workspace, but not spend model calls
- * or reranker CPU on it.
+ * or reranker CPU on it, nor read more of a hit than a citation shows.
  */
 export async function searchWorkspaceService(
   userId: string,
@@ -325,12 +329,23 @@ export async function searchWorkspaceService(
     throw new BadRequestError('Query modes and reranking are not available on the demo workspace');
   }
   const settings = workspace.settings as WorkspaceSettings;
-  return search({
+  const result = await search({
     ...input,
     userId,
     workspaceId,
     mode: input.mode ?? settings.defaultSearchMode ?? 'hybrid',
     rerank: owner ? input.rerank : false,
+    // Parent sections are whole pages of the demo's book; visitors get snippets only.
+    expandParents: owner ? input.expandParents : false,
     signal,
   });
+  if (owner) return result;
+  return {
+    ...result,
+    results: result.results.map((chunk) => ({
+      ...chunk,
+      content: excerptOf(chunk.content, DEMO_SNIPPET_CHARS).text,
+      context: chunk.context && excerptOf(chunk.context, DEMO_SNIPPET_CHARS).text,
+    })),
+  };
 }

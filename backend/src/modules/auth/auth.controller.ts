@@ -12,6 +12,7 @@ export function getMeHandler(_req: Request, res: Response) {
       email: user.email,
       name: user.name,
       image: user.image ?? null,
+      isGuest: user.isGuest === true,
       createdAt: user.createdAt,
     }),
   );
