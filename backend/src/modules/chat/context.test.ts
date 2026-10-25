@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { agentSystemPrompts } from '../../llm/prompts/agentSystem.js';
-import { fitToolGuide } from './context.js';
+import type { Message } from '../../generated/prisma/client.js';
+import { fitToolGuide, toChatMessages } from './context.js';
 import { agentTools } from './tools/index.js';
 
 const render = (id: keyof typeof agentSystemPrompts) =>
@@ -29,5 +30,39 @@ describe('fitToolGuide', () => {
     expect(fitted).not.toContain('- web_search only when');
     // The sources list mentions tool names too; it isn't part of the guide.
     expect(fitted).toContain('title="How web_search and trace_flow work"');
+  });
+});
+
+describe('toChatMessages', () => {
+  const message = (role: 'USER' | 'ASSISTANT', content: string) => ({ role, content }) as Message;
+
+  it('keeps one copy of a question that was asked again after a failed answer', () => {
+    const history = toChatMessages([
+      message('USER', 'hello'),
+      message('ASSISTANT', 'hi'),
+      message('USER', 'what is a quorum?'),
+      message('USER', 'what is a quorum?'),
+    ]);
+
+    expect(history.map((m) => m.content)).toEqual(['hello', 'hi', 'what is a quorum?']);
+  });
+
+  it('drops a trailing copy of the question being asked now', () => {
+    const history = toChatMessages(
+      [message('USER', 'hello'), message('ASSISTANT', 'hi'), message('USER', 'what is a quorum?')],
+      'what is a quorum? ',
+    );
+
+    expect(history.map((m) => m.content)).toEqual(['hello', 'hi']);
+  });
+
+  it('keeps different consecutive questions and still starts with a question', () => {
+    const history = toChatMessages([
+      message('ASSISTANT', 'older answer'),
+      message('USER', 'first'),
+      message('USER', 'second'),
+    ]);
+
+    expect(history.map((m) => m.content)).toEqual(['first', 'second']);
   });
 });

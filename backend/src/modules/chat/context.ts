@@ -72,13 +72,26 @@ export function fitToolGuide(system: string, available: ReadonlySet<string>) {
   return system.slice(0, start) + kept + (end === -1 ? '' : system.slice(end));
 }
 
-function toChatMessages(messages: Message[]): ChatMessage[] {
-  const history = messages.map((message): ChatMessage =>
-    message.role === 'USER'
-      ? { role: 'user', content: message.content }
-      : // Citation numbers belong to the turn that made them; this turn numbers anew.
-        { role: 'assistant', content: message.content.replace(CITATION_MARKER, '') },
-  );
+/**
+ * The saved messages as chat messages. A question whose answer failed stays in the transcript,
+ * and asking it again saves it a second time; the model should see it once, so a question
+ * followed by the same question is dropped, and so is a trailing copy of the one being asked.
+ */
+export function toChatMessages(messages: Message[], asking?: string): ChatMessage[] {
+  const same = (a: string, b: string) => a.trim() === b.trim();
+  const history = messages
+    .filter((message, i) => {
+      if (message.role !== 'USER') return true;
+      const next = messages[i + 1];
+      if (next?.role === 'USER' && same(next.content, message.content)) return false;
+      return !(i === messages.length - 1 && asking !== undefined && same(asking, message.content));
+    })
+    .map((message): ChatMessage =>
+      message.role === 'USER'
+        ? { role: 'user', content: message.content }
+        : // Citation numbers belong to the turn that made them; this turn numbers anew.
+          { role: 'assistant', content: message.content.replace(CITATION_MARKER, '') },
+    );
   // History trimmed from the front may start with an answer; models expect a question first.
   while (history[0]?.role === 'assistant') history.shift();
   return history;
@@ -128,6 +141,9 @@ export async function buildAgentContext(input: ContextInput) {
   return {
     system,
     promptId: prompt.id,
-    history: toChatMessages(recent.filter((message) => message.id !== input.questionId)),
+    history: toChatMessages(
+      recent.filter((message) => message.id !== input.questionId),
+      input.question,
+    ),
   };
 }
