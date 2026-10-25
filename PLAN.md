@@ -2298,6 +2298,123 @@ Each phase lists: **Entry** · **Build order** · **Risks & mitigations** · **P
 - **Proof:** checklist fully ticked · fresh clone works · all tests and the local gate green.
 - **Commit:** `docs: README, OpenAPI docs, security and performance hardening` + tag. **→ M7 final cross-review.**
 
+#### Wave 4 plan — Phases 16 + 17 together (planned 2026-10-25, plan-reviewed; start on "go")
+
+Spec: PLAN.md Phase 16 and 17. Same shape as waves 2–3: I write the migration and the
+contracts first, forks build in parallel on their own test DBs (`codebook_agentN_test`),
+everything heavy under `taskset -c 0,1 nice -n 10`, reviewers, one full suite, live check,
+commit, tag.
+
+##### Defaults (my recommendation; the user confirms with "go")
+1. Guest login = better-auth **anonymous plugin** (present in the installed 1.7.12) →
+   `user.isGuest = true` (the field exists). No signed-cookie fallback needed.
+2. Guest limits: keep `guestMessages` 10/day **per IP**, plus 10/day **per guest user**;
+   study for guests: 2/day; memory off (already).
+3. Demo answer cache: yes — the first question of a demo conversation, normalized, same
+   answer for 24h, replayed as the same SSE events; 0 LLM calls on a hit.
+4. Guest cleanup: guests and their conversations deleted after **7 days** (PLAN), daily
+   Inngest cron.
+5. Demo content (decided 2026-10-24): DDIA + express repo + express routing docs page.
+   **Seeded by copying the already-indexed eval corpus sources** (the twin copier in
+   evals/corpusWorkspace.ts / corpus.ts) — zero embedding or model calls. DDIA is never
+   committed; the seed fails clearly when its source isn't indexed locally.
+6. DDIA excerpt-only for demo visitors (non-owners of the demo workspace):
+   `/sources/:id/content` returns at most a short excerpt (≤ 600 chars per request, no
+   page ranges beyond one page), `read_source` returns capped excerpts, citation snippets
+   stay 300 chars; the agent's workspace hint on the demo adds "quote at most two short
+   lines, summarize instead of copying" (code-built line, prompt text unchanged).
+7. OpenAPI deps (PLAN names zod-to-openapi; the rest needs your OK):
+   `@asteasolutions/zod-to-openapi@9.x` (zod 4 peer), **`swagger-ui-express`** (serves
+   its assets locally — Scalar's Express package loads from a CDN), and a spec validator
+   (`@apidevtools/swagger-parser` or `@readme/openapi-parser`, whichever is older/stable).
+   Versions ≥ 2 weeks old, peer ranges checked, pnpm-workspace.yaml untouched.
+
+##### Me, before forking
+- Migration `demo`: `AnswerCache { key @id (workspaceId + normalized-question hash),
+  workspaceId, messageId → Message (cascade), createdAt }` + index on createdAt; anonymous
+  plugin's schema needs (check what it adds; `isAnonymous`-style field maps to `isGuest`).
+- `appConfig.demo` (owner email, excerpt caps, cache TTL, guest TTL days, guest study/day)
+  and `limits.windows.guestMessagesPerUser`, `guestStudy`.
+- Package scripts: `db:seed` → `prisma/seed.ts`.
+
+##### Forks
+- **A — Seed + guest access (16.1, 16.2):** `prisma/seed.ts --demo` (system owner user,
+  `isDemo` workspace, sources copied from the eval corpus twins, idempotent), `demo.json`
+  spec; anonymous plugin in auth.config + `POST /api/auth/sign-in/anonymous` working through
+  our mount; `GET /api/v1/demo` (public: workspace + sources); guest rules: conversations
+  only in the demo workspace, no workspace/source/memory writes, study 2/day; demo
+  read-only for everyone but its owner (asserted in workspace/source/study services);
+  excerpt-only content and read_source for demo visitors (default 6); `toAppError` maps
+  better-auth `APIError` to its 4xx; tests (guest flow end to end with mocked models).
+- **B — Demo limits + cleanup (16.3):** answer cache in the turn path (lookup before the
+  agent, replay events, store on COMPLETE first-turn answers with valid citations only),
+  per-guest + per-IP limits wired, `cleanupGuests` daily cron (deletes guests older than
+  7 days with their conversations, memories and usage rows' user link), tests.
+- **C — OpenAPI (17.2):** `src/openapi/registry.ts` registering every route with its
+  request zod schemas (reuse validators) and response schemas (new zod schemas mirroring
+  the DTOs, in src/openapi only), SSE routes documented with their event types, admin
+  routes marked, `GET /openapi.json`, `/docs` via swagger-ui-express (helmet CSP adjusted
+  for that route only), a test that validates the spec and checks every mounted Express
+  route is in it (and vice versa).
+- **D — Security + performance (17.1, 17.3):** go through every checklist item, verify
+  each with a grep or a test, write the missing tests (route auth table built from the
+  router stack; logger output has no cookie/token; error bodies have no stack/SQL; Inngest
+  signing key required in production; Secure cookie in production), `pnpm audit`, fix
+  what's wrong in files no other fork owns (report the rest). Performance: `EXPLAIN
+  ANALYZE` on the dev DB for vector, keyword, graph CTEs and monitoring queries, index
+  changes as a migration only if clearly needed, `ef_search` from a retrieval eval sweep
+  (cached embeddings, no reranker, 2 cores), reranker batch size; results written to
+  `docs/security.md` and `docs/performance.md`.
+- **E — README (17.4), after A–D:** pitch, architecture (Mermaid: modules, ingestion
+  pipeline, agent loop), adaptive agentic RAG and when each tool is used, retrieval eval
+  table from evals/CHANGELOG.md (answer table marked "pending: deferred runs"), honest
+  limitations, setup (accounts, env vars, docker, seed, evals), API overview + `/docs`.
+
+##### Me, after forks
+Wire, three reviewers (guest/demo security; OpenAPI + security tests; README accuracy vs
+code), fixes, one full suite, live: a fresh guest asks the demo a question and gets a cited
+answer, can't write elsewhere; fresh clone → follow README (`git clone` to scratchpad,
+reuse the running containers, no new images); PLAN ticks + build log; commit; tag
+`backend-v1.0` (local tag; you push it).
+
+##### Cost
+No answer evals. LLM calls: the live guest check (~3), the ef_search sweep (0 — cached
+query embeddings), seed (0). New downloads: the 3 small npm packages above.
+
+##### Plan review folded in (2026-10-25)
+1. **Search route leaked DDIA**: `POST /workspaces/:id/search` for demo non-owners →
+   `expandParents` off, each hit cut to the 300-char snippet (fork A, tested).
+2. **No study for guests** (spec allows "cannot"); study on the demo stays owner-only.
+3. **`demoContent` limit**: ~30 excerpt requests/day per IP on `/content` for demo
+   non-owners, on top of the 600-char cap.
+4. **`guestSignIn` limit** per IP on `POST /api/auth/sign-in/anonymous`, mounted ahead
+   of the auth handler.
+5. **Anonymous plugin keeps its own `isAnonymous` column**; a `databaseHooks.user.create
+   .before` sets `isGuest = true` when anonymous. Test that a guest who signs up is
+   linked and the anonymous user is cleaned up as the plugin intends.
+6. **Seed = the real pipeline** (create sources through the service, Inngest ingests),
+   with the committed/locally cached EmbeddingCache + ContextCache so it makes 0 model
+   calls (`--require-cached`-style guard); needs API + Inngest running; demo source titles
+   identical to the eval spec titles (the title is part of the embedding input). Demo
+   owner created like `ensureEvalUser` (no credential account). **DDIA optional**: when
+   its file or cache is missing, the seed brings up express + docs only and says so.
+7. **Answer cache**: own row with answer text + checked citations (no FK to Message);
+   key = workspace + normalized question + prompt id + model + demo content version
+   (source ids + lastIngestedAt); only stored from turns with memory off and no web
+   citations; looked up only when the conversation has no earlier messages; a hit still
+   saves a new assistant message in the visitor's conversation and `done` carries its id;
+   upsert so two parallel misses don't collide.
+8. **Contracts first (me)**: route list for A's new routes, a mount-prefix table exported
+   from the v1 router, a `turnCache` hook point in turn.service (B fills it), and an
+   app.ts slot for `/docs` + `/openapi.json` (C) and the guest sign-in limit (A). C's
+   route-completeness test and D's auth table run after A merges.
+9. **Route auth check** = the mount table + each router's route paths, then an HTTP probe
+   of every OpenAPI path without a cookie (401 unless on the public allowlist), not
+   Express 5 stack introspection.
+10. **Fresh-clone check**: a new database on the running container, the committed gate
+    cache loaded before seeding, DDIA documented as optional.
+11. Dropped the per-guest-user message limit (guests are already keyed by IP).
+
 ### 12.5 Your touchpoints
 
 | When | What I'll ask |
@@ -2350,7 +2467,7 @@ One line per phase: `date · phase · commit · notes / deviations`.
 | 2026-10-24 | 9 Retrieval + 10 Evals part 1 | 24b8131 | Planned together (plan reviewed once, 14 findings), built in parallel by me and nine agents on per-agent test databases (`codebook_agent{1..6}_test`), two code reviews (10 findings fixed). Hybrid search (vector + OR keyword query, weighted RRF), MiniLM reranker (opt-in), weak flag, parent blocks, rewrite / HyDE / decompose, debug endpoint; eval schema, 60 verified golden cases, runner with resume and taint, reports per split. DEV: vector-only 0.925 R@5, hybrid + rerank 0.984 R@10; contextual retrieval +10.5 points R@5 on code (19 cases). Defaults from the numbers: keyword ¼, reranker off. Long CPU-bound evals reset the machine twice → evals run on 2 cores. 620 tests pass |
 | 2026-10-24 | M4 review | 24b8131 | Cross-review of Phases 9–10 with three parallel reviewers (security & scoping, cross-module consistency, data & eval validity). No blocking issue: every query is workspace-scoped, no error leaks internals, the ingestion ↔ retrieval contract and the context-switch hashes hold. Fixed: demo visitors can't turn reranking on (CPU), searches stop when the client disconnects, the query-mode memo is per user, HyDE/query embeddings never wait on the ingestion quota, a child whose parent was re-indexed away is skipped; evals run one case at a time with question embeddings warmed first (latency comparable), runs record `HEAD-dirty-<diff hash>` and resume refuses changed code, cases or reranker; corrected overstated eval claims (contextual retrieval +10.5 points on 19 cases, decisions cite DEV only). Tests added for the reranker-off default, the keyword weight, demo rerank refusal, the startup model check, repo/website context switch, per-split reports |
 | 2026-10-24 | 11 Chat + 13 Study + 15 Limits | 267603b | Wave 2: planned together (plan review moved the agent to **Gemini Flash first** and our own step loop: Groq's 8K tokens/min can't carry a multi-step context), one migration written first, then built in parallel by me (agent loop, context, SSE turn route, citations, wiring) and five agents on their own test databases, tests pinned to 2 cores. Agent: one streamed call per step, tools run in between (≤4 per step), a turn sticks to one model, a switch after a tool step flattens the turn to text (`<tool_result>` blocks, neutralized like `<source>`), last step without tools, input trimmed to 12K tokens (old history, then old tool results), empty answer = failed turn; partial answers saved ERROR/ABORTED with their citations and tool calls; old `[n]` stripped from history (numbers are per turn). Citation check is lexical: markers parsed outside code, marker-only sentences joined to the previous one, gpt-oss's `【n†…】` normalized. Turn cost summed from `UsageEvent.messageId` (retrieval calls included). Study: generation in Inngest with one retry carrying the validation errors, condense step for big inputs, owner-only writes. Limits: own fixed-window Postgres limiter (monthly web-search cap on the calendar month, prune by window end), `Retry-After` from the error handler, circuit breaker per model inside each attempt, concurrent-rerank and `/events` slots, guests by IP and no web search for guests; usage and admin monitoring (`ADMIN_USER_IDS`, 404 for others). Three parallel reviews (chat, tools/limits/usage, study): no critical findings, all fixed. Live check over DDIA + express: cited, supported answers; Gemini Flash's free tier allows only **5 requests a minute**, so busy turns fall back to gpt-oss (worked as designed). Not done: the live end-to-end test file and the extra log events (15.5) |
-| 2026-10-25 | 12 Memory + 14 Evals part 2 | (this commit) | Wave 3: contracts and three migrations first (Memory without a vector index: exact per-user scan; EvalCase origin + memories; judge cache; Message.memoryOff; Conversation.memoryUpToMessageId), then five forks, plan review (13 findings) and three code reviews (21 findings) folded in. Memory: extraction per conversation after a watermark, labels instead of ids, secret/sensitive filter, importance-aware profile cap, budgeted recall in a `<memory>` block; chat now uses `agent-system@v2` (v1 + memory in the untrusted list), `@v3` is the eval experiment; the tool guide lists only the tools a turn gets. Evals: answer suite through the real turn service (pinned model, no fallback, no web_search), static RAG, ablations, 3 models at one 6.5K budget, long-context with ref coverage, memory on/off with seeded personal cases; judges on **Gemini Flash-Lite** (Groq refuses >8K-token requests) with same-provider runs flagged; eval API admin-only, runs in a separate eval worker (own Inngest app, singleton); CI gate on repo + docs from a committed 1.6 MB cache (no keys, no model calls): baseline recall@5 0.819 / MRR 0.881, a broken keyword weight fails it (MRR 0.619), the revert passes. Live: a fact told in one chat appears in the next chat's context, then edited and deleted. Answer eval runs deferred (user). 917 tests |
+| 2026-10-25 | 12 Memory + 14 Evals part 2 | 0d77a78 | Wave 3: contracts and three migrations first (Memory without a vector index: exact per-user scan; EvalCase origin + memories; judge cache; Message.memoryOff; Conversation.memoryUpToMessageId), then five forks, plan review (13 findings) and three code reviews (21 findings) folded in. Memory: extraction per conversation after a watermark, labels instead of ids, secret/sensitive filter, importance-aware profile cap, budgeted recall in a `<memory>` block; chat now uses `agent-system@v2` (v1 + memory in the untrusted list), `@v3` is the eval experiment; the tool guide lists only the tools a turn gets. Evals: answer suite through the real turn service (pinned model, no fallback, no web_search), static RAG, ablations, 3 models at one 6.5K budget, long-context with ref coverage, memory on/off with seeded personal cases; judges on **Gemini Flash-Lite** (Groq refuses >8K-token requests) with same-provider runs flagged; eval API admin-only, runs in a separate eval worker (own Inngest app, singleton); CI gate on repo + docs from a committed 1.6 MB cache (no keys, no model calls): baseline recall@5 0.819 / MRR 0.881, a broken keyword weight fails it (MRR 0.619), the revert passes. Live: a fact told in one chat appears in the next chat's context, then edited and deleted. Answer eval runs deferred (user). 917 tests |
 
 **Later** (ideas parked during the build, not in scope):
 - M4 review (Phase 15): per-user rate limit on search and a process-wide cap on concurrent reranks / searches (each vector search holds a pooled connection; decompose holds up to four in turn)
