@@ -1,6 +1,7 @@
 import { ApiError } from '@/api/client';
 import { clearLastWorkspace } from '@/features/workspaces/lastWorkspace';
 import { keys } from '@/api/queries/keys';
+import { meQueryOptions } from '@/api/queries/me';
 import { queryClient } from '@/api/queryClient';
 import type { Me } from '@/api/types';
 import { authClient } from './authClient';
@@ -18,7 +19,9 @@ function throwIfFailed(error: AuthFailure) {
 
 async function refreshMe(): Promise<Me | null> {
   await queryClient.invalidateQueries({ queryKey: keys.me });
-  return queryClient.fetchQuery({ queryKey: keys.me });
+  // With the options, not just the key: no component may be watching the query yet (the demo
+  // entry runs before any), and a query nobody watches has no function to fetch with.
+  return queryClient.fetchQuery({ ...meQueryOptions, staleTime: 0 });
 }
 
 /** Creates a guest session (rate-limited by the backend: a few per day per address). */
