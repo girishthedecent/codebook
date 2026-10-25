@@ -11,6 +11,8 @@ const INLINE_CSS_LIMIT = 20 * 1024;
 
 // Vite's SSR loader handles TSX, the `@/` alias and CSS imports without a second build setup.
 const vite = await createServer({
+  // Its own cache: sharing the dev server's would delete the dependencies it is serving.
+  cacheDir: fileURLToPath(new URL('../node_modules/.vite-prerender', import.meta.url)),
   server: { middlewareMode: true },
   appType: 'custom',
   logLevel: 'error',
