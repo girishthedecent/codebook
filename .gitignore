@@ -22,3 +22,7 @@ backend/evals/reports/*
 # generated candidates quote the corpus or users' questions; labels quote judged claims
 backend/evals/datasets/*-candidates.json
 backend/evals/calibration/
+
+# Planning notes stay local
+/PLAN.md
+/frontend/PLAN.md
