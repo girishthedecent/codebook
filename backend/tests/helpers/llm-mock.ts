@@ -1,7 +1,7 @@
-import { createHash } from 'node:crypto';
 import { APICallError } from 'ai';
-import { convertArrayToReadableStream, MockEmbeddingModelV4, MockLanguageModelV4 } from 'ai/test';
+import { convertArrayToReadableStream, MockLanguageModelV4 } from 'ai/test';
 import type { ModelRef } from '../../src/llm/models.js';
+import { mockEmbeddingModel } from '../../src/llm/mockProvider.js';
 
 // Stand-in for src/llm/providers.ts. Use in a test file with:
 //   vi.mock('../src/llm/providers.js', () => import('./helpers/llm-mock.js'));
@@ -21,7 +21,7 @@ export function languageModel(ref: ModelRef) {
 }
 
 export function embeddingModel() {
-  return fakeEmbeddingModel;
+  return mockEmbeddingModel;
 }
 
 const usage = (input: number, output: number, cached = 0) => ({
@@ -180,27 +180,5 @@ export function apiError(statusCode: number, responseHeaders?: Record<string, st
   });
 }
 
-/**
- * Deterministic vector for a text: same text, same vector, across runs. Not unit length,
- * so the code under test has to normalize it.
- */
-export function fakeVector(text: string, dimensions = 1536) {
-  let seed = createHash('sha256').update(text).digest().readUInt32LE(0);
-  return Array.from({ length: dimensions }, () => {
-    // mulberry32
-    seed = (seed + 0x6d2b79f5) | 0;
-    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return (((t ^ (t >>> 14)) >>> 0) / 4294967296) * 4 - 2;
-  });
-}
-
-export const fakeEmbed = async ({ values }: { values: string[] }) => ({
-  embeddings: values.map((value) => fakeVector(value)),
-  warnings: [],
-});
-
-export const fakeEmbeddingModel = new MockEmbeddingModelV4({
-  maxEmbeddingsPerCall: 100,
-  doEmbed: fakeEmbed,
-});
+export { fakeEmbed, fakeVector } from '../../src/llm/mockProvider.js';
+export { mockEmbeddingModel as fakeEmbeddingModel } from '../../src/llm/mockProvider.js';

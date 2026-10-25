@@ -18,6 +18,7 @@ import {
   createPdfSourceService,
   createSourceService,
   deleteSourceService,
+  getPdfFileService,
   getSourceService,
   listSourcesService,
   resyncSourceService,
@@ -102,6 +103,27 @@ export async function listFilesHandler(_req: Request, res: Response) {
   const { sourceId } = res.locals.params as SourceParams;
   const page = await listFilesService(user.id, sourceId, res.locals.query as ListFilesQuery);
   res.json(successResponse('Files', page));
+}
+
+export async function getFileHandler(req: Request, res: Response) {
+  const user = getAuthUser(res);
+  const { sourceId } = res.locals.params as SourceParams;
+  const file = await getPdfFileService(user.id, sourceId, req.headers.range);
+
+  const length = file.range ? file.range.end - file.range.start + 1 : file.size;
+  res.status(file.range ? 206 : 200).set({
+    'Content-Type': 'application/pdf',
+    'Content-Length': String(length),
+    'Content-Disposition': `inline; filename="${file.fileName.replace(/["\\\r\n]/g, '_')}"`,
+    'Cache-Control': 'private, max-age=3600',
+    'Accept-Ranges': 'bytes',
+    ...(file.range
+      ? { 'Content-Range': `bytes ${file.range.start}-${file.range.end}/${file.size}` }
+      : {}),
+  });
+  // A client that leaves mid-download must not keep the storage stream open.
+  res.on('close', () => file.body.destroy());
+  file.body.pipe(res);
 }
 
 export async function getContentHandler(req: Request, res: Response) {

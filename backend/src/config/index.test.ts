@@ -35,6 +35,13 @@ describe('parseServerConfig', () => {
     );
   });
 
+  it('refuses LLM_MOCK in production but allows it locally', () => {
+    expect(() => parseServerConfig({ ...base, LLM_MOCK: '1' })).toThrow(/LLM_MOCK/);
+    const local = parseServerConfig({ ...base, NODE_ENV: 'development', LLM_MOCK: '1' });
+    expect(local.LLM_MOCK).toBe(true);
+    expect(parseServerConfig(base).LLM_MOCK).toBe(false);
+  });
+
   it('requires BETTER_AUTH_URL in production but defaults it locally', () => {
     const { BETTER_AUTH_URL: _, ...withoutUrl } = base;
     expect(() => parseServerConfig(withoutUrl)).toThrow(/BETTER_AUTH_URL/);

@@ -41,6 +41,39 @@ export async function getObjectStream(key: string) {
   return Body as Readable;
 }
 
+export type ObjectRange = {
+  body: Readable;
+  size: number;
+  contentType?: string;
+  // Set when a range was served: the part's bounds, as in the Content-Range header.
+  range?: { start: number; end: number };
+};
+
+/**
+ * An object, or the part of it a `bytes=` Range header asks for. S3 checks the range
+ * itself; one past the end comes back as `null`, like a missing object.
+ */
+export async function getObjectRange(key: string, range?: string): Promise<ObjectRange | null> {
+  try {
+    const object = await s3Client.send(
+      new GetObjectCommand({ Bucket: bucket(), Key: key, Range: range }),
+    );
+    if (!object.Body) throw new Error(`Object ${key} has no body`);
+    const match = /^bytes (\d+)-(\d+)\/(\d+)$/.exec(object.ContentRange ?? '');
+    return {
+      body: object.Body as Readable,
+      size: match ? Number(match[3]) : (object.ContentLength ?? 0),
+      contentType: object.ContentType,
+      range: match ? { start: Number(match[1]), end: Number(match[2]) } : undefined,
+    };
+  } catch (error) {
+    if (error instanceof NoSuchKey || (error as { name?: string }).name === 'InvalidRange') {
+      return null;
+    }
+    throw error;
+  }
+}
+
 /** The whole object in memory (for files with a size cap), or null when it doesn't exist. */
 export async function getObjectBuffer(key: string) {
   try {

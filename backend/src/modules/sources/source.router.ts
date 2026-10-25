@@ -14,6 +14,7 @@ import {
   createSourceHandler,
   deleteSourceHandler,
   getContentHandler,
+  getFileHandler,
   getSourceHandler,
   getTocHandler,
   listFilesHandler,
@@ -79,6 +80,8 @@ sourceRouter.get(
   sourceEventsHandler,
 );
 sourceRouter.get('/:sourceId/toc', validateRequestParams(sourceParamsSchema), getTocHandler);
+// The PDF bytes for the owner's viewer; demo visitors only ever get excerpts.
+sourceRouter.get('/:sourceId/file', validateRequestParams(sourceParamsSchema), getFileHandler);
 sourceRouter.get(
   '/:sourceId/files',
   validateRequestParams(sourceParamsSchema),

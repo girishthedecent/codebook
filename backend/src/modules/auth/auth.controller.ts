@@ -1,4 +1,5 @@
 import type { Request, Response } from 'express';
+import { serverConfig } from '../../config/index.js';
 import { getAuthUser } from '../../middlewares/auth.middleware.js';
 import { successResponse } from '../../utils/helpers/response.helpers.js';
 
@@ -13,6 +14,8 @@ export function getMeHandler(_req: Request, res: Response) {
       name: user.name,
       image: user.image ?? null,
       isGuest: user.isGuest === true,
+      // Lets the web app show the eval and monitoring pages; the routes still check for themselves.
+      isAdmin: serverConfig.ADMIN_USER_IDS.includes(user.id),
       createdAt: user.createdAt,
     }),
   );

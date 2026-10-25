@@ -94,3 +94,7 @@ Origin: {{origin}}
 ### Delete (stored files are removed in the background)
 DELETE {{base}}/api/v1/sources/{{sourceId}}
 Origin: {{origin}}
+
+### The PDF itself (owner only; demo visitors get 404). Supports Range for page-by-page viewers
+GET {{base}}/api/v1/sources/{{sourceId}}/file
+Range: bytes=0-1023

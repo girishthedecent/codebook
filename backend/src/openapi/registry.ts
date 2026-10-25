@@ -88,6 +88,7 @@ const ERROR_DESCRIPTIONS: Record<number, string> = {
 };
 
 const json = (schema: z.ZodType) => ({ 'application/json': { schema } });
+const pdfBinary = z.string().meta({ format: 'binary', description: 'PDF bytes' });
 
 export const API = '/api/v1';
 export const AUTH = '/api/auth';
@@ -367,6 +368,27 @@ function apiRoutes(): Route[] {
       request: { ...sourceParams, query: sourceContentQuerySchema },
       responses: { 200: ok('The text', s.sourceContentSchema) },
       errors: [400, 404, 429],
+    },
+    {
+      method: 'get',
+      path: `${source}/file`,
+      tags: ['sources'],
+      summary: 'The PDF itself, for the owner',
+      description:
+        'Only the workspace owner may read the file; everyone else (demo visitors included) gets a 404, and non-PDF sources have no file. Supports `Range: bytes=…` so a viewer can read page by page.',
+      access: 'user',
+      request: { ...sourceParams, headers: z.object({ range: z.string().optional() }) },
+      responses: {
+        200: {
+          description: 'The whole file',
+          content: { 'application/pdf': { schema: pdfBinary } },
+        },
+        206: {
+          description: 'The requested part of the file',
+          content: { 'application/pdf': { schema: pdfBinary } },
+        },
+      },
+      errors: [404],
     },
 
     // Code graph

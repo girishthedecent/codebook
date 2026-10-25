@@ -57,6 +57,7 @@ export const meSchema = z
     name: z.string(),
     image: z.string().nullable(),
     isGuest: z.boolean(),
+    isAdmin: z.boolean(),
     createdAt: date,
   })
   .meta({ id: 'Me' });

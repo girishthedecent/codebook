@@ -16,7 +16,7 @@ import type { PaginationQuery } from '../../utils/helpers/pagination.helpers.js'
 import { assertPublicUrl } from '../../utils/network.js';
 import { assertPdfStorage } from '../../utils/quotas.js';
 import type { SseStream } from '../../utils/sse.js';
-import { deleteObject, putObject } from '../../utils/storage.js';
+import { deleteObject, getObjectRange, putObject } from '../../utils/storage.js';
 import { assertWorkspaceAccess } from '../workspaces/workspace.service.js';
 import { getRepo, refExists } from '../../utils/github.js';
 import { isValidGitRef, parseGithubUrl } from './githubUrl.js';
@@ -55,6 +55,24 @@ export async function getSourceService(userId: string, sourceId: string) {
   const source = await findSourceForUser(userId, sourceId, { includeDemo: true });
   if (!source) throw new NotFoundError('Source not found');
   return source;
+}
+
+/**
+ * The stored PDF of a book, for the owner's viewer. Anyone else, demo visitors included,
+ * gets the same 404 as for a source that isn't theirs: the book's text stays excerpt-only.
+ * A `bytes=` range is passed through to storage so a viewer can fetch page by page.
+ */
+export async function getPdfFileService(userId: string, sourceId: string, range?: string) {
+  const source = await findSourceForUser(userId, sourceId);
+  if (!source || source.type !== 'PDF') throw new NotFoundError('Source not found');
+  const origin = source.origin as PdfOrigin;
+  if (!origin.storageKey) throw new NotFoundError('File not found');
+  const object = await getObjectRange(
+    origin.storageKey,
+    range?.startsWith('bytes=') ? range : undefined,
+  );
+  if (!object) throw new NotFoundError('File not found');
+  return { ...object, fileName: origin.fileName };
 }
 
 export async function listSourcesService(

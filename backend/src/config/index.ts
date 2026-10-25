@@ -116,6 +116,9 @@ const baseSchema = z.object({
   RERANKER_CACHE_DIR: z.string().default('.cache/models'),
 
   LIVE_TESTS: z.stringbool().default(false),
+  // Scripted stand-ins for every model: chat, study and memory work with no provider keys
+  // and no quota, for the web app's browser tests and offline development.
+  LLM_MOCK: z.stringbool().default(false),
 });
 
 const schema = baseSchema
@@ -154,6 +157,13 @@ const schema = baseSchema
           code: 'custom',
           path: ['INNGEST_DEV'],
           message: 'must be off in production (it turns off request signing)',
+        });
+      }
+      if (config.LLM_MOCK) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['LLM_MOCK'],
+          message: 'must be off in production (answers would come from a scripted model)',
         });
       }
     }

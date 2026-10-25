@@ -25,13 +25,20 @@ describe('email sign-up / sign-in', () => {
     expect(me.status).toBe(200);
     expect(me.body).toMatchObject({
       success: true,
-      data: { email: 'reader@example.com', name: 'Test Reader', image: null, isGuest: false },
+      data: {
+        email: 'reader@example.com',
+        name: 'Test Reader',
+        image: null,
+        isGuest: false,
+        isAdmin: false,
+      },
     });
     expect(Object.keys(me.body.data).sort()).toEqual([
       'createdAt',
       'email',
       'id',
       'image',
+      'isAdmin',
       'isGuest',
       'name',
     ]);
