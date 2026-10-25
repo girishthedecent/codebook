@@ -1,2 +1,4 @@
 # Not a workspace: this file only holds pnpm settings for frontend/.
-onlyBuiltDependencies: []
+allowBuilds:
+  # tsx's bundler; the platform binary ships in its own package, the postinstall only checks it.
+  esbuild: true
