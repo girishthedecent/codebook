@@ -2,6 +2,7 @@
   "name": "codebook-frontend",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "pnpm@12.14.0",
   "type": "module",
   "engines": {
     "node": ">=22"
