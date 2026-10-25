@@ -69,6 +69,7 @@ export const strings = {
   },
   detail: {
     contents: 'Contents',
+    read: 'Read',
     files: 'Files',
     pages: 'Pages',
     waiting: 'The contents appear here once indexing finishes.',

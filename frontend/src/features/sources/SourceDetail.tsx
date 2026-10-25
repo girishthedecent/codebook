@@ -11,6 +11,7 @@ import { SourceProgress, StatusText } from './SourceStatus';
 import { TocTree } from './TocTree';
 import { isIndexing, secondaryLine, typeMark } from './sourceMeta';
 import { strings } from './strings';
+import { useOpenInViewer } from './useOpenInViewer';
 import { useProgressStream } from './useProgressStream';
 import { useSourceAccess } from './useSourceAccess';
 
@@ -61,6 +62,7 @@ function Detail({
 }) {
   const navigate = useNavigate();
   const resync = useResyncSource(workspaceId);
+  const openInViewer = useOpenInViewer();
   const [confirmDelete, setConfirmDelete] = useState(false);
   useProgressStream(workspaceId, source.id, isIndexing(source.status));
   const ready = source.status === 'READY';
@@ -89,25 +91,40 @@ function Detail({
             {resync.error.message}
           </p>
         )}
-        {canManage && (
+        {(canManage || (ready && source.type === 'PDF')) && (
           <div className="mt-4 flex gap-2">
-            <Button
-              size="sm"
-              className="max-sm:h-10"
-              onClick={() => resync.mutate(source.id)}
-              loading={resync.isPending}
-              disabled={isIndexing(source.status)}
-            >
-              {source.status === 'FAILED' ? strings.retryIndex : strings.resync}
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-error! hover:bg-error-wash! max-sm:h-10"
-              onClick={() => setConfirmDelete(true)}
-            >
-              {strings.delete}
-            </Button>
+            {ready && source.type === 'PDF' && (
+              // A short PDF has no contents to click, so the book needs its own way in.
+              <Button
+                size="sm"
+                variant="primary"
+                className="max-sm:h-10"
+                onClick={() => openInViewer({ kind: 'page', sourceId: source.id, page: 1 })}
+              >
+                {strings.detail.read}
+              </Button>
+            )}
+            {canManage && (
+              <>
+                <Button
+                  size="sm"
+                  className="max-sm:h-10"
+                  onClick={() => resync.mutate(source.id)}
+                  loading={resync.isPending}
+                  disabled={isIndexing(source.status)}
+                >
+                  {source.status === 'FAILED' ? strings.retryIndex : strings.resync}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="text-error! hover:bg-error-wash! max-sm:h-10"
+                  onClick={() => setConfirmDelete(true)}
+                >
+                  {strings.delete}
+                </Button>
+              </>
+            )}
           </div>
         )}
       </header>
