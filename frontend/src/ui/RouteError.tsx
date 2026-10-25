@@ -34,6 +34,10 @@ export function RouteError({ error, reset }: ErrorComponentProps) {
   useEffect(() => {
     document.getElementById('route-error')?.focus();
   }, []);
+  // An error that isn't the server's answer is a bug in the page; leave its trace in the console.
+  useEffect(() => {
+    if (!isApiError(error)) console.error(error);
+  }, [error]);
   return (
     <div className="mx-auto w-full max-w-[560px] px-4 py-16 min-[720px]:py-24">
       <p className="font-mono text-xs text-ink-3">{api ? api.code : 'Error'}</p>
