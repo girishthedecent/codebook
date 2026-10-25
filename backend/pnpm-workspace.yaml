@@ -2,6 +2,8 @@ allowBuilds:
   '@prisma/engines': true
   esbuild: true
   prisma: true
+  # Swagger UI's install-time usage telemetry; the docs page doesn't need it.
+  '@scarf/scarf': false
   # Its postinstall only prints version warnings (pulled in by inngest's OpenTelemetry deps).
   protobufjs: false
   # Grammar packages build native Node bindings on install; we only load their WASM files.
