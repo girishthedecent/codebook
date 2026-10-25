@@ -129,13 +129,13 @@ function Canvas({ layout, highlight, showMinimap, onOpen, onFocus, label }: Grap
       onNodeDoubleClick={(_, node) => onFocus?.(node.data.symbol)}
       onNodesChange={() => {}}
       fitView
-      className="text-ink"
+      className="text-ink [&_.react-flow__node:focus-visible]:outline-2 [&_.react-flow__node:focus-visible]:outline-offset-2 [&_.react-flow__node:focus-visible]:outline-accent"
     >
       <Panel position="top-right">
         <button
           type="button"
           onClick={() => void flow.fitView({ padding: 0.15, duration, maxZoom: 1.1 })}
-          className="h-7 rounded-sm border border-rule-2 bg-paper px-2.5 text-xs text-ink-2 transition-colors duration-150 hover:bg-paper-2 hover:text-ink"
+          className="h-10 rounded-sm border border-rule-2 bg-paper px-3 text-xs text-ink-2 transition-colors duration-150 hover:bg-paper-2 hover:text-ink"
         >
           {t.fitView}
         </button>
@@ -145,9 +145,9 @@ function Canvas({ layout, highlight, showMinimap, onOpen, onFocus, label }: Grap
           pannable
           zoomable
           ariaLabel="Overview"
-          nodeColor="var(--paper-3)"
-          nodeStrokeColor="var(--rule-2)"
-          maskColor="rgb(0 0 0 / 0.04)"
+          nodeColor="var(--rule-2)"
+          nodeStrokeColor="var(--ink-3)"
+          maskColor="color-mix(in srgb, var(--paper-3) 70%, transparent)"
           className="!m-3 overflow-hidden rounded-sm border border-rule !bg-paper"
         />
       )}

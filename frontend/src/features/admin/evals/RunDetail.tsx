@@ -1,8 +1,7 @@
 import { useState } from 'react';
-import { Link } from '@tanstack/react-router';
 import { useEvalResults, useEvalRun } from '@/api/queries';
-import { ChipButton, ProgressRule } from '@/ui';
-import { RouteError } from '@/ui/RouteError';
+import { BackLink, ChipButton, ProgressRule } from '@/ui';
+import { InlineError } from '@/features/account/InlineError';
 import { BarChart } from '../charts/BarChart';
 import { Figures, type Figure } from '../Figures';
 import { dateTime, ms, usd } from '../format';
@@ -15,10 +14,26 @@ import { RunStatus } from './RunStatus';
 export function RunDetail({ runId }: { runId: string }) {
   const run = useEvalRun(runId);
   const [failedOnly, setFailedOnly] = useState(false);
-  const results = useEvalResults(runId, failedOnly ? { failed: 'true' } : {});
+  const results = useEvalResults(
+    runId,
+    failedOnly ? { failed: 'true' } : {},
+    run.data?.status === 'RUNNING',
+  );
 
-  if (run.error) return <RouteError error={run.error} reset={() => void run.refetch()} />;
-  if (!run.data) return <ProgressRule label="Loading run" />;
+  if (run.error && !run.data)
+    return (
+      <div>
+        <BackLink to="/admin/evals">{strings.evals.runs}</BackLink>
+        <InlineError error={run.error} retry={() => void run.refetch()} className="mt-4" />
+      </div>
+    );
+  if (!run.data)
+    return (
+      <div>
+        <BackLink to="/admin/evals">{strings.evals.runs}</BackLink>
+        <ProgressRule label="Loading run" className="mt-4" />
+      </div>
+    );
 
   const r = run.data;
   const summary = isRecord(r.summary) ? r.summary : {};
@@ -57,9 +72,7 @@ export function RunDetail({ runId }: { runId: string }) {
   return (
     <div className="flex flex-col gap-8">
       <header>
-        <Link to="/admin/evals" className="text-xs text-ink-3 hover:text-ink">
-          ← {strings.evals.runs}
-        </Link>
+        <BackLink to="/admin/evals">{strings.evals.runs}</BackLink>
         <div className="mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-1">
           <h2 className="font-mono text-lg font-medium text-ink">{r.name}</h2>
           <span className="font-mono text-sm text-ink-3">{r.suite}</span>
@@ -108,7 +121,7 @@ export function RunDetail({ runId }: { runId: string }) {
         {results.isPending ? (
           <ProgressRule label="Loading results" />
         ) : results.error ? (
-          <RouteError error={results.error} reset={() => void results.refetch()} />
+          <InlineError error={results.error} retry={() => void results.refetch()} />
         ) : results.data.length === 0 ? (
           <p className="py-4 text-sm text-ink-3">
             {failedOnly ? strings.evals.noFailed : strings.evals.noResults}

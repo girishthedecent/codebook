@@ -44,7 +44,7 @@ function Header({
 }
 
 const closeClass =
-  '-mr-1.5 flex size-8 shrink-0 items-center justify-center rounded-sm text-ink-3 hover:bg-paper-2 hover:text-ink';
+  '-mr-1.5 flex size-8 max-[719px]:size-10 shrink-0 items-center justify-center rounded-sm text-ink-3 hover:bg-paper-2 hover:text-ink';
 
 function SidePanel({
   open,
@@ -59,7 +59,7 @@ function SidePanel({
   return (
     <RadixDialog.Root open={open} onOpenChange={onOpenChange}>
       <RadixDialog.Portal>
-        <RadixDialog.Overlay className="fixed inset-0 z-40 bg-ink/20" />
+        <RadixDialog.Overlay className="fixed inset-0 z-40 bg-black/40" />
         <RadixDialog.Content
           style={{ width: `min(${width}px, 100vw)` }}
           className={cn(
@@ -94,7 +94,7 @@ function BottomSheet({ open, onOpenChange, title, description, children, classNa
   return (
     <Drawer.Root open={open} onOpenChange={onOpenChange} snapPoints={[0.55, 1]} fadeFromIndex={0}>
       <Drawer.Portal>
-        <Drawer.Overlay className="fixed inset-0 z-40 bg-ink/20" />
+        <Drawer.Overlay className="fixed inset-0 z-40 bg-black/40" />
         <Drawer.Content
           className={cn(
             'fixed inset-x-0 bottom-0 z-50 flex h-[calc(100dvh-2rem)] flex-col rounded-t-md border-t border-rule bg-paper outline-none',

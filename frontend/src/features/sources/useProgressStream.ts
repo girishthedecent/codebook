@@ -1,5 +1,6 @@
 import { useEffect, useSyncExternalStore } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { isApiError } from '@/api/client';
 import { keys } from '@/api/queries/keys';
 import { patchSourceInCache } from '@/api/queries/sources';
 import { isAbortError, streamSourceProgress } from '@/api/sse';
@@ -61,6 +62,8 @@ export function useProgressStream(workspaceId: string, sourceId: string, enabled
       } catch (error) {
         if (isAbortError(error)) return;
         refresh();
+        // Gone or not ours: the refetch above shows why, and retrying would only repeat it.
+        if (isApiError(error) && error.status >= 400 && error.status < 500) return;
         retry = setTimeout(() => void follow(), RETRY_MS);
       }
     };

@@ -3,7 +3,7 @@ import { Slot } from 'radix-ui';
 import { cn } from '@/lib/cn';
 import { Spinner } from './Spinner';
 
-type Variant = 'primary' | 'secondary' | 'ghost';
+type Variant = 'primary' | 'secondary' | 'ghost' | 'danger';
 type Size = 'sm' | 'md';
 
 export type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
@@ -21,12 +21,13 @@ const base =
 const variants: Record<Variant, string> = {
   primary: 'bg-accent text-paper hover:bg-accent-2 active:bg-accent-2',
   secondary: 'border border-rule-2 text-ink hover:bg-paper-2 active:bg-paper-3',
+  danger: 'border border-error text-error hover:bg-error-wash active:bg-error-wash',
   ghost: 'text-ink-2 hover:bg-paper-2 hover:text-ink active:bg-paper-3',
 };
 
 const sizes: Record<Size, string> = {
-  sm: 'h-7 px-2.5 text-xs',
-  md: 'h-9 px-3.5 text-sm',
+  sm: 'h-7 px-2.5 text-xs max-[719px]:h-10',
+  md: 'h-9 px-3.5 text-sm max-[719px]:h-10',
 };
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(

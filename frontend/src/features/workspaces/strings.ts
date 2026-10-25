@@ -9,6 +9,7 @@ export const workspaceStrings = {
     signOut: 'Sign out',
     signIn: 'Sign in',
     guest: 'Demo visitor',
+    missing: 'Workspace not found',
   },
   fields: {
     name: 'Name',
@@ -28,6 +29,7 @@ export const workspaceStrings = {
   first: {
     title: 'Make your first workspace',
     body: 'A workspace holds the books, repositories and pages you want to ask about together.',
+    signOut: 'Sign out',
   },
   rename: { title: 'Rename workspace', submit: 'Save' },
   remove: {

@@ -3,26 +3,28 @@ import { cn } from '@/lib/cn';
 
 /**
  * Plain semantic tables with hairline rows. Compose: <Table><THead><TR><TH/></TR></THead><TBody>…
- * `stickyHeader` keeps the head visible inside a scrolling parent.
+ * `stickyHeader` keeps the head visible inside a scrolling parent; `bare` skips the built-in
+ * horizontal scroller when the parent provides one.
  */
 export function Table({
   className,
   stickyHeader,
+  bare,
   ...rest
-}: HTMLAttributes<HTMLTableElement> & { stickyHeader?: boolean }) {
-  return (
-    <div className="w-full overflow-x-auto">
-      <table
-        className={cn(
-          'w-full border-collapse text-left text-sm',
-          stickyHeader &&
-            '[&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-10 [&_thead_th]:bg-paper',
-          className,
-        )}
-        {...rest}
-      />
-    </div>
+}: HTMLAttributes<HTMLTableElement> & { stickyHeader?: boolean; bare?: boolean }) {
+  const table = (
+    <table
+      className={cn(
+        'w-full border-collapse text-left text-sm',
+        stickyHeader &&
+          '[&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-10 [&_thead_th]:bg-paper',
+        className,
+      )}
+      {...rest}
+    />
   );
+  // `bare` leaves scrolling to a parent that already has a scroller.
+  return bare ? table : <div className="w-full overflow-x-auto">{table}</div>;
 }
 
 export function THead(props: HTMLAttributes<HTMLTableSectionElement>) {

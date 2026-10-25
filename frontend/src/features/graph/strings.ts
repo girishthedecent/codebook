@@ -1,6 +1,7 @@
 // Copy for the code graph. Sentence case, plain words.
 export const graphStrings = {
   title: 'Code graph',
+  back: 'More',
   repo: 'Repository',
   search: 'Find a symbol',
   searchPlaceholder: 'Function, class, method or file',
@@ -24,7 +25,8 @@ export const graphStrings = {
   collapse: 'Hide',
   openInViewer: 'Open in viewer',
   center: 'Center',
-  legend: 'Left: what calls it. Right: what it calls.',
+  legend:
+    'Left: what calls it. Right: what it calls. Click a node to open it, double-click to center on it.',
   pickHint: 'Search for a function, class or file to see what calls it and what it calls.',
   fileSymbols: (path: string) => `Symbols in ${path}`,
   noFileSymbols: 'No symbols were found in this file.',
@@ -33,6 +35,15 @@ export const graphStrings = {
     n === 1
       ? '1 call goes outside the repository or could not be resolved.'
       : `${n} calls go outside the repository or could not be resolved.`,
+  retry: 'Try again',
+  offline: 'You seem to be offline.',
+  sourcesError: "The repositories couldn't be loaded.",
+  searchError: "Search didn't work. Try again.",
+  openSource: 'Open the source',
+  failedIndex: (reason: string | null) =>
+    reason ? `Indexing this repository failed: ${reason}` : 'Indexing this repository failed.',
+  capped: (shown: number, total: number) =>
+    `Showing the ${shown} nearest of ${total} symbols. Use depth 1 or one direction, or the list view, to see the rest.`,
   noRepo: 'This workspace has no repository yet.',
   addRepo: 'Add a GitHub repository',
   indexing: 'The repository is still being indexed. The graph appears when it is ready.',

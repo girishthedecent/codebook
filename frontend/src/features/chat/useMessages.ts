@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useInfiniteQuery, type QueryClient } from '@tanstack/react-query';
 import { api, unwrap } from '@/api/client';
 import { keys } from '@/api/queries/keys';
@@ -12,7 +12,7 @@ export const messagesKey = (conversationId: string) =>
  * Every message of a conversation, oldest first. The API pages forward from the start, and a
  * transcript needs all of it, so the remaining pages load right after the first.
  */
-export function useMessages(conversationId: string) {
+export function useMessages(conversationId: string, enabled = true) {
   const query = useInfiniteQuery({
     queryKey: messagesKey(conversationId),
     queryFn: ({ pageParam, signal }) =>
@@ -24,6 +24,7 @@ export function useMessages(conversationId: string) {
       ),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => last.messages.nextCursor ?? undefined,
+    enabled,
   });
 
   const { hasNextPage, isFetchingNextPage, fetchNextPage } = query;
@@ -32,7 +33,10 @@ export function useMessages(conversationId: string) {
   }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   const first = query.data?.pages[0];
-  const messages = query.data?.pages.flatMap((p) => p.messages.items) ?? [];
+  const messages = useMemo(
+    () => query.data?.pages.flatMap((p) => p.messages.items) ?? [],
+    [query.data],
+  );
   return { query, conversation: first, messages, complete: !hasNextPage };
 }
 

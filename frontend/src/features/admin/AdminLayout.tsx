@@ -8,7 +8,7 @@ const tab =
 /** Admin pages: a heading, Evals / Monitoring as tabs on a hairline, then the page. */
 export function AdminLayout() {
   return (
-    <div className="mx-auto w-full max-w-[1200px] px-4 py-6 sm:px-6">
+    <div className="w-full">
       <h1 className="text-lg font-semibold text-ink">{strings.title}</h1>
       <nav aria-label="Admin sections" className="mt-3 flex gap-5 border-b border-rule">
         <Link to="/admin/evals" className={tab}>

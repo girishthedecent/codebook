@@ -61,8 +61,8 @@ function useControlProps() {
 }
 
 export const controlClass =
-  'w-full rounded-sm border border-rule-2 bg-paper px-3 text-sm text-ink placeholder:text-ink-3 ' +
-  'transition-colors duration-150 ease-out hover:border-ink-3 focus:border-accent focus:outline-none ' +
+  'w-full rounded-sm border border-rule-2 bg-paper px-3 text-sm text-ink placeholder:text-ink-3 max-[719px]:text-base ' +
+  'transition-colors duration-150 ease-out hover:border-ink-3 focus:border-accent focus-visible:outline-2 focus-visible:outline-offset-0 ' +
   'aria-invalid:border-error disabled:opacity-50';
 
 export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(
@@ -70,7 +70,7 @@ export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputE
     return (
       <input
         ref={ref}
-        className={cn(controlClass, 'h-9', className)}
+        className={cn(controlClass, 'h-9 max-[719px]:h-11', className)}
         {...useControlProps()}
         {...rest}
       />

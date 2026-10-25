@@ -4,7 +4,9 @@ import { flatItems } from '@/api/queries/keys';
 import { useSources } from '@/api/queries/sources';
 import { Button, Spinner } from '@/ui';
 import { AddSourceDialog } from './AddSourceDialog';
+import { LoadError } from './LoadError';
 import { SourceRow } from './SourceRow';
+import { WorkspaceSearch } from './WorkspaceSearch';
 import { strings } from './strings';
 import { useSourceAccess } from './useSourceAccess';
 
@@ -12,7 +14,7 @@ import { useSourceAccess } from './useSourceAccess';
 export function SourcesPage() {
   const { workspaceId } = useParams({ from: '/w/$workspaceId/sources/' });
   const query = useSources(workspaceId);
-  const { canManage, isGuest } = useSourceAccess(workspaceId);
+  const { canManage, isGuest, isDemo } = useSourceAccess(workspaceId);
   const [adding, setAdding] = useState(false);
   const sources = flatItems(query.data);
 
@@ -21,30 +23,61 @@ export function SourcesPage() {
       <header className="flex items-baseline justify-between gap-4 border-b border-rule pb-3">
         <h1 className="text-lg font-semibold">{strings.title}</h1>
         {canManage && (
-          <Button variant="primary" size="sm" onClick={() => setAdding(true)}>
+          <Button
+            variant="primary"
+            size="sm"
+            className="max-sm:h-10"
+            onClick={() => setAdding(true)}
+          >
             {strings.add}
           </Button>
         )}
       </header>
-      {isGuest && <p className="mt-3 text-sm text-ink-3">{strings.guestNoWrite}</p>}
+      {isGuest ? (
+        <p className="mt-3 text-sm text-ink-3">{strings.guestNoWrite}</p>
+      ) : (
+        isDemo && <p className="mt-3 text-sm text-ink-3">{strings.demoReadOnly}</p>
+      )}
 
       {query.isPending ? (
         <div className="flex items-center gap-2 py-6 text-sm text-ink-3">
           <Spinner className="size-3.5" /> Loading
         </div>
-      ) : query.isError ? (
-        <p className="py-6 text-sm text-error">{query.error.message}</p>
+      ) : query.isError && sources.length === 0 ? (
+        <LoadError
+          error={query.error}
+          onRetry={() => void query.refetch()}
+          className="py-6 text-sm"
+        />
       ) : sources.length === 0 ? (
         <div className="py-8">
-          <p className="max-w-[52ch] text-sm text-ink-2">{strings.empty}</p>
+          <p className="max-w-[52ch] text-sm text-ink-2">
+            {canManage ? strings.empty : strings.emptyReadOnly}
+          </p>
           {canManage && (
-            <Button variant="secondary" className="mt-4" onClick={() => setAdding(true)}>
+            <Button
+              variant="secondary"
+              className="mt-4 max-sm:h-10"
+              onClick={() => setAdding(true)}
+            >
               {strings.add}
             </Button>
           )}
         </div>
       ) : (
         <>
+          {query.isError && (
+            <p role="alert" className="mt-3 text-sm break-words text-error">
+              {query.error.message}{' '}
+              <button
+                type="button"
+                onClick={() => void query.refetch()}
+                className="py-2 text-accent underline underline-offset-2"
+              >
+                {strings.retry}
+              </button>
+            </p>
+          )}
           <ul>
             {sources.map((source) => (
               <SourceRow
@@ -59,12 +92,15 @@ export function SourcesPage() {
             <Button
               variant="ghost"
               size="sm"
-              className="mt-3"
+              className="mt-3 max-sm:h-10"
               loading={query.isFetchingNextPage}
               onClick={() => void query.fetchNextPage()}
             >
               {strings.loadMore}
             </Button>
+          )}
+          {canManage && sources.some((s) => s.status === 'READY') && (
+            <WorkspaceSearch workspaceId={workspaceId} />
           )}
         </>
       )}

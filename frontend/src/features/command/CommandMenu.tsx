@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Command } from 'cmdk';
 import { Dialog as RadixDialog } from 'radix-ui';
 import { useInfiniteQuery } from '@tanstack/react-query';
@@ -9,11 +9,19 @@ import { workspacesQueryOptions } from '@/api/queries/workspaces';
 import { signOut, useMe } from '@/auth';
 import { setTheme } from '@/lib/theme';
 import { shortcutLabel, useShortcut } from '@/lib/keyboard';
-import { Kbd, VisuallyHidden } from '@/ui';
+import { useBreakpoint } from '@/lib/breakpoints';
+import { Dialog, Kbd, VisuallyHidden } from '@/ui';
 import { readLastWorkspaceId } from '@/features/account/lastWorkspaceId';
+import { en } from '@/i18n/en';
 import { strings } from '@/features/account/strings';
 
 const s = strings.command;
+const OPEN_EVENT = 'codebook:open-command';
+
+/** Opens the menu from anywhere, e.g. the phone top bar that has no keyboard. */
+export function openCommandMenu() {
+  window.dispatchEvent(new Event(OPEN_EVENT));
+}
 
 /**
  * ⌘K / Ctrl K. Jumps to any page, workspace or recent conversation, and runs the few actions
@@ -21,27 +29,45 @@ const s = strings.command;
  */
 export function CommandMenu() {
   const [open, setOpen] = useState(false);
+  const [help, setHelp] = useState(false);
   useShortcut('mod+k', () => setOpen((o) => !o));
+  useEffect(() => {
+    const show = () => setOpen(true);
+    window.addEventListener(OPEN_EVENT, show);
+    return () => window.removeEventListener(OPEN_EVENT, show);
+  }, []);
 
   return (
-    <RadixDialog.Root open={open} onOpenChange={setOpen}>
-      <RadixDialog.Portal>
-        <RadixDialog.Overlay className="fixed inset-0 z-40 bg-ink/20" />
-        <RadixDialog.Content
-          aria-describedby={undefined}
-          className="fixed inset-x-4 top-[14vh] z-50 mx-auto max-w-[560px] overflow-hidden rounded-md border border-rule bg-paper shadow-float outline-none"
-        >
-          <VisuallyHidden>
-            <RadixDialog.Title>{s.label}</RadixDialog.Title>
-          </VisuallyHidden>
-          {open && <Menu close={() => setOpen(false)} />}
-        </RadixDialog.Content>
-      </RadixDialog.Portal>
-    </RadixDialog.Root>
+    <>
+      <RadixDialog.Root open={open} onOpenChange={setOpen}>
+        <RadixDialog.Portal>
+          <RadixDialog.Overlay className="fixed inset-0 z-40 bg-black/40" />
+          <RadixDialog.Content
+            aria-describedby={undefined}
+            className="fixed inset-x-4 top-[14vh] max-[719px]:top-[8vh] z-50 mx-auto max-w-[560px] overflow-hidden rounded-md border border-rule bg-paper shadow-float outline-none"
+          >
+            <VisuallyHidden>
+              <RadixDialog.Title>{s.label}</RadixDialog.Title>
+            </VisuallyHidden>
+            {open && (
+              <Menu
+                close={() => setOpen(false)}
+                showShortcuts={() => {
+                  setOpen(false);
+                  setHelp(true);
+                }}
+              />
+            )}
+          </RadixDialog.Content>
+        </RadixDialog.Portal>
+      </RadixDialog.Root>
+      <ShortcutsDialog open={help} onOpenChange={setHelp} />
+    </>
   );
 }
 
-function Menu({ close }: { close: () => void }) {
+function Menu({ close, showShortcuts }: { close: () => void; showShortcuts: () => void }) {
+  const bp = useBreakpoint();
   const navigate = useNavigate();
   const { isAdmin, isGuest } = useMe();
   const params = useParams({ strict: false }) as { workspaceId?: string };
@@ -128,6 +154,18 @@ function Menu({ close }: { close: () => void }) {
         <Group heading={s.actions}>
           {workspaceId && <Item onSelect={() => inWorkspace('')}>{s.newConversation}</Item>}
           <Item onSelect={toggleTheme}>{s.toggleTheme}</Item>
+          {bp !== 'phone' && <Item onSelect={showShortcuts}>{s.shortcuts}</Item>}
+          {isGuest && (
+            <Item
+              onSelect={() =>
+                go(
+                  `/sign-in?next=${encodeURIComponent(window.location.pathname + window.location.search)}`,
+                )
+              }
+            >
+              {en.auth.signIn}
+            </Item>
+          )}
           {!isGuest && (
             <Item
               onSelect={async () => {
@@ -169,7 +207,7 @@ function Item({
     <Command.Item
       value={value}
       onSelect={onSelect}
-      className="flex min-h-10 cursor-pointer items-center justify-between gap-3 rounded-sm px-3 text-sm text-ink data-[selected=true]:bg-paper-2"
+      className="flex min-h-10 cursor-pointer items-center justify-between gap-3 rounded-sm px-3 text-sm text-ink data-[selected=true]:bg-paper-2 max-[719px]:min-h-11"
     >
       {children}
     </Command.Item>
@@ -178,4 +216,36 @@ function Item({
 
 function Hint({ children }: { children: ReactNode }) {
   return <span className="font-mono text-xs text-ink-3">{children}</span>;
+}
+
+const shortcutList: [string, string][] = [
+  [shortcutLabel('mod+k'), 'Search and commands'],
+  ['/', 'Focus the message box'],
+  ['Esc', 'Close the viewer or a dialog'],
+  ['[  ]', 'Previous and next page in the viewer'],
+  ['\u2190  \u2192', 'Previous and next flashcard'],
+  ['1 to 6', 'Pick a quiz answer, Enter for next'],
+];
+
+function ShortcutsDialog({
+  open,
+  onOpenChange,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange} title={s.shortcuts} size="sm">
+      <dl className="space-y-2">
+        {shortcutList.map(([keys, what]) => (
+          <div key={what} className="flex items-baseline justify-between gap-4">
+            <dt className="text-ink-2">{what}</dt>
+            <dd className="shrink-0">
+              <Kbd>{keys}</Kbd>
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </Dialog>
+  );
 }

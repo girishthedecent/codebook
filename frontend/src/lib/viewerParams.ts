@@ -7,7 +7,8 @@ import { z } from 'zod';
  *   ?src=<sourceId>&page=157                          book page
  *   ?src=<sourceId>&path=lib/router.js&lines=42-61    code file, cited lines optional
  *   ?src=<sourceId>&path=<page url>&section=Routing   website page, scrolled to a heading
- *   &cite=<n>                                         which citation chip is lit (optional)
+ *   &cite=<n>&from=<messageId>                        which chip is lit: numbers restart every
+ *                                                     answer, so the message names the answer
  *
  * Whether a `path` is code or a web page is the source's type; the viewer knows it.
  */
@@ -21,6 +22,7 @@ export const viewerSearchSchema = z.object({
     .optional(),
   section: z.string().min(1).optional(),
   cite: z.coerce.number().int().positive().optional(),
+  from: z.string().min(1).optional(),
 });
 
 export type ViewerSearch = z.infer<typeof viewerSearchSchema>;
@@ -54,14 +56,15 @@ export function viewerTarget(search: ViewerSearch): ViewerTarget | undefined {
 }
 
 /** Search params that open the viewer at a target; spread over the current search. */
-export function viewerSearchFor(target: ViewerTarget, cite?: number): ViewerSearch {
+export function viewerSearchFor(target: ViewerTarget, cite?: number, from?: string): ViewerSearch {
   if (target.kind === 'page') {
-    return { ...closedViewerSearch, cite, src: target.sourceId, page: target.page };
+    return { ...closedViewerSearch, cite, from, src: target.sourceId, page: target.page };
   }
   const { lineStart, lineEnd } = target;
   return {
     ...closedViewerSearch,
     cite,
+    from,
     src: target.sourceId,
     path: target.path,
     section: target.heading,
@@ -81,4 +84,5 @@ export const closedViewerSearch: ViewerSearch = {
   lines: undefined,
   section: undefined,
   cite: undefined,
+  from: undefined,
 };

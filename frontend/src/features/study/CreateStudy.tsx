@@ -1,4 +1,4 @@
-import { useNavigate } from '@tanstack/react-router';
+import { Link, useNavigate } from '@tanstack/react-router';
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { flatItems } from '@/api/queries/keys';
 import { useSources } from '@/api/queries/sources';
@@ -6,6 +6,7 @@ import { useCreateStudy } from '@/api/queries/study';
 import type { CreateStudyBody, StudyType } from '@/api/types';
 import { Button, Dialog, Field, Input, Sheet, Textarea } from '@/ui';
 import { useBreakpoint } from '@/lib/breakpoints';
+import { ErrorLine } from './ErrorLine';
 import { s, typeDescription, typeLabel } from './strings';
 
 // Mirrors appConfig.study in the backend; the server checks again.
@@ -50,7 +51,9 @@ function CreateStudyForm({ workspaceId, onDone }: { workspaceId: string; onDone:
   const navigate = useNavigate();
   const create = useCreateStudy(workspaceId);
   const sourcesQuery = useSources(workspaceId);
-  const ready = flatItems(sourcesQuery.data).filter((src) => src.status === 'READY');
+  const all = flatItems(sourcesQuery.data);
+  const ready = all.filter((src) => src.status === 'READY');
+  const stillIndexing = all.some((src) => src.status === 'PENDING' || src.status === 'PROCESSING');
 
   const [type, setType] = useState<StudyType>('QUIZ');
   // undefined = every ready source (the default); a set once the user narrows it.
@@ -62,7 +65,12 @@ function CreateStudyForm({ workspaceId, onDone }: { workspaceId: string; onDone:
   const range = countRange[type];
   const sourceIds = picked ? [...picked] : ready.map((src) => src.id);
   const tooMany = sourceIds.length > MAX_SOURCES;
-  const canSubmit = sourceIds.length > 0 && !tooMany && !create.isPending;
+  const chosenCount = range ? (count ?? range.default) : undefined;
+  const badCount =
+    range !== undefined &&
+    chosenCount !== undefined &&
+    (!Number.isInteger(chosenCount) || chosenCount < range.min || chosenCount > range.max);
+  const canSubmit = sourceIds.length > 0 && !tooMany && !badCount && !create.isPending;
 
   const toggle = (id: string) => {
     const next = new Set(picked ?? ready.map((src) => src.id));
@@ -78,7 +86,7 @@ function CreateStudyForm({ workspaceId, onDone }: { workspaceId: string; onDone:
       type,
       sourceIds,
       topic: topic.trim() || undefined,
-      count: range ? (count ?? range.default) : undefined,
+      count: chosenCount,
       difficulty: type === 'QUIZ' ? difficulty : undefined,
     };
     create.mutate(body, {
@@ -92,8 +100,28 @@ function CreateStudyForm({ workspaceId, onDone }: { workspaceId: string; onDone:
     });
   };
 
+  if (sourcesQuery.isError) {
+    return (
+      <div className="flex flex-col gap-2">
+        <p className="text-sm text-ink-2">{s.sourcesFailed}</p>
+        <ErrorLine error={sourcesQuery.error} onRetry={() => void sourcesQuery.refetch()} />
+      </div>
+    );
+  }
   if (sourcesQuery.isSuccess && ready.length === 0) {
-    return <p className="text-ink-2">{s.noSources}</p>;
+    return (
+      <div className="flex flex-col items-start gap-3 text-sm text-ink-2">
+        <p>{stillIndexing ? s.sourcesIndexing : s.noSources}</p>
+        <Link
+          to="/w/$workspaceId/sources"
+          params={{ workspaceId }}
+          onClick={onDone}
+          className="inline-flex min-h-11 items-center text-accent underline underline-offset-2"
+        >
+          {s.sourcesLink}
+        </Link>
+      </div>
+    );
   }
 
   return (
@@ -122,7 +150,27 @@ function CreateStudyForm({ workspaceId, onDone }: { workspaceId: string; onDone:
         </ul>
       </Group>
 
-      <Group legend={s.create.sources} error={tooMany ? s.create.tooManySources : undefined}>
+      <Group
+        legend={s.create.sources}
+        error={
+          tooMany
+            ? s.create.tooManySources
+            : sourceIds.length === 0 && ready.length > 0
+              ? s.create.noneSelected
+              : undefined
+        }
+        action={
+          ready.length > 1 && (
+            <button
+              type="button"
+              className="min-h-11 text-xs text-accent underline underline-offset-2 md:min-h-6"
+              onClick={() => setPicked(sourceIds.length === ready.length ? new Set() : undefined)}
+            >
+              {sourceIds.length === ready.length ? s.create.selectNone : s.create.selectAll}
+            </button>
+          )
+        }
+      >
         <ul className="max-h-48 overflow-y-auto rounded-sm border border-rule">
           {ready.map((src) => (
             <li key={src.id} className="border-b border-rule last:border-b-0">
@@ -143,7 +191,12 @@ function CreateStudyForm({ workspaceId, onDone }: { workspaceId: string; onDone:
 
       <div className="flex flex-wrap gap-4">
         {range && (
-          <Field label={s.create.count(type)} hint={`${range.min}–${range.max}`} className="w-28">
+          <Field
+            label={s.create.count(type)}
+            hint={`${range.min}–${range.max}`}
+            error={badCount ? s.create.countRange(range.min, range.max) : undefined}
+            className="w-28"
+          >
             <Input
               type="number"
               inputMode="numeric"
@@ -206,15 +259,21 @@ const sourceKind = { PDF: 'book', GITHUB_REPO: 'repo', WEBSITE: 'site' } as cons
 function Group({
   legend,
   error,
+  action,
   children,
 }: {
   legend: string;
   error?: string;
+  /** A small control on the legend's row, e.g. select all. */
+  action?: ReactNode;
   children: ReactNode;
 }) {
   return (
     <fieldset className="flex min-w-0 flex-col gap-1.5">
-      <legend className="mb-1.5 text-xs font-medium text-ink">{legend}</legend>
+      <legend className="mb-1.5 flex w-full items-center justify-between text-xs font-medium text-ink">
+        {legend}
+        {action}
+      </legend>
       {children}
       {error && <p className="text-xs text-error">{error}</p>}
     </fieldset>

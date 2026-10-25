@@ -3,7 +3,7 @@ import { useFailedQueries } from '@/api/queries';
 import { flatItems } from '@/api/queries/keys';
 import type { FailedQuery } from '@/api/types';
 import { Button, ProgressRule, Table, TBody, TD, TH, THead, TR } from '@/ui';
-import { RouteError } from '@/ui/RouteError';
+import { InlineError } from '@/features/account/InlineError';
 import { dateTime } from '../format';
 import { ScrollTable } from '../ScrollTable';
 import { strings } from '../strings';
@@ -25,8 +25,8 @@ export function FailedQueries() {
       <h2 id="failed" className="mb-3 text-sm font-medium text-ink">
         {strings.monitoring.failed}
       </h2>
-      {q.error ? (
-        <RouteError error={q.error} reset={() => void q.refetch()} />
+      {q.error && rows.length === 0 ? (
+        <InlineError error={q.error} retry={() => void q.refetch()} />
       ) : q.isPending ? (
         <ProgressRule label="Loading failed queries" />
       ) : rows.length === 0 ? (
@@ -72,7 +72,7 @@ export function FailedQueries() {
             </Table>
           </ScrollTable>
           {q.hasNextPage && (
-            <div className="mt-3">
+            <div className="mt-3 flex flex-wrap items-center gap-3">
               <Button
                 size="sm"
                 variant="secondary"
@@ -81,6 +81,11 @@ export function FailedQueries() {
               >
                 {strings.monitoring.loadMore}
               </Button>
+              {q.isFetchNextPageError && (
+                <span role="alert" className="text-xs text-error">
+                  {q.error?.message}
+                </span>
+              )}
             </div>
           )}
         </>

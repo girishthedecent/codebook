@@ -96,6 +96,8 @@ export function CodeView({ sourceId, path, lineStart, lineEnd }: Props) {
       {loading && <ProgressRule label={s.loading} />}
       {error && !lines.length ? (
         <ViewError error={error.error} onRetry={() => error.refetch()} />
+      ) : !loading && !lines.length ? (
+        <p className="px-5 py-6 text-sm text-ink-3">{s.emptyFile}</p>
       ) : (
         <Lines
           lines={lines}
@@ -125,7 +127,7 @@ function windowQuery(path: string, w: number) {
 function MoreButton({ onClick, children }: { onClick: () => void; children: string }) {
   return (
     <div className="px-3 py-1.5">
-      <Button variant="ghost" size="sm" onClick={onClick}>
+      <Button variant="ghost" size="sm" className="max-[719px]:h-11" onClick={onClick}>
         {children}
       </Button>
     </div>
@@ -169,10 +171,20 @@ function CodeBar({
       </nav>
       {workspaceId && (
         <div className="flex gap-1">
-          <Button variant="ghost" size="sm" onClick={() => toGraph('callers')}>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="max-[719px]:h-11"
+            onClick={() => toGraph('callers')}
+          >
             {s.callers}
           </Button>
-          <Button variant="ghost" size="sm" onClick={() => toGraph('dependencies')}>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="max-[719px]:h-11"
+            onClick={() => toGraph('dependencies')}
+          >
             {s.dependencies}
           </Button>
         </div>

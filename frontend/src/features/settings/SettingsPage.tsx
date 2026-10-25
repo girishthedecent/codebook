@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate } from '@tanstack/react-router';
 import { authClient, signOut, useMe } from '@/auth';
@@ -56,7 +56,8 @@ function ThemePicker() {
 
 function Shortcuts() {
   return (
-    <section>
+    // No keyboard on a phone, so the list would only be noise there.
+    <section className="max-[719px]:hidden">
       <SectionHeading>{s.shortcuts}</SectionHeading>
       <dl>
         {s.shortcutRows.map((row) => (
@@ -90,6 +91,20 @@ function Account() {
     staleTime: 5 * 60_000,
   });
   const github = accounts.data?.some((a) => a.providerId === 'github');
+  const [leaving, setLeaving] = useState(false);
+  const [signOutError, setSignOutError] = useState(false);
+
+  const leave = async () => {
+    setLeaving(true);
+    setSignOutError(false);
+    try {
+      await signOut();
+      void navigate({ to: '/', replace: true });
+    } catch {
+      setSignOutError(true);
+      setLeaving(false);
+    }
+  };
 
   return (
     <section>
@@ -98,27 +113,24 @@ function Account() {
         <Row label={s.name}>{me?.name}</Row>
         <Row label={s.email}>{me?.email}</Row>
         <Row label={s.github}>
-          {accounts.isPending ? '…' : github ? s.githubLinked : s.githubNotLinked}
+          {accounts.isPending
+            ? '…'
+            : accounts.isError
+              ? s.githubUnknown
+              : github
+                ? s.githubLinked
+                : s.githubNotLinked}
         </Row>
       </dl>
-      <div className="mt-6 flex flex-wrap gap-2">
-        <Button
-          variant="secondary"
-          onClick={async () => {
-            await signOut();
-            void navigate({ to: '/' });
-          }}
-        >
+      <div className="mt-6">
+        <Button variant="secondary" loading={leaving} onClick={() => void leave()}>
           {strings.nav.signOut}
         </Button>
-        <span className="inline-flex items-center gap-3">
-          <Button variant="ghost" disabled aria-describedby="delete-unavailable">
-            {s.deleteAccount}
-          </Button>
-          <span id="delete-unavailable" className="text-xs text-ink-3">
-            {s.deleteUnavailable}
-          </span>
-        </span>
+        {signOutError && (
+          <p role="alert" className="mt-2 text-xs text-error">
+            {s.signOutFailed}
+          </p>
+        )}
       </div>
     </section>
   );

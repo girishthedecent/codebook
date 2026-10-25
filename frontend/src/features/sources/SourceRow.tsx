@@ -43,7 +43,7 @@ export function SourceRow({
             <Link
               to="/w/$workspaceId/sources/$sourceId"
               params={{ workspaceId, sourceId: source.id }}
-              className="truncate text-sm font-medium text-ink hover:underline hover:underline-offset-2"
+              className="-my-2 min-w-0 truncate py-2 text-sm font-medium text-ink hover:underline hover:underline-offset-2"
             >
               {source.title}
             </Link>
@@ -54,20 +54,26 @@ export function SourceRow({
           <StatusText source={source} className="mt-0.5 block sm:hidden" />
           {source.status === 'FAILED' && (
             <div className="mt-1.5 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-              {source.error && <span className="text-xs text-error">{source.error}</span>}
+              {source.error && (
+                <span className="min-w-0 text-xs break-words text-error">{source.error}</span>
+              )}
               {canManage && (
                 <button
                   type="button"
                   onClick={() => resync.mutate(source.id)}
                   disabled={resync.isPending}
-                  className="text-xs text-accent underline underline-offset-2 disabled:opacity-50"
+                  className="-my-1.5 py-1.5 text-xs text-accent underline underline-offset-2 disabled:opacity-50"
                 >
-                  {strings.resync}
+                  {strings.retryIndex}
                 </button>
               )}
             </div>
           )}
-          {resync.error && <div className="mt-1 text-xs text-error">{resync.error.message}</div>}
+          {resync.error && (
+            <div role="alert" className="mt-1 text-xs break-words text-error">
+              {resync.error.message}
+            </div>
+          )}
         </div>
         <Menu
           align="end"

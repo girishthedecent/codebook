@@ -20,7 +20,9 @@ import {
   toast,
 } from '@/ui';
 import { cn } from '@/lib/cn';
+import { useUnsavedChanges } from '@/lib/useUnsavedChanges';
 import { en } from '@/i18n/en';
+import { InlineError } from '@/features/account/InlineError';
 import { PageHeader, SectionHeading } from '@/features/account/PageHeader';
 import { formatWhen } from '@/features/account/format';
 import { strings } from '@/features/account/strings';
@@ -56,7 +58,7 @@ export function MemoryPage() {
         {memories.isPending ? (
           <ProgressRule label="Loading memories" />
         ) : memories.isError ? (
-          <p className="text-sm text-error">{memories.error.message}</p>
+          <InlineError error={memories.error} retry={() => void memories.refetch()} />
         ) : (
           KINDS.map((kind) => (
             <MemoryGroup key={kind} kind={kind} items={items.filter((m) => m.kind === kind)} />
@@ -89,6 +91,7 @@ function MemoryRow({ memory }: { memory: Memory }) {
   const [editing, setEditing] = useState(false);
   const remove = useDeleteMemory();
   const restore = useRestoreMemory();
+  const editButton = useRef<HTMLButtonElement>(null);
   const deleted = Boolean(memory.deletedAt);
 
   const onRemove = () =>
@@ -96,15 +99,27 @@ function MemoryRow({ memory }: { memory: Memory }) {
       onSuccess: () =>
         toast({
           title: s.removed,
-          action: { label: s.undo, onClick: () => restore.mutate(memory.id) },
+          action: {
+            label: s.undo,
+            onClick: () =>
+              restore.mutate(memory.id, {
+                onError: (e) => toast({ title: e.message, kind: 'error' }),
+              }),
+          },
         }),
       onError: (e) => toast({ title: e.message, kind: 'error' }),
     });
 
-  if (editing) return <EditRow memory={memory} onDone={() => setEditing(false)} />;
+  const finishEdit = () => {
+    setEditing(false);
+    // The Edit button is unmounted while the form is open; put focus back on it afterwards.
+    requestAnimationFrame(() => editButton.current?.focus());
+  };
+
+  if (editing) return <EditRow memory={memory} onDone={finishEdit} />;
 
   return (
-    <li className="flex items-start gap-4 border-b border-rule py-3 last:border-b-0">
+    <li className="flex gap-x-4 gap-y-1 border-b border-rule py-3 last:border-b-0 max-[719px]:flex-col min-[720px]:items-start">
       <div className={cn('min-w-0 flex-1', deleted && 'text-ink-3')}>
         <p className={cn('font-serif text-base', deleted && 'line-through')}>{memory.content}</p>
         <p className="mt-1 font-mono text-xs text-ink-3">
@@ -112,19 +127,23 @@ function MemoryRow({ memory }: { memory: Memory }) {
           {!deleted && memory.lastUsedAt && ` · ${s.used(formatWhen(memory.lastUsedAt))}`}
         </p>
       </div>
-      <div className="flex shrink-0 gap-1">
+      <div className="flex shrink-0 gap-1 max-[719px]:-ml-2.5">
         {deleted ? (
           <Button
             variant="ghost"
             size="sm"
             loading={restore.isPending}
-            onClick={() => restore.mutate(memory.id)}
+            onClick={() =>
+              restore.mutate(memory.id, {
+                onError: (e) => toast({ title: e.message, kind: 'error' }),
+              })
+            }
           >
             {s.restore}
           </Button>
         ) : (
           <>
-            <Button variant="ghost" size="sm" onClick={() => setEditing(true)}>
+            <Button ref={editButton} variant="ghost" size="sm" onClick={() => setEditing(true)}>
               {s.edit}
             </Button>
             <Button variant="ghost" size="sm" loading={remove.isPending} onClick={onRemove}>
@@ -143,6 +162,8 @@ function EditRow({ memory, onDone }: { memory: Memory; onDone: () => void }) {
   const input = useRef<HTMLTextAreaElement>(null);
   const trimmed = content.trim();
   const unchanged = trimmed === memory.content;
+
+  useUnsavedChanges(!unchanged && !update.isSuccess);
 
   // The user just pressed Edit, so the text is what they want to type into.
   useEffect(() => input.current?.focus(), []);
@@ -194,6 +215,7 @@ function AddMemory() {
   const [kind, setKind] = useState<Kind>('FACT');
   const create = useCreateMemory();
   const trimmed = content.trim();
+  useUnsavedChanges(trimmed.length > 0);
 
   return (
     <section>
@@ -247,7 +269,10 @@ function ClearAllDialog({
   const [typed, setTyped] = useState('');
   const clear = useClearMemories();
   const close = (next: boolean) => {
-    if (!next) setTyped('');
+    if (!next) {
+      setTyped('');
+      clear.reset();
+    }
     onOpenChange(next);
   };
 
@@ -264,7 +289,7 @@ function ClearAllDialog({
             {en.common.cancel}
           </Button>
           <Button
-            variant="primary"
+            variant="danger"
             loading={clear.isPending}
             disabled={typed.trim().toLowerCase() !== s.clearWord}
             onClick={() =>

@@ -15,6 +15,8 @@ export type DialogProps = {
   /** Footer row, usually two buttons; right-aligned. */
   actions?: ReactNode;
   size?: 'sm' | 'md' | 'lg';
+  /** Where focus goes on close; call `event.preventDefault()` to place it yourself. */
+  onCloseAutoFocus?: (event: Event) => void;
   className?: string;
 };
 
@@ -29,15 +31,17 @@ export function Dialog({
   children,
   actions,
   size = 'md',
+  onCloseAutoFocus,
   className,
 }: DialogProps) {
   return (
     <RadixDialog.Root open={open} onOpenChange={onOpenChange}>
       <RadixDialog.Portal>
-        <RadixDialog.Overlay className="fixed inset-0 z-40 bg-ink/30 data-[state=open]:animate-[fade-in_150ms_ease-out]" />
+        <RadixDialog.Overlay className="fixed inset-0 z-40 bg-black/40 data-[state=open]:animate-[fade-in_150ms_ease-out]" />
         <RadixDialog.Content
+          onCloseAutoFocus={onCloseAutoFocus}
           className={cn(
-            'fixed inset-x-4 top-[12vh] z-50 mx-auto flex max-h-[76vh] flex-col rounded-md border border-rule bg-paper shadow-float outline-none',
+            'fixed inset-x-4 top-[8dvh] z-50 mx-auto flex max-h-[84dvh] flex-col rounded-md border border-rule bg-paper shadow-float outline-none',
             'data-[state=open]:animate-[fade-in_150ms_ease-out]',
             widths[size],
             className,
@@ -61,7 +65,7 @@ export function Dialog({
             </div>
             <RadixDialog.Close
               aria-label="Close"
-              className="-mr-2 -mt-1 flex size-8 items-center justify-center rounded-sm text-ink-3 hover:bg-paper-2 hover:text-ink"
+              className="-mr-2 -mt-1 flex size-8 max-[719px]:size-10 items-center justify-center rounded-sm text-ink-3 hover:bg-paper-2 hover:text-ink"
             >
               <X size={16} />
             </RadixDialog.Close>

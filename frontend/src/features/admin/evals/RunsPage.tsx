@@ -3,7 +3,7 @@ import { Link, useNavigate } from '@tanstack/react-router';
 import { useEvalDatasets, useEvalRuns } from '@/api/queries';
 import type { EvalRun } from '@/api/types';
 import { Button, ChipButton, ProgressRule, Table, TBody, TD, TH, THead, TR } from '@/ui';
-import { RouteError } from '@/ui/RouteError';
+import { InlineError } from '@/features/account/InlineError';
 import { Sparkline } from '../charts/Sparkline';
 import { relative, usd } from '../format';
 import { ScrollTable } from '../ScrollTable';
@@ -53,15 +53,15 @@ export function RunsPage() {
     picked.some((r) => r.id === run.id) ||
     (picked[0]!.suite === run.suite && picked[0]!.dataset === run.dataset);
 
-  if (runs.error) return <RouteError error={runs.error} reset={() => void runs.refetch()} />;
-
   return (
     <div className="flex flex-col gap-10">
       <section aria-labelledby="datasets">
         <h2 id="datasets" className="mb-2 text-sm font-medium text-ink">
           {strings.evals.datasets}
         </h2>
-        {datasets.data?.length === 0 ? (
+        {datasets.error ? (
+          <InlineError error={datasets.error} retry={() => void datasets.refetch()} />
+        ) : datasets.data?.length === 0 ? (
           <p className="text-sm text-ink-3">{strings.evals.noDatasets}</p>
         ) : (
           <dl className="divide-y divide-rule border-y border-rule">
@@ -149,6 +149,9 @@ export function RunsPage() {
           </span>
         </div>
 
+        {runs.error && !runs.data && (
+          <InlineError error={runs.error} retry={() => void runs.refetch()} />
+        )}
         {runs.isPending && <ProgressRule label="Loading runs" />}
         {runs.data?.length === 0 ? (
           <p className="py-6 text-sm text-ink-3">{strings.evals.noRuns}</p>

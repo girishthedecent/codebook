@@ -45,7 +45,9 @@ export function Flashcards({ deck, index, search, setSearch }: Props) {
     (pile === 'know' ? a : k).delete(card.id);
     (pile === 'know' ? k : a).add(card.id);
     setFlipped(false);
-    setSearch({ know: idCsv(k), again: idCsv(a), card: at + 2 });
+    // Marking a card known inside the again pile removes it, so the next card slides into this slot.
+    const leavesPile = pile === 'know' && search.pile === 'again';
+    setSearch({ know: idCsv(k), again: idCsv(a), card: leavesPile ? at + 1 : at + 2 });
   };
 
   // Space flips only when nothing else has focus (or the card does), so a focused button
@@ -100,6 +102,11 @@ export function Flashcards({ deck, index, search, setSearch }: Props) {
           {s.cards.done(deck.cards.filter((c) => know.has(c.id)).length, deck.cards.length)}
         </p>
         <div className="mt-6 flex flex-wrap gap-2">
+          {total > 0 && (
+            <Button variant="ghost" onClick={() => go(total - 1)}>
+              {s.cards.lastCard}
+            </Button>
+          )}
           {againCount > 0 && (
             <Button variant="primary" onClick={() => setSearch({ pile: 'again', card: 1 })}>
               {s.cards.reviewAgain(againCount)}
@@ -134,7 +141,7 @@ export function Flashcards({ deck, index, search, setSearch }: Props) {
           {s.cards.showingAgain}{' '}
           <button
             type="button"
-            className="text-accent underline underline-offset-2"
+            className="inline-flex min-h-10 items-center text-accent underline underline-offset-2"
             onClick={() => setSearch({ pile: undefined, card: 1 })}
           >
             {s.cards.showAll}
@@ -146,8 +153,7 @@ export function Flashcards({ deck, index, search, setSearch }: Props) {
         ref={cardRef}
         role="button"
         tabIndex={0}
-        aria-label={s.cards.flip}
-        aria-pressed={flipped}
+        aria-label={`${flipped ? s.cards.back : s.cards.front}: ${flipped ? card.back : card.front}. ${s.cards.flip}`}
         onKeyDown={(e) => {
           // Space is handled by the window listener above.
           if (e.key === 'Enter') setFlipped((f) => !f);
@@ -169,24 +175,36 @@ export function Flashcards({ deck, index, search, setSearch }: Props) {
         {flipped && cites.length > 0 && <Cites citations={cites} />}
       </p>
 
-      <div className="mt-3 flex items-center justify-between gap-2">
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
         <div className="flex gap-1">
-          <Button variant="ghost" size="sm" disabled={at === 0} onClick={() => go(at - 1)}>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-10! px-3!"
+            disabled={at === 0}
+            onClick={() => go(at - 1)}
+          >
             ← {s.cards.prev}
           </Button>
-          <Button variant="ghost" size="sm" onClick={() => go(at + 1)}>
+          <Button variant="ghost" size="sm" className="h-10! px-3!" onClick={() => go(at + 1)}>
             {s.cards.next} →
           </Button>
         </div>
         <div className="flex gap-2">
           <Button
             variant="secondary"
+            className="h-11! sm:h-9!"
             onClick={() => sort('again')}
             aria-pressed={again.has(card.id)}
           >
             {s.cards.again}
           </Button>
-          <Button variant="primary" onClick={() => sort('know')} aria-pressed={know.has(card.id)}>
+          <Button
+            variant="primary"
+            className="h-11! sm:h-9!"
+            onClick={() => sort('know')}
+            aria-pressed={know.has(card.id)}
+          >
             {s.cards.know}
           </Button>
         </div>

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useIsDemoWorkspace } from '@/api/queries/demo';
 import { useMe } from '@/auth/useMe';
 import { useBreakpoint } from '@/lib/breakpoints';
 import { CreateStudy } from './CreateStudy';
@@ -20,19 +21,28 @@ type Props = {
  */
 export function StudyPage({ workspaceId, studyId, search = {}, setSearch = () => {} }: Props) {
   const phone = useBreakpoint() === 'phone';
-  const { isGuest } = useMe();
+  const { isGuest: guest, isLoading } = useMe();
+  // Until we know who is signed in, show the read-only view rather than buttons that may vanish.
+  const signedOut = guest || isLoading;
+  // The demo workspace belongs to no one who visits it, so nobody can add to it.
+  const isDemo = useIsDemoWorkspace(workspaceId);
+  const isGuest = signedOut || isDemo;
   const [creating, setCreating] = useState(false);
 
   const list = (
     <StudyList
       workspaceId={workspaceId}
       selectedId={studyId}
+      kind={search.kind}
+      onKind={(kind) => setSearch({ kind })}
       readOnly={isGuest}
+      note={signedOut ? s.guestNote : s.demoNote}
       onCreate={() => setCreating(true)}
     />
   );
   const artifact = studyId ? (
     <StudyArtifact
+      key={studyId}
       workspaceId={workspaceId}
       studyId={studyId}
       readOnly={isGuest}

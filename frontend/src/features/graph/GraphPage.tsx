@@ -1,17 +1,19 @@
 import { lazy, Suspense, useMemo } from 'react';
-import { Link } from '@tanstack/react-router';
-import { useSources } from '@/api/queries';
+import { Link, useParams } from '@tanstack/react-router';
+import { useInfiniteQuery } from '@tanstack/react-query';
+import { sourcesQueryOptions } from '@/api/queries';
 import { flatItems } from '@/api/queries/keys';
 import { isApiError } from '@/api/client';
 import type { GraphSymbol, Source } from '@/api/types';
 import { useBreakpoint } from '@/lib/breakpoints';
-import { controlClass, Spinner, Tabs, TabPanel } from '@/ui';
+import { BackLink, controlClass, Spinner, Tabs, TabPanel } from '@/ui';
 import { cn } from '@/lib/cn';
 import { graphRoute, type Direction } from './search';
 import { useGraphNavigation, useNeighborhood, useSymbolById, useSymbolMatches } from './hooks';
 import { layoutNeighborhood } from './layout';
 import { GraphTree } from './GraphTree';
 import { Segmented } from './Segmented';
+import { ErrorLine } from './ErrorLine';
 import { SymbolCombobox } from './SymbolCombobox';
 import { SymbolLine } from './SymbolLine';
 import { TraceView } from './TraceView';
@@ -26,9 +28,31 @@ export function GraphPage() {
   const { workspaceId } = graphRoute.useParams();
   const search = graphRoute.useSearch();
   const navigate = graphRoute.useNavigate();
-  const sources = useSources(workspaceId);
+  const sources = useInfiniteQuery({
+    ...sourcesQueryOptions(workspaceId),
+    // A repository that is still indexing turns ready on its own; check back until it does.
+    refetchInterval: (q) =>
+      q.state.data?.pages.some((p) =>
+        p.items.some(
+          (s) => s.type === 'GITHUB_REPO' && (s.status === 'PENDING' || s.status === 'PROCESSING'),
+        ),
+      )
+        ? 4000
+        : false,
+  });
   const repos = flatItems(sources.data).filter((s) => s.type === 'GITHUB_REPO');
 
+  if (sources.isError && !sources.data) {
+    return (
+      <Frame>
+        <ErrorLine
+          error={sources.error}
+          fallback={t.sourcesError}
+          onRetry={() => void sources.refetch()}
+        />
+      </Frame>
+    );
+  }
   if (sources.isPending) {
     return (
       <Frame>
@@ -69,7 +93,7 @@ export function GraphPage() {
   return (
     <Frame>
       <div className="flex flex-wrap items-end gap-3">
-        {repos.length > 1 && (
+        {repos.length > 1 ? (
           <div className="flex flex-col gap-1.5">
             <label htmlFor="graph-repo" className="text-xs font-medium text-ink">
               {t.repo}
@@ -78,7 +102,7 @@ export function GraphPage() {
               id="graph-repo"
               value={repo.id}
               onChange={(e) => pickRepo(e.target.value)}
-              className={cn(controlClass, 'h-9 w-auto max-w-64 pr-8')}
+              className={cn(controlClass, 'h-10 w-auto max-w-64 pr-8 md:h-9')}
             >
               {repos.map((r) => (
                 <option key={r.id} value={r.id}>
@@ -87,34 +111,66 @@ export function GraphPage() {
               ))}
             </select>
           </div>
+        ) : (
+          <p className="max-w-full truncate font-mono text-xs text-ink-2">{repo.title}</p>
         )}
       </div>
-      <RepoBody repo={repo} />
+      <RepoBody repo={repo} workspaceId={workspaceId} />
     </Frame>
   );
 }
 
 function Frame({ children }: { children: React.ReactNode }) {
+  const phone = useBreakpoint() === 'phone';
+  const { workspaceId } = useParams({ strict: false }) as { workspaceId: string };
   return (
     <div className="mx-auto flex w-full max-w-[1400px] flex-col gap-4 px-4 py-5 md:px-6">
+      {/* On phones the graph lives under More, so that is the way up. */}
+      {phone && (
+        <BackLink to="/w/$workspaceId/more" params={{ workspaceId }} className="-mb-2">
+          {t.back}
+        </BackLink>
+      )}
       <h1 className="text-lg font-semibold">{t.title}</h1>
       {children}
     </div>
   );
 }
 
-function RepoBody({ repo }: { repo: Source }) {
+function RepoBody({ repo, workspaceId }: { repo: Source; workspaceId: string }) {
   const search = graphRoute.useSearch();
   const navigate = graphRoute.useNavigate();
   const mode = search.mode ?? 'explore';
 
+  const toSource = (
+    <Link
+      to="/w/$workspaceId/sources/$sourceId"
+      params={{ workspaceId, sourceId: repo.id }}
+      className="inline-flex min-h-11 items-center text-accent underline underline-offset-2"
+    >
+      {t.openSource}
+    </Link>
+  );
   if (repo.status !== 'READY') {
+    const failed = repo.status === 'FAILED';
     return (
-      <p className="text-sm text-ink-2">{repo.status === 'FAILED' ? t.noGraph : t.indexing}</p>
+      <div className="flex max-w-[560px] flex-col items-start text-sm text-ink-2">
+        <p role={failed ? 'alert' : 'status'} className="break-words">
+          {failed ? t.failedIndex(repo.error) : t.indexing}
+        </p>
+        {toSource}
+      </div>
     );
   }
   const stats = (repo.stats as { graph?: GraphStats }).graph;
-  if (!stats) return <p className="text-sm text-ink-2">{t.noGraph}</p>;
+  if (!stats) {
+    return (
+      <div className="flex max-w-[560px] flex-col items-start text-sm text-ink-2">
+        <p>{t.noGraph}</p>
+        {toSource}
+      </div>
+    );
+  }
   const resolved =
     stats.calls && stats.callsResolved !== undefined
       ? Math.round((stats.callsResolved / stats.calls) * 100)
@@ -196,7 +252,7 @@ function Neighborhood({ repo, symbolId }: { repo: string; symbolId: string }) {
     navigate({ search: (prev) => ({ ...prev, ...patch }) });
 
   if (n.error) {
-    return <p className="text-sm text-error">{isApiError(n.error, 404) ? t.notFound : t.error}</p>;
+    return <ErrorLine error={n.error} onRetry={n.refetch} />;
   }
   if (!n.center) {
     return (
@@ -208,55 +264,51 @@ function Neighborhood({ repo, symbolId }: { repo: string; symbolId: string }) {
 
   const truncated = n.callers?.truncated || n.dependencies?.truncated;
   const outside = n.dependencies?.external.length ?? 0;
+  const hidden = layout?.hidden ?? 0;
+  const shown = layout ? layout.nodes.length - 1 : 0;
 
   return (
     <div className="flex flex-col gap-3">
       <CenterHeader symbol={n.center} onOpen={() => openInViewer(n.center!)} />
 
-      {view === 'canvas' && (
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-          <Segmented
-            label={t.direction}
-            value={dir}
-            onChange={(v) => set({ dir: v })}
-            options={[
-              { value: 'callers', label: t.callers },
-              { value: 'both', label: t.both },
-              { value: 'dependencies', label: t.dependencies },
-            ]}
-          />
-          <Segmented
-            label={t.depth}
-            value={depth}
-            onChange={(v) => set({ depth: v })}
-            options={[1, 2, 3].map((d) => ({ value: d, label: `${t.depth} ${d}` }))}
-          />
-          <span className="text-xs text-ink-3">{t.legend}</span>
-          <span className="ml-auto" />
-          <Segmented
-            label="View"
-            value={view}
-            onChange={(v) => set({ view: v })}
-            options={[
-              { value: 'canvas', label: t.canvas },
-              { value: 'list', label: t.list },
-            ]}
-          />
-        </div>
-      )}
-      {view === 'list' && bp !== 'phone' && (
-        <div>
-          <Segmented
-            label="View"
-            value={view}
-            onChange={(v) => set({ view: v })}
-            options={[
-              { value: 'canvas', label: t.canvas },
-              { value: 'list', label: t.list },
-            ]}
-          />
-        </div>
-      )}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <Segmented
+          label={t.direction}
+          value={dir}
+          onChange={(v) => set({ dir: v })}
+          options={[
+            { value: 'callers', label: t.callers },
+            { value: 'both', label: t.both },
+            { value: 'dependencies', label: t.dependencies },
+          ]}
+        />
+        {view === 'canvas' && (
+          <>
+            <Segmented
+              label={t.depth}
+              value={depth}
+              onChange={(v) => set({ depth: v })}
+              options={[1, 2, 3].map((d) => ({ value: d, label: `${t.depth} ${d}` }))}
+            />
+            <span className="text-xs text-ink-3">{t.legend}</span>
+          </>
+        )}
+        {/* Phones only have the list; the canvas needs room. */}
+        {bp !== 'phone' && (
+          <>
+            <span className="ml-auto" />
+            <Segmented
+              label="View"
+              value={view}
+              onChange={(v) => set({ view: v })}
+              options={[
+                { value: 'canvas', label: t.canvas },
+                { value: 'list', label: t.list },
+              ]}
+            />
+          </>
+        )}
+      </div>
 
       {view === 'canvas' && layout ? (
         <div className="relative h-[calc(100dvh-19rem)] min-h-[420px] overflow-hidden rounded-md border border-rule">
@@ -280,12 +332,14 @@ function Neighborhood({ repo, symbolId }: { repo: string; symbolId: string }) {
           </Suspense>
         </div>
       ) : (
-        <GraphTree repo={repo} center={n.center} onOpen={openInViewer} onFocus={focus} />
+        <GraphTree repo={repo} center={n.center} dir={dir} onOpen={openInViewer} onFocus={focus} />
       )}
 
-      {(truncated || outside > 0) && (
+      {(truncated || outside > 0 || hidden > 0) && (
         <p className="text-xs text-ink-3">
-          {truncated && t.truncated} {outside > 0 && t.outside(outside)}
+          {hidden > 0 && view === 'canvas' && `${t.capped(shown, shown + hidden)} `}
+          {truncated && `${t.truncated} `}
+          {outside > 0 && t.outside(outside)}
         </p>
       )}
     </div>

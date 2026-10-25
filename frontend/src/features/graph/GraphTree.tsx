@@ -4,6 +4,7 @@ import { graphCallersQueryOptions, graphDependenciesQueryOptions } from '@/api/q
 import type { GraphSymbol } from '@/api/types';
 import { Spinner } from '@/ui';
 import { cn } from '@/lib/cn';
+import { ErrorLine } from './ErrorLine';
 import { SymbolLine } from './SymbolLine';
 import { graphStrings as t } from './strings';
 
@@ -12,6 +13,8 @@ type Dir = 'callers' | 'dependencies';
 type Props = {
   repo: string;
   center: GraphSymbol;
+  /** Which sides to show; both by default. */
+  dir?: 'callers' | 'dependencies' | 'both';
   onOpen: (symbol: GraphSymbol) => void;
   onFocus: (id: string) => void;
 };
@@ -20,35 +23,39 @@ type Props = {
  * The graph as a tree, one hop at a time: used on phones instead of the canvas, and as the
  * keyboard-friendly list view elsewhere. Each row fetches its own next level when expanded.
  */
-export function GraphTree({ repo, center, onOpen, onFocus }: Props) {
+export function GraphTree({ repo, center, dir = 'both', onOpen, onFocus }: Props) {
   return (
     <div className="space-y-6">
-      <section aria-labelledby="tree-callers">
-        <h2 id="tree-callers" className="mb-1 text-xs font-medium text-ink-2">
-          {t.calledBy}
-        </h2>
-        <Level
-          repo={repo}
-          symbolId={center.id}
-          dir="callers"
-          ancestors={[center.id]}
-          onOpen={onOpen}
-          onFocus={onFocus}
-        />
-      </section>
-      <section aria-labelledby="tree-calls">
-        <h2 id="tree-calls" className="mb-1 text-xs font-medium text-ink-2">
-          {t.calls}
-        </h2>
-        <Level
-          repo={repo}
-          symbolId={center.id}
-          dir="dependencies"
-          ancestors={[center.id]}
-          onOpen={onOpen}
-          onFocus={onFocus}
-        />
-      </section>
+      {dir !== 'dependencies' && (
+        <section aria-labelledby="tree-callers">
+          <h2 id="tree-callers" className="mb-1 text-xs font-medium text-ink-2">
+            {t.calledBy}
+          </h2>
+          <Level
+            repo={repo}
+            symbolId={center.id}
+            dir="callers"
+            ancestors={[center.id]}
+            onOpen={onOpen}
+            onFocus={onFocus}
+          />
+        </section>
+      )}
+      {dir !== 'callers' && (
+        <section aria-labelledby="tree-calls">
+          <h2 id="tree-calls" className="mb-1 text-xs font-medium text-ink-2">
+            {t.calls}
+          </h2>
+          <Level
+            repo={repo}
+            symbolId={center.id}
+            dir="dependencies"
+            ancestors={[center.id]}
+            onOpen={onOpen}
+            onFocus={onFocus}
+          />
+        </section>
+      )}
     </div>
   );
 }
@@ -81,7 +88,13 @@ function Level({ repo, symbolId, dir, ancestors, onOpen, onFocus }: LevelProps) 
       </div>
     );
   }
-  if (query.error) return <p className="py-2 text-xs text-error">{t.error}</p>;
+  if (query.error) {
+    return (
+      <div className="py-2">
+        <ErrorLine error={query.error} onRetry={() => void query.refetch()} />
+      </div>
+    );
+  }
 
   const symbols = [...query.data.symbols].sort(
     (a, b) => a.filePath.localeCompare(b.filePath) || a.lineStart - b.lineStart,

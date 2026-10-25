@@ -5,6 +5,8 @@ import { flatItems } from '@/api/queries/keys';
 import { useSourceFiles } from '@/api/queries/sources';
 import type { SourceFile } from '@/api/types';
 import { Spinner } from '@/ui';
+import { useBreakpoint } from '@/lib/breakpoints';
+import { LoadError } from './LoadError';
 import { strings } from './strings';
 import { useOpenInViewer } from './useOpenInViewer';
 
@@ -13,6 +15,7 @@ type Entry =
   | { kind: 'file'; name: string; file: SourceFile };
 
 const ROW_HEIGHT = 36;
+const ROW_HEIGHT_PHONE = 44;
 // The files endpoint is flat; folders are built here. Repos are capped well below this.
 const MAX_PAGES = 30;
 
@@ -35,18 +38,20 @@ export function FileTree({ sourceId }: { sourceId: string }) {
   const all = useMemo(() => flatItems(data), [data]);
   const entries = useMemo(() => folderEntries(all, prefix), [all, prefix]);
 
+  const rowHeight = useBreakpoint() === 'phone' ? ROW_HEIGHT_PHONE : ROW_HEIGHT;
   const scroller = useRef<HTMLDivElement>(null);
   // No React Compiler in this app, so the virtualizer's unmemoizable API is fine here.
   // eslint-disable-next-line react-hooks/incompatible-library
   const rows = useVirtualizer({
     count: entries.length,
     getScrollElement: () => scroller.current,
-    estimateSize: () => ROW_HEIGHT,
+    estimateSize: () => rowHeight,
     overscan: 12,
   });
 
   if (files.isPending) return <Loading />;
-  if (files.isError) return <p className="py-4 text-sm text-error">{files.error.message}</p>;
+  if (files.isError && all.length === 0)
+    return <LoadError error={files.error} onRetry={() => void files.refetch()} />;
   if (all.length === 0) return <p className="py-4 text-sm text-ink-3">{strings.detail.noFiles}</p>;
 
   const crumbs = prefix.split('/').filter(Boolean);
@@ -59,12 +64,15 @@ export function FileTree({ sourceId }: { sourceId: string }) {
             type="button"
             onClick={() => setPrefix(parentOf(prefix))}
             aria-label={strings.detail.up}
-            className="flex size-7 items-center justify-center rounded-xs text-ink-3 hover:bg-paper-2 hover:text-ink"
+            className="flex size-7 items-center justify-center rounded-xs text-ink-3 max-[719px]:size-10 hover:bg-paper-2 hover:text-ink"
           >
             <ArrowUp size={14} />
           </button>
         )}
-        <nav aria-label="Folder" className="flex min-w-0 flex-wrap items-baseline gap-x-1 py-1.5">
+        <nav
+          aria-label="Folder"
+          className="flex min-w-0 flex-wrap items-baseline gap-x-1 py-1.5 break-all max-[719px]:py-2.5"
+        >
           <button
             type="button"
             onClick={() => setPrefix('')}
@@ -96,7 +104,7 @@ export function FileTree({ sourceId }: { sourceId: string }) {
               <li
                 key={entry.kind === 'dir' ? entry.prefix : entry.file.id}
                 className="absolute inset-x-0 border-b border-rule"
-                style={{ top: row.start, height: ROW_HEIGHT }}
+                style={{ top: row.start, height: rowHeight }}
               >
                 {entry.kind === 'dir' ? (
                   <button
@@ -111,6 +119,7 @@ export function FileTree({ sourceId }: { sourceId: string }) {
                   <button
                     type="button"
                     disabled={!!entry.file.skippedReason}
+                    title={entry.file.skippedReason ?? undefined}
                     onClick={() => openInViewer({ kind: 'file', sourceId, path: entry.file.path })}
                     className="flex h-full w-full items-center justify-between gap-3 px-1 text-left font-mono text-xs text-ink-2 hover:bg-paper-2 hover:text-ink disabled:text-ink-3 disabled:hover:bg-transparent"
                   >

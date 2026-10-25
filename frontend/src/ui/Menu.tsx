@@ -43,7 +43,7 @@ export function Menu({
 }
 
 const itemClass =
-  'flex min-h-8 cursor-default select-none items-center gap-2 rounded-xs px-2 text-sm text-ink outline-none ' +
+  'flex min-h-8 max-[719px]:min-h-10 cursor-default select-none items-center gap-2 rounded-xs px-2 text-sm text-ink outline-none ' +
   'data-[highlighted]:bg-paper-2 data-[disabled]:opacity-50 data-[disabled]:pointer-events-none';
 
 export type MenuItemProps = {

@@ -1,4 +1,5 @@
 import { ApiError } from '@/api/client';
+import { clearLastWorkspace } from '@/features/workspaces/lastWorkspace';
 import { keys } from '@/api/queries/keys';
 import { queryClient } from '@/api/queryClient';
 import type { Me } from '@/api/types';
@@ -32,10 +33,15 @@ export async function startGuest(): Promise<Me> {
 /**
  * Starts the GitHub OAuth flow; the browser leaves the page. When the current session is a
  * guest, better-auth links it to the GitHub account and the backend moves the guest's
- * conversations over, so nothing is lost. The same happens for the email flows below.
+ * conversations over, so nothing is lost. The same happens for the email flows below. If GitHub
+ * or the callback fails, the browser comes back to `errorCallbackURL` with `?error=`.
  */
-export async function signInWithGitHub(callbackURL = '/') {
-  const { error } = await authClient.signIn.social({ provider: 'github', callbackURL });
+export async function signInWithGitHub(callbackURL = '/', errorCallbackURL?: string) {
+  const { error } = await authClient.signIn.social({
+    provider: 'github',
+    callbackURL,
+    errorCallbackURL,
+  });
   throwIfFailed(error);
 }
 
@@ -57,6 +63,9 @@ export async function signUpWithEmail(name: string, email: string, password: str
 
 /** Ends the session and drops everything cached for this user. */
 export async function signOut() {
-  await authClient.signOut();
+  // A failed request must not look like a sign-out: the cookie would still be valid.
+  const { error } = await authClient.signOut();
+  throwIfFailed(error);
   queryClient.clear();
+  clearLastWorkspace();
 }

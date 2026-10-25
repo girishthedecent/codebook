@@ -18,7 +18,7 @@ export function Figures({ items, className }: { items: Figure[]; className?: str
       {items.map((f) => (
         <div
           key={f.label}
-          className="flex flex-col-reverse gap-0.5 border-b border-rule px-4 py-3 last:border-b-0 sm:border-b-0 sm:first:pl-0"
+          className="flex min-w-0 flex-col-reverse gap-0.5 border-b border-rule px-4 py-3 last:border-b-0 sm:border-b-0 sm:first:pl-0"
         >
           <dt className="text-xs text-ink-3">
             {f.label}
@@ -26,7 +26,7 @@ export function Figures({ items, className }: { items: Figure[]; className?: str
           </dt>
           <dd
             className={cn(
-              'm-0 font-mono text-xl leading-none font-medium tabular-nums',
+              'm-0 font-mono text-lg leading-tight font-medium tabular-nums break-words sm:text-xl sm:leading-none',
               f.tone === 'error' ? 'text-error' : 'text-ink',
             )}
           >

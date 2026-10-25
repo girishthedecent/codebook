@@ -1,6 +1,7 @@
 import { flatItems } from '@/api/queries/keys';
 import { useSourceFiles } from '@/api/queries/sources';
 import { Button, Spinner } from '@/ui';
+import { LoadError } from './LoadError';
 import { strings } from './strings';
 import { useOpenInViewer } from './useOpenInViewer';
 
@@ -17,7 +18,8 @@ export function PageList({ sourceId }: { sourceId: string }) {
       </div>
     );
   }
-  if (files.isError) return <p className="py-4 text-sm text-error">{files.error.message}</p>;
+  if (files.isError && pages.length === 0)
+    return <LoadError error={files.error} onRetry={() => void files.refetch()} />;
 
   return (
     <div className="py-2">

@@ -12,6 +12,9 @@ export const en = {
     settings: 'Settings',
     admin: 'Admin',
     more: 'More',
+    library: 'Conversations and sources',
+    newChat: 'New chat',
+    search: 'Search and commands',
   },
   auth: {
     signIn: 'Sign in',

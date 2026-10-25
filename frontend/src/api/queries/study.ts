@@ -6,7 +6,7 @@ import {
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query';
-import { api, unwrap } from '../client';
+import { api, isApiError, unwrap } from '../client';
 import type { CreateStudyBody, Study, StudyType } from '../types';
 import { keys } from './keys';
 
@@ -76,11 +76,34 @@ export function useRegenerateStudy(workspaceId: string) {
   });
 }
 
+export function useCancelStudy(workspaceId: string) {
+  const client = useQueryClient();
+  return useMutation({
+    // Finished or deleted in the meantime: there is nothing left to stop, the refresh
+    // below shows how it ended.
+    mutationFn: (studyId: string) =>
+      unwrap(api.POST('/api/v1/study/{studyId}/cancel', { params: { path: { studyId } } })).catch(
+        (e: unknown) => {
+          if (!isApiError(e, 404) && !isApiError(e, 409)) throw e;
+        },
+      ),
+    onSettled: (_data, _error, studyId) => {
+      void client.invalidateQueries({ queryKey: keys.study(studyId) });
+      void client.invalidateQueries({ queryKey: ['studies', workspaceId] });
+    },
+  });
+}
+
 export function useDeleteStudy(workspaceId: string) {
   const client = useQueryClient();
   return useMutation({
+    // Already gone (deleted in another tab) is the outcome the user asked for.
     mutationFn: (studyId: string) =>
-      unwrap(api.DELETE('/api/v1/study/{studyId}', { params: { path: { studyId } } })),
+      unwrap(api.DELETE('/api/v1/study/{studyId}', { params: { path: { studyId } } })).catch(
+        (e: unknown) => {
+          if (!isApiError(e, 404)) throw e;
+        },
+      ),
     onSuccess: (_data, studyId) => {
       client.removeQueries({ queryKey: keys.study(studyId) });
       void client.invalidateQueries({ queryKey: ['studies', workspaceId] });

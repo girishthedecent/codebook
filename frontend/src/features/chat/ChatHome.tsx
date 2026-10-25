@@ -39,12 +39,15 @@ export function ChatHome({ workspaceId }: { workspaceId: string }) {
   const { isGuest } = useMe();
   const phone = useBreakpoint() === 'phone';
   const workspace = useWorkspace(workspaceId);
-  const sources = flatItems(useSources(workspaceId).data);
+  const sourcesQuery = useSources(workspaceId);
+  const sources = flatItems(sourcesQuery.data);
   const create = useCreateConversation(workspaceId);
   const [error, setError] = useState<string>();
+  const [restore, setRestore] = useState<{ text: string; at: number }>();
   const draftScope = `new:${workspaceId}`;
 
-  const ask = (question: string, useMemory: boolean) => {
+  const ask = (question: string, useMemory: boolean, typed = true) => {
+    if (create.isPending) return;
     setError(undefined);
     create.mutate(undefined, {
       onSuccess: (conversation) => {
@@ -56,20 +59,35 @@ export function ChatHome({ workspaceId }: { workspaceId: string }) {
           params: { workspaceId, conversationId: conversation.id },
         });
       },
-      onError: (e) => setError(e.message),
+      onError: (e) => {
+        setError(e.message);
+        // The box was emptied when it sent; a typed question goes back so it isn't lost.
+        if (typed) setRestore({ text: question, at: Date.now() });
+      },
     });
   };
 
   const ideas = suggestions(sources);
-  const noSources = sources.length === 0 && !workspace.isPending;
+  const noSources = sources.length === 0 && sourcesQuery.isSuccess;
 
   return (
-    <div className="flex min-h-full flex-col">
-      <div className="mx-auto w-full max-w-[720px] flex-1 px-4 pt-12 pb-6 md:px-6 md:pt-20">
-        <p className="font-mono text-xs text-ink-3">{workspace.data?.name ?? ' '}</p>
-        <h1 className="mt-2 font-serif text-xl font-semibold text-ink">
-          {noSources ? chat.homeEmpty : chat.homeLine}
+    <div className="flex min-h-full flex-1 flex-col">
+      <div className="mx-auto w-full max-w-[720px] flex-1 px-4 pt-6 pb-6 md:px-6 md:pt-20">
+        <p className="min-h-4 font-mono text-xs text-ink-3 max-[719px]:hidden">
+          {workspace.data?.name}
+        </p>
+        <h1 className="mt-2 min-h-7 font-serif text-xl font-semibold text-ink">
+          {sourcesQuery.isPending ? '' : noSources ? chat.homeEmpty : chat.homeLine}
         </h1>
+        {noSources && (
+          <Link
+            to="/w/$workspaceId/sources"
+            params={{ workspaceId }}
+            className="mt-3 inline-flex text-sm text-accent underline underline-offset-2 max-[719px]:min-h-11 max-[719px]:items-center"
+          >
+            {chat.addSource}
+          </Link>
+        )}
 
         {ideas.length > 0 && (
           <ul className="mt-8 border-t border-rule">
@@ -78,7 +96,7 @@ export function ChatHome({ workspaceId }: { workspaceId: string }) {
                 <button
                   type="button"
                   disabled={create.isPending}
-                  onClick={() => ask(q, !isGuest)}
+                  onClick={() => ask(q, !isGuest, false)}
                   className="w-full py-2.5 text-left font-serif text-base text-ink-2 hover:text-ink disabled:opacity-50 max-[719px]:min-h-11"
                 >
                   {q}
@@ -88,6 +106,11 @@ export function ChatHome({ workspaceId }: { workspaceId: string }) {
           </ul>
         )}
 
+        {create.isPending && (
+          <p className="mt-4 text-xs text-ink-3" role="status">
+            {chat.starting}
+          </p>
+        )}
         {error && (
           <p className="mt-4 text-xs text-error" role="alert">
             {error}
@@ -99,10 +122,11 @@ export function ChatHome({ workspaceId }: { workspaceId: string }) {
 
       <Composer
         draftScope={draftScope}
-        streaming={create.isPending}
+        streaming={false}
         isGuest={isGuest}
         focusOnMount
-        onSend={ask}
+        restore={restore}
+        onSend={(q, m) => ask(q, m)}
         onStop={() => undefined}
       />
     </div>

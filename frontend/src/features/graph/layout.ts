@@ -15,7 +15,11 @@ export type LaidNode = {
 
 export type LaidEdge = { id: string; source: string; target: string };
 
-export type Layout = { nodes: LaidNode[]; edges: LaidEdge[] };
+/** `hidden` counts symbols left out because the neighbourhood was too big to draw. */
+export type Layout = { nodes: LaidNode[]; edges: LaidEdge[]; hidden?: number };
+
+// Past this many nodes the canvas is unreadable and slow; the nearest hops win.
+export const MAX_NODES = 120;
 
 type Reached = GraphWalk['symbols'][number];
 
@@ -35,7 +39,12 @@ export function layoutNeighborhood(
 
   // The same symbol can be both a caller and a dependency (recursion, cycles), so ids are
   // prefixed by side.
-  const place = (list: Reached[], side: -1 | 1, prefix: string) => {
+  let hidden = 0;
+  const place = (all: Reached[], side: -1 | 1, prefix: string) => {
+    // Each side gets half the budget, nearest hops first.
+    const budget = Math.floor((MAX_NODES - 1) / 2);
+    const list = [...all].sort((a, b) => a.depth - b.depth).slice(0, budget);
+    hidden += all.length - list.length;
     const byDepth = new Map<number, Reached[]>();
     for (const s of list) byDepth.set(s.depth, [...(byDepth.get(s.depth) ?? []), s]);
     for (const [depth, column] of byDepth) {
@@ -67,7 +76,11 @@ export function layoutNeighborhood(
 
   // An edge whose `via` was cut off by the result cap would dangle; drop it.
   const ids = new Set(nodes.map((n) => n.id));
-  return { nodes, edges: edges.filter((e) => ids.has(e.source) && ids.has(e.target)) };
+  return {
+    nodes,
+    edges: edges.filter((e) => ids.has(e.source) && ids.has(e.target)),
+    hidden: hidden || undefined,
+  };
 }
 
 /** A call chain as one row, left to right. */

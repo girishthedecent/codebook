@@ -54,6 +54,7 @@ export function useNeighborhood(repo: string, symbol: string, dir: Direction, de
     center: callers.data?.symbol ?? dependencies.data?.symbol,
     isPending: active.some((q) => q.isPending),
     error: active.find((q) => q.error)?.error ?? null,
+    refetch: () => active.forEach((q) => void q.refetch()),
   };
 }
 

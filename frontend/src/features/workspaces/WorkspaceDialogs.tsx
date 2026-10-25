@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { useNavigate } from '@tanstack/react-router';
+import { isApiError } from '@/api/client';
 import { useDeleteWorkspace, useUpdateWorkspace } from '@/api/queries/workspaces';
 import type { Workspace } from '@/api/types';
 import { Button, Dialog, DialogClose, Field, Input, Textarea } from '@/ui';
@@ -51,8 +52,13 @@ function RenameForm({ workspace, onDone }: { workspace: Workspace; onDone: () =>
   const [name, setName] = useState(workspace.name);
   const [description, setDescription] = useState(workspace.description ?? '');
 
+  const unchanged =
+    name.trim() === workspace.name &&
+    (description.trim() || null) === (workspace.description ?? null);
+
   const submit = (event: FormEvent) => {
     event.preventDefault();
+    if (unchanged) return;
     update.mutate(
       { name: name.trim(), description: description.trim() || null },
       { onSuccess: onDone },
@@ -76,7 +82,12 @@ function RenameForm({ workspace, onDone }: { workspace: Workspace; onDone: () =>
         <DialogClose asChild>
           <Button variant="ghost">Cancel</Button>
         </DialogClose>
-        <Button type="submit" variant="primary" loading={update.isPending} disabled={!name.trim()}>
+        <Button
+          type="submit"
+          variant="primary"
+          loading={update.isPending}
+          disabled={!name.trim() || unchanged}
+        >
           {t.rename.submit}
         </Button>
       </div>
@@ -111,12 +122,15 @@ function DeleteForm({ workspace, onDone }: { workspace: Workspace; onDone: () =>
   const submit = (event: FormEvent) => {
     event.preventDefault();
     if (!matches) return;
+    const leave = () => {
+      forgetWorkspace(workspace.id);
+      onDone();
+      void navigate({ to: '/w', replace: true });
+    };
     remove.mutate(workspace.id, {
-      onSuccess: () => {
-        forgetWorkspace(workspace.id);
-        onDone();
-        void navigate({ to: '/w', replace: true });
-      },
+      onSuccess: leave,
+      // Already gone (another tab, or a retry after a dropped reply): same outcome.
+      onError: (error) => isApiError(error, 404) && leave(),
     });
   };
 
@@ -137,13 +151,7 @@ function DeleteForm({ workspace, onDone }: { workspace: Workspace; onDone: () =>
         <DialogClose asChild>
           <Button variant="ghost">Cancel</Button>
         </DialogClose>
-        <Button
-          type="submit"
-          variant="primary"
-          className="bg-error! hover:bg-error! active:bg-error!"
-          loading={remove.isPending}
-          disabled={!matches}
-        >
+        <Button type="submit" variant="danger" loading={remove.isPending} disabled={!matches}>
           {t.remove.submit}
         </Button>
       </div>

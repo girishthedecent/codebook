@@ -11,7 +11,7 @@ export function SymbolLine({ symbol, className }: { symbol: Sym; className?: str
       <span className="w-11 shrink-0 text-ink-3">
         {kindLabel[symbol.kind] ?? symbol.kind.toLowerCase()}
       </span>
-      <span className="shrink-0 text-ink">{symbol.name}</span>
+      <span className="max-w-[55%] shrink-0 truncate text-ink">{symbol.name}</span>
       <span className="min-w-0 truncate text-ink-3">
         {symbol.filePath}:{symbol.lineStart}
       </span>

@@ -88,6 +88,12 @@ export function Composer({
     el.style.height = `${Math.min(el.scrollHeight, Math.round(window.innerHeight * 0.33))}px`;
   }, [text]);
 
+  // The Stop button turns into Ask, so keyboard focus would be lost; put it in the box.
+  const stop = () => {
+    onStop();
+    if (!phone) box.current?.focus();
+  };
+
   const toggleMemory = (on: boolean) => {
     setUseMemory(on);
     try {
@@ -108,7 +114,9 @@ export function Composer({
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key !== 'Enter' || e.shiftKey || e.nativeEvent.isComposing || phone) return;
+    // keyCode 229 is Safari's Enter that confirms an IME candidate, sent after composition ended.
+    if (e.key !== 'Enter' || e.shiftKey || e.nativeEvent.isComposing || e.keyCode === 229 || phone)
+      return;
     e.preventDefault();
     submit();
   };
@@ -142,7 +150,12 @@ export function Composer({
             />
           )}
           {streaming ? (
-            <Button size="sm" variant="secondary" onClick={onStop}>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={stop}
+              className={cn(phone && 'h-11! px-4!')}
+            >
               {chat.stop}
             </Button>
           ) : (
@@ -151,16 +164,24 @@ export function Composer({
               size="sm"
               variant="primary"
               disabled={!text.trim() || blocked}
-              className={cn(phone && 'h-9 px-4')}
+              className={cn(phone && 'h-11! px-4!')}
             >
               {chat.send}
             </Button>
           )}
         </div>
       </div>
+      {/* The countdown ticks every second; the live region says it once, without the number. */}
+      <span className="sr-only" role="status">
+        {blocked ? chat.blockedNow : ''}
+      </span>
       {blocked && (
-        <p className="mt-2 text-xs text-warn" role="status">
-          {isGuest && waitSec > 600 ? chat.guestLimit : chat.waitFor(waitSec)}
+        <p className="mt-2 text-xs text-warn">
+          {waitSec <= 600
+            ? chat.waitFor(waitSec <= 90 ? `${waitSec} s` : longWait(waitSec))
+            : isGuest
+              ? chat.guestLimit
+              : chat.waitForLong(longWait(waitSec))}
         </p>
       )}
     </form>
@@ -206,6 +227,13 @@ function PhoneDock({ children }: { children: ReactNode }) {
       </div>
     </>
   );
+}
+
+/** "about 5 hours" for a daily limit that resets at midnight UTC. */
+function longWait(sec: number) {
+  if (sec < 3600) return `${Math.ceil(sec / 60)} minutes`;
+  const hours = Math.round(sec / 3600);
+  return `about ${hours} ${hours === 1 ? 'hour' : 'hours'}`;
 }
 
 /** Whole seconds left until `until`, ticking once a second; 0 when not blocked. */

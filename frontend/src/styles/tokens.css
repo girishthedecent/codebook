@@ -55,9 +55,9 @@
   --paper-3: #e6e1d4;
   --ink: #1f1c18;
   --ink-2: #4d4842;
-  --ink-3: #7d766d;
+  --ink-3: #666057;
   --rule: rgb(31 28 24 / 0.1);
-  --rule-2: rgb(31 28 24 / 0.2);
+  --rule-2: rgb(31 28 24 / 0.34);
   --accent: #2e5d4b;
   --accent-2: #24493b;
   --accent-wash: rgb(46 93 75 / 0.1);
@@ -71,14 +71,14 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
     color-scheme: dark;
-    --paper: #1c1a17;
-    --paper-2: #22201c;
-    --paper-3: #2b2823;
+    --paper: #0f0e0c;
+    --paper-2: #151412;
+    --paper-3: #1e1c19;
     --ink: #ece7dc;
     --ink-2: #b8b1a4;
-    --ink-3: #847d71;
+    --ink-3: #9a9285;
     --rule: rgb(236 231 220 / 0.1);
-    --rule-2: rgb(236 231 220 / 0.2);
+    --rule-2: rgb(236 231 220 / 0.3);
     --accent: #7fb59c;
     --accent-2: #9ccbb5;
     --accent-wash: rgb(127 181 156 / 0.14);
@@ -94,14 +94,14 @@
 :root[data-theme='dark'],
 [data-theme='dark'] {
   color-scheme: dark;
-  --paper: #1c1a17;
-  --paper-2: #22201c;
-  --paper-3: #2b2823;
+  --paper: #0f0e0c;
+  --paper-2: #151412;
+  --paper-3: #1e1c19;
   --ink: #ece7dc;
   --ink-2: #b8b1a4;
-  --ink-3: #847d71;
+  --ink-3: #9a9285;
   --rule: rgb(236 231 220 / 0.1);
-  --rule-2: rgb(236 231 220 / 0.2);
+  --rule-2: rgb(236 231 220 / 0.3);
   --accent: #7fb59c;
   --accent-2: #9ccbb5;
   --accent-wash: rgb(127 181 156 / 0.14);

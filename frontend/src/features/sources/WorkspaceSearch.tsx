@@ -25,7 +25,10 @@ export function WorkspaceSearch({ workspaceId }: { workspaceId: string }) {
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    setQuery(draft.trim());
+    const next = draft.trim();
+    // Same words again: the state doesn't change, so ask again directly (after an error, say).
+    if (next === query) void search.refetch();
+    else setQuery(next);
   };
 
   return (
@@ -54,7 +57,13 @@ export function WorkspaceSearch({ workspaceId }: { workspaceId: string }) {
               aria-label={d.searchPlaceholder}
               className="flex-1"
             />
-            <Button type="submit" variant="secondary" disabled={!draft.trim()}>
+            <Button
+              type="submit"
+              variant="secondary"
+              className="max-sm:h-10"
+              loading={search.isFetching}
+              disabled={!draft.trim()}
+            >
               Search
             </Button>
           </form>
@@ -64,7 +73,11 @@ export function WorkspaceSearch({ workspaceId }: { workspaceId: string }) {
               <Spinner className="size-3.5" /> Searching
             </div>
           )}
-          {search.isError && <p className="mt-4 text-sm text-error">{search.error.message}</p>}
+          {search.isError && !search.isFetching && (
+            <p role="alert" className="mt-4 text-sm break-words text-error">
+              {search.error.message}
+            </p>
+          )}
           {search.data && !search.isFetching && (
             <ol className="mt-3">
               {search.data.results.length === 0 && (

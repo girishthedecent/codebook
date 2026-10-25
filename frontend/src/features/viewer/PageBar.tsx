@@ -27,10 +27,10 @@ export function PageBar({
 }) {
   const [draft, setDraft] = useState<string | null>(null);
   const iconButton =
-    'flex size-8 items-center justify-center rounded-sm text-ink-2 hover:bg-paper-2 hover:text-ink disabled:opacity-40';
+    'flex size-8 items-center justify-center rounded-sm text-ink-2 hover:bg-paper-2 hover:text-ink disabled:opacity-40 max-[719px]:size-11';
 
   return (
-    <div className="flex h-10 shrink-0 items-center gap-1 border-b border-rule px-2 text-xs text-ink-2">
+    <div className="flex h-10 shrink-0 items-center gap-1 border-b max-[719px]:h-12 border-rule px-2 text-xs text-ink-2">
       <button
         type="button"
         className={iconButton}
@@ -58,7 +58,7 @@ export function PageBar({
           value={draft ?? String(page)}
           onChange={(e) => setDraft(e.target.value.replace(/\D/g, ''))}
           onBlur={() => setDraft(null)}
-          className="h-7 w-12 rounded-xs border border-rule-2 bg-paper text-center font-serif text-sm [font-variant-numeric:oldstyle-nums]"
+          className="h-7 w-12 max-[719px]:h-10 rounded-xs border border-rule-2 bg-paper text-center font-serif text-sm [font-variant-numeric:oldstyle-nums]"
         />
         {pageCount && (
           <span className="font-serif text-sm [font-variant-numeric:oldstyle-nums]">
@@ -84,7 +84,7 @@ export function PageBar({
               aria-pressed={zoom === z.value}
               onClick={() => onZoom(z.value)}
               className={cn(
-                'h-7 rounded-xs px-2 hover:bg-paper-2',
+                'h-7 rounded-xs px-2 hover:bg-paper-2 max-[719px]:h-10 max-[719px]:px-2.5',
                 zoom === z.value ? 'font-medium text-ink' : 'text-ink-3',
               )}
             >

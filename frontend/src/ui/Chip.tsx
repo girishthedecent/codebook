@@ -36,7 +36,7 @@ export const ChipButton = forwardRef<
       className={cn(
         base,
         tones[tone],
-        'transition-colors duration-150 ease-out hover:bg-paper-2',
+        'transition-colors duration-150 ease-out hover:bg-paper-2 relative max-[719px]:after:absolute max-[719px]:after:-inset-2 max-[719px]:after:content-[""]',
         pressed && 'bg-accent-wash border-accent/40 text-accent',
         className,
       )}

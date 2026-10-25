@@ -20,7 +20,9 @@ export const Route = createFileRoute('/w/')({
         replace: true,
       });
     }
-    const workspaces = flatItems(await queryClient.ensureInfiniteQueryData(workspacesQueryOptions));
+    // Fetched fresh: after creating or deleting a workspace the cached list is out of date, and
+    // a stale empty list would send someone back to the "first workspace" page.
+    const workspaces = flatItems(await queryClient.fetchInfiniteQuery(workspacesQueryOptions));
     const last = lastWorkspaceId();
     const pick = workspaces.find((w) => w.id === last) ?? workspaces[0];
     if (pick) {

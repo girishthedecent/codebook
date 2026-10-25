@@ -97,7 +97,7 @@ function OutlineItem({
     <li role="treeitem" aria-expanded={hasChildren ? open : undefined} aria-selected={false}>
       <div
         className={cn(
-          'flex min-h-10 items-start gap-1 border-b border-rule py-2',
+          'flex min-h-10 items-start gap-1 border-b border-rule',
           depth === 0 && 'font-semibold',
         )}
       >
@@ -106,7 +106,7 @@ function OutlineItem({
             type="button"
             onClick={() => toggle(node.id)}
             aria-label={open ? `${s.map.collapse} ${node.label}` : `${s.map.expand} ${node.label}`}
-            className="-ml-1 flex size-6 shrink-0 items-center justify-center rounded-xs text-ink-3 hover:bg-paper-2 hover:text-ink"
+            className="-ml-2 flex size-10 shrink-0 items-center justify-center rounded-xs text-ink-3 hover:bg-paper-2 hover:text-ink"
           >
             <CaretRight
               size={12}
@@ -114,9 +114,9 @@ function OutlineItem({
             />
           </button>
         ) : (
-          <span className="size-6 shrink-0" />
+          <span className="size-8 shrink-0" />
         )}
-        <span className="pt-0.5">
+        <span className="py-2.5">
           {node.label} <Cites citations={citationsOf(node, index)} />
           {hasChildren && !open && (
             <span className="ml-1 font-mono text-xs text-ink-3">+{node.children.length}</span>
@@ -347,6 +347,7 @@ function MapCanvas({ root, folded, toggle, index }: TreeProps) {
           <Button
             size="sm"
             variant="ghost"
+            className="h-10! min-w-10!"
             aria-label={s.map.zoomOut}
             onClick={() => zoomCenter(0.8)}
           >
@@ -355,12 +356,13 @@ function MapCanvas({ root, folded, toggle, index }: TreeProps) {
           <Button
             size="sm"
             variant="ghost"
+            className="h-10! min-w-10!"
             aria-label={s.map.zoomIn}
             onClick={() => zoomCenter(1.25)}
           >
             +
           </Button>
-          <Button size="sm" variant="ghost" onClick={fitView}>
+          <Button size="sm" variant="ghost" className="h-10! md:h-7!" onClick={fitView}>
             {s.map.fit}
           </Button>
         </div>

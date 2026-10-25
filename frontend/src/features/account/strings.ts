@@ -90,8 +90,8 @@ export const strings = {
     githubNotLinked: 'Not linked',
     guest: "You're using the demo as a guest. Sign in to keep your conversations.",
     signIn: 'Sign in',
-    deleteAccount: 'Delete account',
-    deleteUnavailable: 'Not available yet',
+    githubUnknown: 'Unavailable',
+    signOutFailed: "Couldn't sign out. Check your connection and try again.",
   },
   command: {
     label: 'Command menu',
@@ -106,5 +106,6 @@ export const strings = {
     study: 'Study',
     newConversation: 'New conversation',
     toggleTheme: 'Switch to light or dark',
+    shortcuts: 'Keyboard shortcuts',
   },
 } as const;

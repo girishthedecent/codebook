@@ -1,10 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import { evalResultsQueryOptions, useEvalCompare } from '@/api/queries';
 import type { EvalComparison, EvalResult } from '@/api/types';
-import { ProgressRule, Table, TBody, TD, TH, THead, TR } from '@/ui';
-import { RouteError } from '@/ui/RouteError';
+import { BackLink, ProgressRule, Table, TBody, TD, TH, THead, TR } from '@/ui';
+import { InlineError } from '@/features/account/InlineError';
 import { cn } from '@/lib/cn';
 import { delta, metric } from '../format';
 import { ScrollTable } from '../ScrollTable';
@@ -39,9 +39,21 @@ export function ComparePage({ a, b }: { a: string; b: string }) {
   const compare = useEvalCompare([a, b]);
   const [selected, setSelected] = useState<string | null>(null);
 
-  if (compare.error)
-    return <RouteError error={compare.error} reset={() => void compare.refetch()} />;
-  if (!compare.data) return <ProgressRule label="Comparing runs" />;
+  if (!compare.data)
+    return (
+      <div>
+        <BackLink to="/admin/evals">{strings.evals.runs}</BackLink>
+        {compare.error ? (
+          <InlineError
+            error={compare.error}
+            retry={() => void compare.refetch()}
+            className="mt-4"
+          />
+        ) : (
+          <ProgressRule label="Comparing runs" className="mt-4" />
+        )}
+      </div>
+    );
 
   const c = compare.data;
   const defs = metricsFor(c.suite);
@@ -50,9 +62,7 @@ export function ComparePage({ a, b }: { a: string; b: string }) {
   return (
     <div className="flex flex-col gap-8">
       <header>
-        <Link to="/admin/evals" className="text-xs text-ink-3 hover:text-ink">
-          ← {strings.evals.runs}
-        </Link>
+        <BackLink to="/admin/evals">{strings.evals.runs}</BackLink>
         <h2 className="mt-2 text-lg font-medium text-ink">Compare {c.suite} runs</h2>
         <dl className="mt-2 grid gap-1 text-sm sm:grid-cols-2">
           {(['a', 'b'] as const).map((side) => (
@@ -267,11 +277,20 @@ function orderedKeys(keys: string[], defs: MetricDef[]) {
 
 /** Both runs' records for one case; results load only once a case is picked. */
 function SideBySide({ caseId, a, b }: { caseId: string; a: string; b: string }) {
+  const section = useRef<HTMLElement>(null);
+  // The record opens below a long table; bring it into view when a case is picked.
+  useEffect(() => {
+    section.current?.scrollIntoView({ block: 'nearest' });
+  }, [caseId]);
   const left = useQuery(evalResultsQueryOptions(a));
   const right = useQuery(evalResultsQueryOptions(b));
   const find = (rows: EvalResult[] | undefined) => rows?.find((r) => r.caseId === caseId);
   return (
-    <section aria-label="Selected case in both runs" className="border-t border-rule pt-6">
+    <section
+      ref={section}
+      aria-label="Selected case in both runs"
+      className="border-t border-rule pt-6"
+    >
       <div className="grid gap-8 lg:grid-cols-2">
         {(
           [
@@ -285,6 +304,8 @@ function SideBySide({ caseId, a, b }: { caseId: string; a: string; b: string }) 
               <h4 className="font-mono text-sm text-ink-3">Run {name}</h4>
               {q.isPending ? (
                 <ProgressRule label={`Loading run ${name}`} className="mt-3" />
+              ) : q.error ? (
+                <InlineError error={q.error} retry={() => void q.refetch()} className="mt-2" />
               ) : result ? (
                 <div className="[&>div]:lg:grid-cols-1">
                   <CaseDetail result={result} />

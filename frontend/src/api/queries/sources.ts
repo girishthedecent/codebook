@@ -262,10 +262,9 @@ export function useDeleteSource(workspaceId: string) {
   return useMutation({
     mutationFn: (sourceId: string) =>
       unwrap(api.DELETE('/api/v1/sources/{sourceId}', { params: { path: { sourceId } } })),
-    onSuccess: (_data, sourceId) => {
-      client.removeQueries({ queryKey: keys.source(sourceId) });
-      void invalidateSources(client, workspaceId);
-    },
+    onSuccess: (_data, sourceId) => client.removeQueries({ queryKey: keys.source(sourceId) }),
+    // Also after a failure: a 404 means it was already gone and the list should say so.
+    onSettled: () => invalidateSources(client, workspaceId),
   });
 }
 

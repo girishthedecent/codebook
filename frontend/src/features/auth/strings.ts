@@ -1,6 +1,9 @@
 export const authStrings = {
   title: 'Sign in to CodeBook',
   github: 'Continue with GitHub',
+  githubFailed: "GitHub sign-in didn't finish. Try again, or use email.",
+  noAccount: 'Just looking?',
+  tryDemo: 'Try the demo without an account',
   orEmail: 'Or with email',
   tabs: { signIn: 'Sign in', signUp: 'Create account' },
   fields: {
@@ -20,5 +23,6 @@ export const authStrings = {
     missing: "The demo isn't available right now.",
     failed: "The demo couldn't be opened.",
     signIn: 'Sign in instead',
+    retry: 'Try again',
   },
 } as const;

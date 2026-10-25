@@ -1,3 +1,4 @@
+export { BackLink } from './BackLink';
 export { Button, type ButtonProps } from './Button';
 export { Chip, ChipButton } from './Chip';
 export { Dialog, DialogClose, type DialogProps } from './Dialog';

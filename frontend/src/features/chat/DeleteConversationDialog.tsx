@@ -6,11 +6,13 @@ export function DeleteConversationDialog({
   onOpenChange,
   onConfirm,
   pending,
+  failed,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onConfirm: () => void;
   pending: boolean;
+  failed?: boolean;
 }) {
   return (
     <Dialog
@@ -24,18 +26,17 @@ export function DeleteConversationDialog({
           <Button variant="ghost" onClick={() => onOpenChange(false)}>
             {chat.cancel}
           </Button>
-          <Button
-            variant="primary"
-            loading={pending}
-            onClick={onConfirm}
-            className="bg-error! hover:bg-error! hover:opacity-90"
-          >
+          <Button variant="danger" loading={pending} onClick={onConfirm}>
             {chat.delete}
           </Button>
         </>
       }
     >
-      {null}
+      {failed && (
+        <p className="text-sm text-error" role="alert">
+          {chat.deleteFailed}
+        </p>
+      )}
     </Dialog>
   );
 }

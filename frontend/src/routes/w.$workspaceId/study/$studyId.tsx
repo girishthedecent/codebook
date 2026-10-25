@@ -20,13 +20,7 @@ function StudyDetailRoute() {
     void navigate({ search: (prev) => ({ ...prev, ...patch }), replace: true });
 
   return (
-    // A new set starts at its first card with empty piles.
-    <StudyPage
-      key={studyId}
-      workspaceId={workspaceId}
-      studyId={studyId}
-      search={search}
-      setSearch={setSearch}
-    />
+    // The list stays mounted between sets, so its filter and scroll survive opening another.
+    <StudyPage workspaceId={workspaceId} studyId={studyId} search={search} setSearch={setSearch} />
   );
 }

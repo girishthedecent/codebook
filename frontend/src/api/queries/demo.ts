@@ -12,3 +12,12 @@ export const demoQueryOptions = queryOptions({
 export function useDemo() {
   return useQuery(demoQueryOptions);
 }
+
+/**
+ * Whether this is the public demo workspace. The workspace routes hide it from visitors, so
+ * the answer comes from the demo payload instead.
+ */
+export function useIsDemoWorkspace(workspaceId: string) {
+  const { data } = useDemo();
+  return data?.workspace.id === workspaceId;
+}

@@ -1,3 +1,5 @@
+import { useEffect } from 'react';
+import { isApiError } from '@/api/client';
 import { useDeleteSource } from '@/api/queries/sources';
 import type { Source } from '@/api/types';
 import { Button, Dialog } from '@/ui';
@@ -17,6 +19,15 @@ export function DeleteSourceDialog({
   onDeleted?: () => void;
 }) {
   const remove = useDeleteSource(workspaceId);
+  const { reset } = remove;
+  // The mutation outlives the dialog, so a failure from last time would show again.
+  useEffect(() => {
+    if (open) reset();
+  }, [open, reset]);
+  const finish = () => {
+    onOpenChange(false);
+    onDeleted?.();
+  };
   return (
     <Dialog
       open={open}
@@ -30,15 +41,13 @@ export function DeleteSourceDialog({
             Cancel
           </Button>
           <Button
-            variant="secondary"
-            className="border-error/40! text-error! hover:bg-error-wash!"
+            variant="danger"
             loading={remove.isPending}
             onClick={() =>
               remove.mutate(source.id, {
-                onSuccess: () => {
-                  onOpenChange(false);
-                  onDeleted?.();
-                },
+                onSuccess: finish,
+                // Already gone (another tab, or a retry after a dropped reply) is the goal met.
+                onError: (error) => isApiError(error, 404) && finish(),
               })
             }
           >
@@ -48,7 +57,11 @@ export function DeleteSourceDialog({
       }
     >
       <p className="text-ink-2">{strings.deleteBody}</p>
-      {remove.error && <p className="mt-3 text-error">{remove.error.message}</p>}
+      {remove.error && !isApiError(remove.error, 404) && (
+        <p role="alert" className="mt-3 break-words text-error">
+          {remove.error.message}
+        </p>
+      )}
     </Dialog>
   );
 }

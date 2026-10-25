@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate } from '@tanstack/react-router';
 import { GithubLogo } from '@phosphor-icons/react';
 import { isApiError } from '@/api/client';
@@ -9,18 +9,42 @@ import { safeNext } from './safeNext';
 
 type Mode = 'signIn' | 'signUp';
 
-export function SignInPage({ next, reason }: { next?: string; reason?: 'guest' }) {
+export function SignInPage({
+  next,
+  reason,
+  oauthFailed,
+}: {
+  next?: string;
+  reason?: 'guest';
+  oauthFailed?: boolean;
+}) {
   const navigate = useNavigate();
   const { isGuest } = useMe();
   const [mode, setMode] = useState<Mode>('signIn');
-  const [github, setGithub] = useState<{ busy: boolean; error?: string }>({ busy: false });
+  const [github, setGithub] = useState<{ busy: boolean; error?: string }>({
+    busy: false,
+    error: oauthFailed ? t.githubFailed : undefined,
+  });
   const target = safeNext(next);
+
+  // Coming back from GitHub with the back button restores this page from memory, spinner and all.
+  useEffect(() => {
+    const reset = (e: PageTransitionEvent) => {
+      if (e.persisted) setGithub((g) => ({ ...g, busy: false }));
+    };
+    window.addEventListener('pageshow', reset);
+    return () => window.removeEventListener('pageshow', reset);
+  }, []);
 
   const continueWithGitHub = async () => {
     setGithub({ busy: true });
     try {
       // The browser leaves for GitHub; better-auth checks this origin against its trusted list.
-      await signInWithGitHub(window.location.origin + target);
+      const back = new URLSearchParams({ next: target }).toString();
+      await signInWithGitHub(
+        window.location.origin + target,
+        `${window.location.origin}/sign-in?${back}&error=github`,
+      );
     } catch (error) {
       setGithub({ busy: false, error: messageOf(error) });
     }
@@ -30,7 +54,7 @@ export function SignInPage({ next, reason }: { next?: string; reason?: 'guest' }
 
   return (
     <div className="min-h-dvh bg-paper text-ink">
-      <main className="mx-auto max-w-[720px] px-4 pt-10 pb-16 sm:pt-16">
+      <main id="main" className="mx-auto max-w-[720px] px-4 pt-10 pb-16 sm:pt-16">
         <Link to="/" className="font-mono text-xs tracking-wide text-ink-3 hover:text-ink">
           CodeBook
         </Link>
@@ -74,6 +98,13 @@ export function SignInPage({ next, reason }: { next?: string; reason?: 'guest' }
           </Tabs>
 
           {isGuest && <p className="mt-6 text-xs text-ink-3">{t.guestLink}</p>}
+
+          <p className="mt-8 text-sm text-ink-2">
+            {t.noAccount}{' '}
+            <Link to="/demo" className="text-accent underline underline-offset-2">
+              {t.tryDemo}
+            </Link>
+          </p>
         </div>
       </main>
     </div>

@@ -27,7 +27,7 @@ const whatYouGet: Array<[string, string]> = [
 export function Landing() {
   return (
     <div className="min-h-dvh bg-paper text-ink">
-      <main className="mx-auto max-w-[720px] px-4 pt-10 pb-16 sm:pt-16">
+      <main id="main" className="mx-auto max-w-[720px] px-4 pt-10 pb-16 sm:pt-16">
         <p className="font-mono text-xs tracking-wide text-ink-3">CodeBook</p>
 
         <h1 className="mt-6 font-serif text-xl font-semibold text-balance sm:text-2xl">

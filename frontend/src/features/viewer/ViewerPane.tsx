@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { CaretLeft, CaretRight, X } from '@phosphor-icons/react';
 import { useSource } from '@/api/queries';
-import { Sheet, Tooltip } from '@/ui';
+import { ProgressRule, Sheet, Tooltip } from '@/ui';
 import { cn } from '@/lib/cn';
 import { useShortcut } from '@/lib/keyboard';
 import { closedViewerSearch, viewerSearchFor, type ViewerTarget } from '@/lib/viewerParams';
@@ -10,6 +10,7 @@ import { BookView } from './BookView';
 import { CodeView } from './CodeView';
 import { WebView } from './WebView';
 import { useCitationNav, type CitationStop } from './useCitationNav';
+import { ViewError } from './ViewError';
 import { s } from './strings';
 import './viewer.css';
 
@@ -26,22 +27,27 @@ export type ViewerPaneProps = {
  */
 export default function ViewerPane({ target, presentation }: ViewerPaneProps) {
   const navigate = useNavigate();
-  const search = useSearch({ strict: false }) as { cite?: number };
+  const search = useSearch({ strict: false }) as { cite?: number; from?: string };
   const source = useSource(target.sourceId);
-  const nav = useCitationNav(search.cite);
+  const nav = useCitationNav(search.cite, search.from);
 
-  const setSearch = (patch: Record<string, unknown>) =>
-    void navigate({ to: '.', search: (prev: Record<string, unknown>) => ({ ...prev, ...patch }) });
+  // Flipping pages replaces the entry, so Back closes the viewer instead of walking the pages.
+  const setSearch = (patch: Record<string, unknown>, replace = false) =>
+    void navigate({
+      to: '.',
+      replace,
+      search: (prev: Record<string, unknown>) => ({ ...prev, ...patch }),
+    });
   const close = () => setSearch(closedViewerSearch);
   const goTo = (stop: CitationStop | undefined) => {
-    if (stop) setSearch(viewerSearchFor(stop.target, stop.citation.n));
+    if (stop) setSearch(viewerSearchFor(stop.target, stop.citation.n, search.from));
   };
 
   useShortcut('escape', close);
   useShortcut('[', () => goTo(nav.prev), { enabled: Boolean(nav.prev) });
   useShortcut(']', () => goTo(nav.next), { enabled: Boolean(nav.next) });
 
-  const title = source.data?.title ?? (source.isError ? '' : '…');
+  const title = source.data?.title ?? (source.isError ? s.unavailable : '');
   const where = locationOf(target);
   const snippet = nav.current?.citation.snippet;
 
@@ -49,8 +55,10 @@ export default function ViewerPane({ target, presentation }: ViewerPaneProps) {
     <Body
       target={target}
       sourceType={source.data?.type}
+      sourceError={source.isError ? source.error : undefined}
+      onRetry={() => void source.refetch()}
       snippet={snippet}
-      onPage={(page) => setSearch({ page })}
+      onPage={(page) => setSearch({ page }, true)}
     />
   );
   const citeNav = nav.hasStops ? (
@@ -82,10 +90,10 @@ export default function ViewerPane({ target, presentation }: ViewerPaneProps) {
     <section
       aria-label={`${s.region}: ${title}`}
       className={cn(
-        'flex h-full min-h-0 flex-col bg-paper',
+        'flex min-h-0 flex-col bg-paper',
         presentation === 'pane' && 'sticky top-0 h-dvh',
         presentation === 'panel' &&
-          'absolute inset-y-0 right-0 z-30 w-[min(520px,100%)] border-l border-rule shadow-float',
+          'fixed inset-y-0 right-0 z-30 w-[min(520px,calc(100vw-4rem))] border-l border-rule shadow-float',
       )}
     >
       <header className="flex h-12 shrink-0 items-center gap-2 border-b border-rule pr-2 pl-4">
@@ -106,21 +114,26 @@ export default function ViewerPane({ target, presentation }: ViewerPaneProps) {
 function Body({
   target,
   sourceType,
+  sourceError,
+  onRetry,
   snippet,
   onPage,
 }: {
   target: ViewerTarget;
   sourceType?: 'PDF' | 'GITHUB_REPO' | 'WEBSITE';
+  sourceError?: unknown;
+  onRetry: () => void;
   snippet?: string;
   onPage: (page: number) => void;
 }) {
+  if (sourceError) return <ViewError error={sourceError} onRetry={onRetry} missing={s.deleted} />;
   if (target.kind === 'page') {
     return (
       <BookView sourceId={target.sourceId} page={target.page} snippet={snippet} onPage={onPage} />
     );
   }
   // A path is a repository file or a web page; until the source loads we can't tell which.
-  if (!sourceType) return <div className="flex-1" />;
+  if (!sourceType) return <ProgressRule label={s.loading} />;
   if (sourceType === 'WEBSITE') {
     return <WebView sourceId={target.sourceId} url={target.path} heading={target.heading} />;
   }
@@ -169,7 +182,7 @@ function IconButton({
         aria-keyshortcuts={shortcut}
         disabled={!onClick}
         onClick={onClick}
-        className="flex size-9 items-center justify-center rounded-sm text-ink-3 hover:bg-paper-2 hover:text-ink disabled:opacity-40"
+        className="flex size-9 items-center justify-center rounded-sm text-ink-3 hover:bg-paper-2 hover:text-ink disabled:opacity-40 max-[719px]:size-11"
       >
         {children}
       </button>

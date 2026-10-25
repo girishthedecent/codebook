@@ -25,7 +25,7 @@ export function Tabs({ items, value, onValueChange, children, label, className }
             value={t.value}
             disabled={t.disabled}
             className={cn(
-              '-mb-px flex min-h-10 items-center border-b-2 border-transparent px-0.5 text-sm text-ink-2 outline-none',
+              '-mb-px flex min-h-10 items-center border-b-2 border-transparent px-0.5 text-sm text-ink-2',
               'transition-colors duration-150 ease-out hover:text-ink',
               'data-[state=active]:border-ink data-[state=active]:text-ink disabled:opacity-50',
             )}

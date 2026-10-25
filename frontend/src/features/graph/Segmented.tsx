@@ -36,7 +36,7 @@ export function Segmented<V extends string | number>({
     <div
       role="radiogroup"
       aria-label={label}
-      className="inline-flex h-8 items-stretch rounded-sm border border-rule-2"
+      className="inline-flex h-10 items-stretch rounded-sm border border-rule-2 md:h-8"
     >
       {options.map((o, i) => (
         <button
@@ -51,7 +51,7 @@ export function Segmented<V extends string | number>({
           onClick={() => onChange(o.value)}
           onKeyDown={onKeyDown}
           className={cn(
-            'px-2.5 text-xs text-ink-2 transition-colors duration-150 ease-out hover:text-ink',
+            'px-3 text-xs text-ink-2 transition-colors duration-150 ease-out hover:text-ink',
             i > 0 && 'border-l border-rule-2',
             o.value === value && 'bg-paper-3 font-medium text-ink',
           )}

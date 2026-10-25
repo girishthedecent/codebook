@@ -1,8 +1,8 @@
-import { createFileRoute, Link } from '@tanstack/react-router';
+import { createFileRoute, Link, useLocation, useNavigate } from '@tanstack/react-router';
 import type { ReactNode } from 'react';
 import { CaretRight } from '@phosphor-icons/react';
-import { useMe } from '@/auth';
-import { WorkspaceSwitcher } from '@/features/workspaces/WorkspaceSwitcher';
+import { signOut, useMe } from '@/auth';
+import { en } from '@/i18n/en';
 import { strings } from '@/features/account/strings';
 
 // The phone "More" tab: everything that doesn't fit in the four bottom tabs. The workspace
@@ -17,12 +17,11 @@ const rowClass =
 function MorePage() {
   const { workspaceId } = Route.useParams();
   const { isAdmin, isGuest } = useMe();
+  const navigate = useNavigate();
+  const href = useLocation({ select: (l) => l.href });
 
   return (
     <nav aria-label={strings.nav.more}>
-      <div className="border-b border-rule">
-        <WorkspaceSwitcher collapsed={false} />
-      </div>
       <ul>
         <Row>
           <Link to="/w/$workspaceId/graph" params={{ workspaceId }} className={rowClass}>
@@ -58,6 +57,25 @@ function MorePage() {
             </Link>
           </Row>
         )}
+        <Row>
+          {isGuest ? (
+            <Link to="/sign-in" search={{ next: href }} className={rowClass}>
+              {en.auth.signIn}
+              <Caret />
+            </Link>
+          ) : (
+            <button
+              type="button"
+              onClick={async () => {
+                await signOut();
+                void navigate({ to: '/', replace: true });
+              }}
+              className={`${rowClass} w-full text-left`}
+            >
+              {strings.nav.signOut}
+            </button>
+          )}
+        </Row>
       </ul>
     </nav>
   );

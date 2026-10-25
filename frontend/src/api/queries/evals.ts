@@ -56,8 +56,12 @@ export function useEvalRuns(query?: EvalRunsQuery) {
 export function useEvalRun(runId: string) {
   return useQuery(evalRunQueryOptions(runId));
 }
-export function useEvalResults(runId: string, query?: EvalResultsQuery) {
-  return useQuery(evalResultsQueryOptions(runId, query));
+/** `live` re-polls while the run is still going, so cases appear as the worker finishes them. */
+export function useEvalResults(runId: string, query?: EvalResultsQuery, live = false) {
+  return useQuery({
+    ...evalResultsQueryOptions(runId, query),
+    refetchInterval: live ? 10_000 : false,
+  });
 }
 export function useEvalCompare(runs: string[]) {
   return useQuery(evalCompareQueryOptions(runs));

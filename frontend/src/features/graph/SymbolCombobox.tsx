@@ -98,7 +98,12 @@ export function SymbolCombobox({
           aria-label={label}
           className="absolute inset-x-0 top-full z-30 mt-1 max-h-80 overflow-y-auto rounded-md border border-rule-2 bg-paper py-1 shadow-float"
         >
-          {items.length === 0 && !matches.isFetching && (
+          {matches.isError && (
+            <li role="alert" className="px-3 py-2 text-xs text-error">
+              {t.searchError}
+            </li>
+          )}
+          {items.length === 0 && !matches.isFetching && !matches.isError && (
             <li className="px-3 py-2 text-xs text-ink-3">{t.noMatches}</li>
           )}
           {items.map((s, i) => (
@@ -113,7 +118,10 @@ export function SymbolCombobox({
                 pick(s);
               }}
               onMouseEnter={() => setActive(i)}
-              className={cn('cursor-pointer px-3 py-1.5', i === active && 'bg-paper-2')}
+              className={cn(
+                'flex min-h-11 cursor-pointer flex-col justify-center px-3 py-1.5 md:min-h-0',
+                i === active && 'bg-paper-2',
+              )}
             >
               <SymbolLine symbol={s} />
             </li>

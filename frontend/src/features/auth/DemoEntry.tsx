@@ -5,7 +5,7 @@ import { isApiError } from '@/api/client';
 import { demoQueryOptions } from '@/api/queries/demo';
 import { meQueryOptions } from '@/api/queries/me';
 import { startGuest } from '@/auth';
-import { ProgressRule } from '@/ui';
+import { Button, ProgressRule } from '@/ui';
 import { authStrings } from './strings';
 
 const t = authStrings.demo;
@@ -20,11 +20,12 @@ export function DemoEntry() {
   const queryClient = useQueryClient();
   const [failure, setFailure] = useState<Failure>();
   // StrictMode runs effects twice in dev; a second guest sign-in would burn the daily limit.
-  const started = useRef(false);
+  const started = useRef(-1);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
-    if (started.current) return;
-    started.current = true;
+    if (started.current === attempt) return;
+    started.current = attempt;
     void (async () => {
       try {
         const [me, demo] = await Promise.all([
@@ -43,26 +44,38 @@ export function DemoEntry() {
         );
       }
     })();
-  }, [navigate, queryClient]);
+  }, [attempt, navigate, queryClient]);
 
   return (
     <div className="min-h-dvh bg-paper text-ink">
       {!failure && <ProgressRule label={t.opening} />}
-      <main className="mx-auto max-w-[720px] px-4 pt-10 pb-16 sm:pt-16">
+      <main id="main" className="mx-auto max-w-[720px] px-4 pt-10 pb-16 sm:pt-16">
         <Link to="/" className="font-mono text-xs tracking-wide text-ink-3 hover:text-ink">
           CodeBook
         </Link>
         {failure ? (
           <div className="mt-8 max-w-[52ch]" role="alert">
             <p className="text-sm text-ink">{t[failure]}</p>
-            <p className="mt-4 flex gap-4 text-sm">
-              <Link to="/sign-in" className="text-accent underline underline-offset-2">
+            <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+              {failure !== 'limit' && (
+                <Button
+                  variant="secondary"
+                  className="max-sm:h-10"
+                  onClick={() => {
+                    setFailure(undefined);
+                    setAttempt((n) => n + 1);
+                  }}
+                >
+                  {t.retry}
+                </Button>
+              )}
+              <Link to="/sign-in" className="py-2 text-accent underline underline-offset-2">
                 {t.signIn}
               </Link>
-              <Link to="/" className="text-ink-2 underline underline-offset-2">
+              <Link to="/" className="py-2 text-ink-2 underline underline-offset-2">
                 {authStrings.back}
               </Link>
-            </p>
+            </div>
           </div>
         ) : (
           <p className="mt-8 text-sm text-ink-2" aria-live="polite">

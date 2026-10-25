@@ -1,7 +1,7 @@
 import type { Citation, Message, TurnDone } from '@/api/types';
 import { Answer } from './Answer';
 import { CitedSources } from './CitedSources';
-import { Feedback } from './Feedback';
+import { CopyAnswer, Feedback } from './Feedback';
 import { Steps, TurnStatusLine } from './Steps';
 import { chat } from './strings';
 import { formatMs } from './toolLabels';
@@ -87,14 +87,21 @@ export function Exchange({
 
   return (
     <article className="py-6 first:pt-2" aria-busy={streaming || undefined}>
-      <p className="font-serif text-base leading-[1.45] font-semibold whitespace-pre-wrap text-ink">
+      <p className="font-serif text-base leading-[1.45] font-semibold break-words whitespace-pre-wrap text-ink">
         {view.question}
       </p>
 
       <Steps steps={view.steps} live={streaming} totalMs={view.done?.latencyMs} />
 
       <div className="mt-4 border-l border-rule-2 pl-4 max-[719px]:pl-3">
-        {view.text && <Answer text={view.text} citations={view.citations} streaming={streaming} />}
+        {view.text && (
+          <Answer
+            text={view.text}
+            citations={view.citations}
+            messageId={view.messageId}
+            streaming={streaming}
+          />
+        )}
         {streaming && <TurnStatusLine steps={view.steps} writing={view.text.length > 0} />}
 
         {ended && (
@@ -116,8 +123,9 @@ export function Exchange({
 
         {view.state === 'complete' && (
           <>
-            <CitedSources citations={view.citations} />
+            <CitedSources citations={view.citations} messageId={view.messageId} />
             <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1">
+              <CopyAnswer text={view.text} />
               {view.messageId && (
                 <Feedback
                   conversationId={conversationId}

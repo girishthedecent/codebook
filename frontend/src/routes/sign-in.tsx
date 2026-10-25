@@ -7,6 +7,8 @@ import { safeNext } from '@/features/auth/safeNext';
 const searchSchema = z.object({
   next: z.string().optional(),
   reason: z.enum(['guest']).optional(),
+  // Set by better-auth when the GitHub round trip fails; only its presence matters.
+  error: z.string().optional(),
 });
 
 export const Route = createFileRoute('/sign-in')({
@@ -20,6 +22,6 @@ export const Route = createFileRoute('/sign-in')({
 });
 
 function SignInRoute() {
-  const { next, reason } = Route.useSearch();
-  return <SignInPage next={next} reason={reason} />;
+  const { next, reason, error } = Route.useSearch();
+  return <SignInPage next={next} reason={reason} oauthFailed={Boolean(error)} />;
 }

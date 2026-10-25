@@ -13,27 +13,34 @@ import { citeNumber, linkCitations } from './markers';
 export function Answer({
   text,
   citations,
+  messageId,
   streaming,
 }: {
   text: string;
   citations: Citation[];
+  messageId?: string;
   streaming: boolean;
 }) {
   const shown = useThrottled(text, streaming ? 50 : 0);
-  return <AnswerMarkdown text={shown} citations={citations} />;
+  return <AnswerMarkdown text={shown} citations={citations} messageId={messageId} />;
 }
 
 const AnswerMarkdown = memo(function AnswerMarkdown({
   text,
   citations,
+  messageId,
 }: {
   text: string;
   citations: Citation[];
+  messageId?: string;
 }) {
   const source = useMemo(() => linkCitations(text), [text]);
-  const components = useMemo(() => markdownComponents(citations), [citations]);
+  const components = useMemo(
+    () => markdownComponents(citations, messageId),
+    [citations, messageId],
+  );
   return (
-    <div className="prose text-ink">
+    <div className="prose max-w-[66ch] break-words text-ink">
       <Markdown remarkPlugins={[remarkGfm]} components={components}>
         {source}
       </Markdown>
@@ -41,7 +48,7 @@ const AnswerMarkdown = memo(function AnswerMarkdown({
   );
 });
 
-function markdownComponents(citations: Citation[]): Components {
+function markdownComponents(citations: Citation[], messageId?: string): Components {
   const byNumber = new Map(citations.map((c) => [c.n, c]));
   return {
     a({ href, children }) {
@@ -50,7 +57,7 @@ function markdownComponents(citations: Citation[]): Components {
         const citation = byNumber.get(n);
         // Citations arrive after the text; until then the number is a quiet placeholder.
         return citation ? (
-          <Cite citation={citation} />
+          <Cite citation={citation} messageId={messageId} />
         ) : (
           <sup className="mx-px font-sans text-[0.68em] font-medium text-ink-3">{n}</sup>
         );
@@ -59,6 +66,14 @@ function markdownComponents(citations: Citation[]): Components {
         <a href={href} target="_blank" rel="noopener noreferrer">
           {children}
         </a>
+      );
+    },
+    // A wide table scrolls on its own instead of widening the page.
+    table({ children }) {
+      return (
+        <div className="mb-[0.9em] overflow-x-auto">
+          <table className="m-0">{children}</table>
+        </div>
       );
     },
     // Images in answers would be fetched from anywhere the model names; show the alt text.

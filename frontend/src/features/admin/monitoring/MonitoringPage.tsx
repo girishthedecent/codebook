@@ -1,7 +1,7 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { api, unwrap } from '@/api/client';
 import { ChipButton, ProgressRule, Table, TBody, TD, TH, THead, TR } from '@/ui';
-import { RouteError } from '@/ui/RouteError';
+import { InlineError } from '@/features/account/InlineError';
 import { BarChart } from '../charts/BarChart';
 import { LineChart } from '../charts/LineChart';
 import { Figures } from '../Figures';
@@ -56,8 +56,6 @@ export function MonitoringPage({
 }) {
   const stats = useQuery({ ...lastDaysStats(range), placeholderData: keepPreviousData });
 
-  if (stats.error) return <RouteError error={stats.error} reset={() => void stats.refetch()} />;
-
   const s = stats.data;
   const days = s ? toDayRows(s.usagePerDay) : [];
   const x = days.map((d) => d.day);
@@ -77,8 +75,14 @@ export function MonitoringPage({
         ))}
       </div>
 
+      {stats.error && (
+        <InlineError error={stats.error} retry={() => void stats.refetch()} className="-mt-4" />
+      )}
+
       {!s ? (
-        <ProgressRule label="Loading stats" />
+        stats.error ? null : (
+          <ProgressRule label="Loading stats" />
+        )
       ) : (
         <div
           className={stats.isFetching ? 'flex flex-col gap-10 opacity-60' : 'flex flex-col gap-10'}

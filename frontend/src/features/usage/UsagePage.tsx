@@ -2,6 +2,7 @@ import { useUsage } from '@/api/queries/usage';
 import type { Usage } from '@/api/types';
 import { useMe } from '@/auth';
 import { ProgressRule, Table, TBody, TD, TH, THead, TR } from '@/ui';
+import { InlineError } from '@/features/account/InlineError';
 import { PageHeader, SectionHeading } from '@/features/account/PageHeader';
 import { formatBytes, formatCost, formatCount } from '@/features/account/format';
 import { strings } from '@/features/account/strings';
@@ -21,7 +22,7 @@ export function UsagePage() {
         {usage.isPending ? (
           <ProgressRule label="Loading usage" />
         ) : usage.isError ? (
-          <p className="text-sm text-error">{usage.error.message}</p>
+          <InlineError error={usage.error} retry={() => void usage.refetch()} />
         ) : (
           <>
             <Limits usage={usage.data} />

@@ -11,6 +11,15 @@ export function lastWorkspaceId(): string | null {
   }
 }
 
+/** On sign-out: the next person on this browser must not be sent to this account's workspace. */
+export function clearLastWorkspace() {
+  try {
+    localStorage.removeItem(KEY);
+  } catch {
+    // storage unavailable
+  }
+}
+
 export function forgetWorkspace(workspaceId: string) {
   try {
     if (localStorage.getItem(KEY) === workspaceId) localStorage.removeItem(KEY);

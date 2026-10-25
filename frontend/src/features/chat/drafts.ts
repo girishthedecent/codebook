@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 // Unsent text survives a reload or a trip to another conversation. Storage can be missing or
 // full (private windows), so every access is guarded and failure just means no draft.
@@ -26,14 +26,34 @@ export function clearDraft(scope: string) {
   write(scope, '');
 }
 
-/** A text state that is mirrored to localStorage, written at most every 300 ms. */
+/**
+ * A text state that is mirrored to localStorage, written at most every 300 ms. Leaving the
+ * page inside that window still saves the last keystrokes.
+ */
 export function useDraft(scope: string) {
   const [value, setValue] = useState(() => read(scope));
+  const latest = useRef({ scope, value, saved: value });
 
   useEffect(() => {
-    const t = setTimeout(() => write(scope, value), 300);
+    latest.current = { scope, value, saved: latest.current.saved };
+    const t = setTimeout(() => {
+      write(scope, value);
+      latest.current.saved = value;
+    }, 300);
     return () => clearTimeout(t);
   }, [scope, value]);
+
+  useEffect(() => {
+    const save = () => {
+      const l = latest.current;
+      if (l.value !== l.saved) write(l.scope, l.value);
+    };
+    window.addEventListener('pagehide', save);
+    return () => {
+      window.removeEventListener('pagehide', save);
+      save();
+    };
+  }, []);
 
   return [value, setValue] as const;
 }

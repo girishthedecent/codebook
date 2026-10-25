@@ -67,7 +67,7 @@ export function findDuplicate(
         o.repo?.toLowerCase() === input.repo.toLowerCase()
       );
     }
-    return (s.origin as WebOrigin).url === input.url;
+    return normalizeUrl((s.origin as WebOrigin).url) === normalizeUrl(input.url);
   });
 }
 
@@ -91,21 +91,45 @@ export function parseRepoInput(
   }
   let url: URL;
   try {
-    url = new URL(value);
+    url = new URL(withScheme(value));
   } catch {
     return null;
   }
   if (!/^https?:$/.test(url.protocol) || !['github.com', 'www.github.com'].includes(url.hostname))
     return null;
-  const match = /^\/([^/]+)\/([^/]+)(?:\/tree\/(.+))?$/.exec(url.pathname);
+  // Pasted from the address bar, so the link may point at a branch, a file or an issue.
+  const match = /^\/([^/]+)\/([^/]+)(?:\/tree\/(.+)|\/.*)?$/.exec(url.pathname);
   if (!match || !GITHUB_SHORT.test(`${match[1]}/${match[2]}`)) return null;
   const [, owner, repo, ref] = match;
   return {
     url: `https://github.com/${owner}/${repo}`,
     owner: owner!,
     repo: repo!,
-    ref: ref ? decodeURIComponent(ref) : undefined,
+    ref: ref ? safeDecode(ref) : undefined,
   };
+}
+
+/** `github.com/o/r` and `git@github.com:o/r` are what people paste; give them a scheme. */
+function withScheme(value: string) {
+  const ssh = /^git@github\.com:(.+)$/.exec(value);
+  if (ssh) return `https://github.com/${ssh[1]}`;
+  return /^(www\.)?github\.com\//i.test(value) ? `https://${value}` : value;
+}
+
+function safeDecode(part: string) {
+  try {
+    return decodeURIComponent(part);
+  } catch {
+    return part;
+  }
+}
+
+function normalizeUrl(raw: string | undefined) {
+  try {
+    return new URL((raw ?? '').trim()).href;
+  } catch {
+    return raw;
+  }
 }
 
 export function isHttpUrl(raw: string) {
