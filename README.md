@@ -6,8 +6,15 @@ questions. An agent decides how to look for the answer — search by meaning and
 the code, walk a book's table of contents, follow the call graph, or (as a last resort) search
 the web — and answers with citations to the page, section or `file:line` it used.
 
-Backend only for now: an Express API with streaming chat, ingestion jobs and an eval suite.
-The full build plan and log live in [PLAN.md](PLAN.md).
+An Express API with streaming chat, ingestion jobs and an eval suite, and a web app on top of
+it (Vite and React, laid out for phones as well as desktops).
+
+![A cited answer beside the book page it quotes](docs/screenshots/chat-desktop.png)
+
+<img src="docs/screenshots/chat-phone.png" alt="The same answer on a phone" width="300">
+
+The screenshots are the public demo workspace: the book shows a short excerpt of the cited
+page, never the PDF.
 
 ## Why
 
@@ -293,6 +300,18 @@ pnpm dev                          # API on http://localhost:4000
 The Inngest dev server calls the API at `/api/inngest` (and the eval worker on port 4001 while
 it runs), so ingestion only progresses with both `pnpm dev` and the compose stack up. The first
 reranked search downloads the MiniLM model (~23 MB) into `backend/.cache/models`.
+
+### Web app
+
+```bash
+cd frontend
+pnpm install
+pnpm dev                          # http://localhost:3000, proxies /api to the API on :4000
+```
+
+With the API started as `LLM_MOCK=1 pnpm dev`, scripted models stand in for Groq and Gemini, so
+the whole app can be clicked through with no keys and no quota (the mock is refused when
+`NODE_ENV=production`). Scripts, budgets and folders are in [`frontend/README.md`](frontend/README.md).
 
 ### Demo workspace
 
