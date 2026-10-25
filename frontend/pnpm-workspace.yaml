@@ -1,0 +1,2 @@
+# Not a workspace: this file only holds pnpm settings for frontend/.
+onlyBuiltDependencies: []

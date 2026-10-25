@@ -1,0 +1,1 @@
+{"root":["./vite.config.ts","./scripts/gen-api.ts","./scripts/prerender.ts"],"version":"6.0.3"}

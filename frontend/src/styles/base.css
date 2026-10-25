@@ -1,0 +1,140 @@
+@import './tokens.css';
+@import '@fontsource/ibm-plex-sans/400.css';
+@import '@fontsource/ibm-plex-sans/500.css';
+@import '@fontsource/ibm-plex-sans/600.css';
+@import '@fontsource/ibm-plex-mono/400.css';
+@import '@fontsource/ibm-plex-mono/500.css';
+@import '@fontsource-variable/source-serif-4';
+
+@layer base {
+  html {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: 100%;
+    -webkit-text-size-adjust: 100%;
+    text-rendering: optimizeLegibility;
+    font-feature-settings: 'kern';
+  }
+
+  body {
+    margin: 0;
+    min-height: 100dvh;
+    font-size: var(--text-sm);
+    line-height: var(--text-sm--line-height);
+  }
+
+  /* Prose (answers, book text) reads in the serif at the base size. */
+  .prose {
+    font-family: var(--font-serif);
+    font-size: var(--text-base);
+    line-height: var(--text-base--line-height);
+    font-variant-numeric: oldstyle-nums;
+  }
+  .prose p {
+    margin: 0 0 0.9em;
+  }
+  .prose p:last-child {
+    margin-bottom: 0;
+  }
+  .prose h1,
+  .prose h2,
+  .prose h3 {
+    font-family: var(--font-sans);
+    font-weight: 600;
+    line-height: 1.3;
+    margin: 1.4em 0 0.5em;
+  }
+  .prose h1 {
+    font-size: var(--text-lg);
+  }
+  .prose h2 {
+    font-size: var(--text-base);
+  }
+  .prose h3 {
+    font-size: var(--text-sm);
+  }
+  .prose ul,
+  .prose ol {
+    padding-left: 1.4em;
+    margin: 0 0 0.9em;
+  }
+  .prose li + li {
+    margin-top: 0.25em;
+  }
+  .prose a {
+    color: var(--accent);
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 2px;
+  }
+  .prose code {
+    font-family: var(--font-mono);
+    font-size: 0.82em;
+    background: var(--paper-2);
+    border-radius: var(--radius-xs);
+    padding: 0.1em 0.3em;
+  }
+  .prose pre {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    line-height: 1.55;
+    background: var(--paper-2);
+    border: 1px solid var(--rule);
+    border-radius: var(--radius-md);
+    padding: 0.75rem 0.9rem;
+    overflow-x: auto;
+    margin: 0 0 0.9em;
+  }
+  .prose pre code {
+    background: none;
+    padding: 0;
+    font-size: inherit;
+  }
+  .prose blockquote {
+    margin: 0 0 0.9em;
+    padding-left: 0.9em;
+    border-left: 2px solid var(--rule-2);
+    color: var(--ink-2);
+  }
+  .prose table {
+    border-collapse: collapse;
+    font-family: var(--font-sans);
+    font-size: var(--text-xs);
+    margin: 0 0 0.9em;
+  }
+  .prose th,
+  .prose td {
+    text-align: left;
+    padding: 0.35em 0.7em;
+    border-bottom: 1px solid var(--rule);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background: var(--highlight);
+  }
+
+  button,
+  input,
+  textarea,
+  select {
+    font: inherit;
+    color: inherit;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      transition-duration: 0.01ms !important;
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}

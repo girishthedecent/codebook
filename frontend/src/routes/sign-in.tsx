@@ -1,0 +1,25 @@
+import { createFileRoute, redirect } from '@tanstack/react-router';
+import { z } from 'zod';
+import { meQueryOptions } from '@/api/queries/me';
+import { SignInPage } from '@/features/auth/SignInPage';
+import { safeNext } from '@/features/auth/safeNext';
+
+const searchSchema = z.object({
+  next: z.string().optional(),
+  reason: z.enum(['guest']).optional(),
+});
+
+export const Route = createFileRoute('/sign-in')({
+  validateSearch: searchSchema,
+  // Someone already signed in has nothing to do here. Guests stay: signing in links their session.
+  beforeLoad: async ({ context, search }) => {
+    const me = await context.queryClient.ensureQueryData(meQueryOptions);
+    if (me && !me.isGuest) throw redirect({ href: safeNext(search.next) });
+  },
+  component: SignInRoute,
+});
+
+function SignInRoute() {
+  const { next, reason } = Route.useSearch();
+  return <SignInPage next={next} reason={reason} />;
+}

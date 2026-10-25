@@ -1,0 +1,21 @@
+/* Data hues for admin charts. A brighter step of the accent green plus one slate blue,
+   checked with the dataviz validator against each surface (paper #f6f3ec, charcoal #1c1a17):
+   lightness band, chroma floor, CVD and normal-vision separation, contrast all pass.
+   The UI accent stays muted; these are only for marks. */
+:root {
+  --series-1: #1f8060;
+  --series-2: #4a72b8;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --series-1: #3aa680;
+    --series-2: #5f8fe0;
+  }
+}
+
+:root[data-theme='dark'],
+[data-theme='dark'] {
+  --series-1: #3aa680;
+  --series-2: #5f8fe0;
+}

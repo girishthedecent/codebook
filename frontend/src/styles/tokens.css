@@ -1,0 +1,132 @@
+/* Design tokens. Everything visible derives from these; components never hard-code a color.
+   Paper and ink, one accent. Dark mode is warm charcoal, not blue-black. */
+
+@import 'tailwindcss';
+
+@theme {
+  --font-sans: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-serif: 'Source Serif 4 Variable', 'Source Serif 4', Georgia, 'Times New Roman', serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+  /* Type scale: 13 / 15 / 17 / 22 / 28 / 40 */
+  --text-xs: 0.8125rem;
+  --text-xs--line-height: 1.4;
+  --text-sm: 0.9375rem;
+  --text-sm--line-height: 1.5;
+  --text-base: 1.0625rem;
+  --text-base--line-height: 1.55;
+  --text-lg: 1.375rem;
+  --text-lg--line-height: 1.35;
+  --text-xl: 1.75rem;
+  --text-xl--line-height: 1.25;
+  --text-2xl: 2.5rem;
+  --text-2xl--line-height: 1.1;
+
+  --radius-xs: 3px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-full: 999px;
+
+  --shadow-float: 0 4px 16px -4px rgb(28 26 23 / 0.18), 0 0 0 1px rgb(28 26 23 / 0.06);
+
+  /* Semantic colors are CSS variables so dark mode can swap them. */
+  --color-paper: var(--paper);
+  --color-paper-2: var(--paper-2);
+  --color-paper-3: var(--paper-3);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-rule: var(--rule);
+  --color-rule-2: var(--rule-2);
+  --color-accent: var(--accent);
+  --color-accent-2: var(--accent-2);
+  --color-accent-wash: var(--accent-wash);
+  --color-ok: var(--ok);
+  --color-warn: var(--warn);
+  --color-error: var(--error);
+  --color-error-wash: var(--error-wash);
+  --color-highlight: var(--highlight);
+}
+
+:root {
+  color-scheme: light;
+  --paper: #f6f3ec;
+  --paper-2: #efebe1;
+  --paper-3: #e6e1d4;
+  --ink: #1f1c18;
+  --ink-2: #4d4842;
+  --ink-3: #7d766d;
+  --rule: rgb(31 28 24 / 0.1);
+  --rule-2: rgb(31 28 24 / 0.2);
+  --accent: #2e5d4b;
+  --accent-2: #24493b;
+  --accent-wash: rgb(46 93 75 / 0.1);
+  --ok: #3b6e3b;
+  --warn: #8a5a12;
+  --error: #9b3a2f;
+  --error-wash: rgb(155 58 47 / 0.09);
+  --highlight: rgb(216 180 80 / 0.35);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+    --paper: #1c1a17;
+    --paper-2: #22201c;
+    --paper-3: #2b2823;
+    --ink: #ece7dc;
+    --ink-2: #b8b1a4;
+    --ink-3: #847d71;
+    --rule: rgb(236 231 220 / 0.1);
+    --rule-2: rgb(236 231 220 / 0.2);
+    --accent: #7fb59c;
+    --accent-2: #9ccbb5;
+    --accent-wash: rgb(127 181 156 / 0.14);
+    --ok: #7fb57f;
+    --warn: #d2a24c;
+    --error: #d9786b;
+    --error-wash: rgb(217 120 107 / 0.12);
+    --highlight: rgb(216 180 80 / 0.28);
+  }
+}
+
+/* The root toggle, and any subtree that previews dark (the dev gallery). */
+:root[data-theme='dark'],
+[data-theme='dark'] {
+  color-scheme: dark;
+  --paper: #1c1a17;
+  --paper-2: #22201c;
+  --paper-3: #2b2823;
+  --ink: #ece7dc;
+  --ink-2: #b8b1a4;
+  --ink-3: #847d71;
+  --rule: rgb(236 231 220 / 0.1);
+  --rule-2: rgb(236 231 220 / 0.2);
+  --accent: #7fb59c;
+  --accent-2: #9ccbb5;
+  --accent-wash: rgb(127 181 156 / 0.14);
+  --ok: #7fb57f;
+  --warn: #d2a24c;
+  --error: #d9786b;
+  --error-wash: rgb(217 120 107 / 0.12);
+  --highlight: rgb(216 180 80 / 0.28);
+}
+
+/* The only two motions the primitives use. Reduced motion turns them off in base.css. */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(300%);
+  }
+}

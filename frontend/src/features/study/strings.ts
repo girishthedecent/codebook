@@ -1,0 +1,97 @@
+import type { StudyType } from '@/api/types';
+
+// Study copy. Sentence case, plain words.
+export const s = {
+  title: 'Study',
+  newSet: 'New study set',
+  empty: 'No study sets yet.',
+  emptyHint: 'Make a quiz, flashcards, a mind map or a summary from your sources.',
+  guestNote: 'Sign in to make your own study sets.',
+  pickOne: 'Pick a study set to open it.',
+  back: 'Study',
+  loadMore: 'Show older',
+  regenerate: 'Make again',
+  delete: 'Delete',
+  deleteTitle: 'Delete this study set?',
+  deleteBody: 'It is removed for good. The sources stay as they are.',
+  making: 'Making this set. It usually takes under a minute.',
+  queued: 'Waiting to start.',
+  failed: "This set couldn't be made.",
+  noSources: 'Add a source first; study sets are made from what you have indexed.',
+  create: {
+    title: 'New study set',
+    description: 'Made from your indexed sources, with references back to them.',
+    type: 'Kind',
+    sources: 'From',
+    allSources: 'All sources',
+    topic: 'Focus',
+    topicHint: 'Optional. A topic or question to narrow the material.',
+    count: (type: StudyType) => (type === 'QUIZ' ? 'Questions' : 'Cards'),
+    difficulty: 'Difficulty',
+    submit: 'Make it',
+    tooManySources: 'Pick at most 10 sources.',
+  },
+  quiz: {
+    of: (i: number, n: number) => `Question ${i} of ${n}`,
+    next: 'Next',
+    finish: 'See result',
+    correct: 'Correct',
+    yourAnswer: 'Your answer',
+    answer: 'Answer',
+    score: (right: number, n: number) => `${right} of ${n}`,
+    scoreLabel: 'correct',
+    missed: 'Missed',
+    allRight: 'You got every question.',
+    again: 'Take it again',
+    keysHint: 'Press 1–4 to answer, Enter for the next question.',
+  },
+  cards: {
+    front: 'Front',
+    back: 'Back',
+    flip: 'Show the other side',
+    prev: 'Previous',
+    next: 'Next',
+    know: 'Know it',
+    again: 'Again',
+    done: (know: number, n: number) => `You know ${know} of ${n}.`,
+    reviewAgain: (n: number) => `Go through the again pile (${n})`,
+    restart: 'Start over',
+    showingAgain: 'Showing the again pile.',
+    showAll: 'Show all cards',
+    keysHint: 'Space flips, ← and → move.',
+  },
+  map: {
+    view: 'View',
+    map: 'Map',
+    outline: 'Outline',
+    fit: 'Fit',
+    zoomIn: 'Zoom in',
+    zoomOut: 'Zoom out',
+    expand: 'Expand',
+    collapse: 'Collapse',
+    selected: 'Selected',
+    hint: 'Drag to move, scroll to zoom, click a topic to fold it.',
+  },
+  summary: { keyTerms: 'Key terms' },
+};
+
+export const typeLabel: Record<StudyType, string> = {
+  QUIZ: 'Quiz',
+  FLASHCARDS: 'Flashcards',
+  MINDMAP: 'Mind map',
+  SUMMARY: 'Summary',
+};
+
+export const typeDescription: Record<StudyType, string> = {
+  QUIZ: 'Multiple-choice questions with the answer explained.',
+  FLASHCARDS: 'A term or question on one side, the answer on the other.',
+  MINDMAP: 'The main ideas as a tree you can fold and unfold.',
+  SUMMARY: 'Short sections of key points, plus the terms worth knowing.',
+};
+
+export const statusLabel = {
+  PENDING: 'Queued',
+  RUNNING: 'Making',
+  DONE: 'Ready',
+  FAILED: 'Failed',
+} as const;
