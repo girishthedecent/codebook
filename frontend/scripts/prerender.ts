@@ -40,5 +40,34 @@ if (cssTag) {
   }
 }
 
+// The text on the landing page repaints when its web fonts arrive, and that repaint is what
+// sets the largest contentful paint. Without a hint the fonts are only found after the
+// stylesheet has been parsed, a round trip later; preloading starts them with the stylesheet.
+if (cssTag) {
+  const css = await readFile(dist + cssTag[1]!.slice(1), 'utf8');
+  const wanted = [/source-serif-4-latin-wght-normal/, /ibm-plex-sans-latin-(400|500)-normal/];
+  const fonts = [...css.matchAll(/url\((\/assets\/[^)]+\.woff2)\)/g)]
+    .map((m) => m[1]!)
+    .filter((url) => wanted.some((re) => re.test(url)));
+  const hints = fonts
+    .map((url) => `<link rel="preload" as="font" type="font/woff2" crossorigin href="${url}">`)
+    .join('');
+  html = html.replace('</head>', `${hints}</head>`);
+}
+
+// The landing page is plain HTML and links (no state, no handlers), so it never needs the app:
+// its links are ordinary navigations, and the app starts on the page they lead to. Booting it
+// here would also rebuild the page the reader is already looking at. A hover or touch only
+// warms the app's files so that navigation is quick. Every other URL serves this same file,
+// so there the app starts at once, with the preloads the build would have emitted.
+const preloads = [...html.matchAll(/<link rel="modulepreload"[^>]*href="([^"]+)"[^>]*>/g)].map(
+  (m) => m[1]!,
+);
+const entry = /<script type="module" crossorigin src="([^"]+)"><\/script>/.exec(html);
+if (!entry || preloads.length === 0) throw new Error('dist/index.html has no module entry');
+html = html.replace(/\s*<link rel="modulepreload"[^>]*>/g, '').replace(entry[0], '');
+const loader = `<script>(function(){var deps=${JSON.stringify(preloads)},entry=${JSON.stringify(entry[1])};function preload(){deps.concat(entry).forEach(function(h){var l=document.createElement('link');l.rel='modulepreload';l.crossOrigin='';l.href=h;document.head.appendChild(l)})}if(location.pathname==='/'){['pointerover','touchstart','focusin'].forEach(function(t){addEventListener(t,preload,{once:true,passive:true})})}else{document.getElementById('root').textContent='';preload();var s=document.createElement('script');s.type='module';s.crossOrigin='';s.src=entry;document.head.appendChild(s)}})()</script>`;
+html = html.replace('</body>', `${loader}</body>`);
+
 await writeFile(dist + 'index.html', html);
 console.log(`prerendered / (${(Buffer.byteLength(html) / 1024).toFixed(1)} KB)`);
