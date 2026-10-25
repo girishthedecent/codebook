@@ -59,7 +59,7 @@ flowchart LR
   inngest[Inngest] -->|function calls| ing
   v1 -->|events| inngest
   api --> pg[(Postgres + pgvector<br/>chunks, tsvector, graph,<br/>caches, rate limits)]
-  api --> minio[(MinIO / S3<br/>uploaded PDFs)]
+  api --> s3[(S3-compatible storage<br/>uploaded PDFs)]
   api --> llm[Groq + Gemini<br/>chat, embeddings]
   api --> gh[GitHub API<br/>repo tarballs]
   api --> web[Tavily<br/>web search]
@@ -272,7 +272,7 @@ never commit it.
 | `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | GitHub OAuth app, callback `http://localhost:4000/api/auth/callback/github` | optional GitHub login (both or neither) |
 | `ADMIN_USER_IDS` | comma-separated user ids | `/api/v1/monitoring` and `/api/v1/evals` |
 
-The rest of `.env.example` (ports, database URLs, MinIO credentials, `INNGEST_DEV`,
+The rest of `.env.example` (ports, database URLs, storage settings, `INNGEST_DEV`,
 `INNGEST_BASE_URL`, `EVALS_WORKER_PORT`, reranker model and cache dir, `LOG_LEVEL`,
 `LOG_TO_FILE`, `TRUST_PROXY`, `TRUSTED_ORIGINS`) works as is for local development. In
 production `INNGEST_EVENT_KEY` and `INNGEST_SIGNING_KEY` are required and `INNGEST_DEV` must
@@ -283,7 +283,7 @@ not be set.
 ```bash
 cd backend
 cp .env.example .env              # then fill in the keys above
-docker compose up -d              # postgres + pgvector, minio (+ bucket setup), inngest dev server
+docker compose up -d              # postgres + pgvector, S3 storage (SeaweedFS, + bucket setup), inngest dev server
 pnpm install
 pnpm db:migrate                   # apply migrations and generate the Prisma client
 pnpm dev                          # API on http://localhost:4000
@@ -294,7 +294,7 @@ pnpm dev                          # API on http://localhost:4000
 | API | http://localhost:4000 (readiness: `/api/v1/health/ready`) |
 | API docs | http://localhost:4000/docs, spec at `/openapi.json` |
 | Inngest dev UI | http://localhost:8288 |
-| MinIO console | http://localhost:9011 (minio / minio12345) |
+| S3 API | http://localhost:9010 (any keys; buckets `codebook` and `codebook-test`) |
 | Postgres | localhost:5436 (codebook / codebook) |
 
 The Inngest dev server calls the API at `/api/inngest` (and the eval worker on port 4001 while

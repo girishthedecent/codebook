@@ -12,7 +12,7 @@ const server = createServer(createApp());
 
 server.on('listening', () => {
   logger.info(`Server is running on http://localhost:${serverConfig.PORT}`);
-  // A missing bucket or stopped MinIO shows up now instead of on the first upload.
+  // A missing bucket or stopped storage server shows up now instead of on the first upload.
   void bucketReachable().then((ok) => {
     if (!ok) logger.warn('Storage bucket is not reachable; uploads will fail');
   });
