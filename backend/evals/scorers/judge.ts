@@ -11,7 +11,7 @@ import { sha256 } from '../../src/utils/hash.js';
 import { countTokens } from '../../src/utils/tokens.js';
 import type { JudgeInput, StoredPassage } from '../answer.types.js';
 
-// The model-graded metrics (PLAN 14.2): correctness against the reference answer, and
+// The model-graded metrics: correctness against the reference answer, and
 // grounding (claims and citations against the cited passages). Every verdict is cached by
 // the exact prompt the judge was sent, so rescoring a stored run costs nothing.
 

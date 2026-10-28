@@ -11,7 +11,7 @@ import { createPacer } from '../src/utils/pacer.js';
 import type { Prisma } from '../src/generated/prisma/client.js';
 import { datasetFileSchema, evalCaseSchema, importCases, type ExpectedRef } from './dataset.js';
 
-// Candidate cases for the golden set (PLAN 14.5, 14.6): drafted from the corpus or taken
+// Candidate cases for the golden set: drafted from the corpus or taken
 // from answers that went wrong, written to a file for review, and merged into the dataset
 // only once a reviewer marks them accepted. The files quote the corpus and users'
 // questions, so they stay out of git.

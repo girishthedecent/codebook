@@ -26,7 +26,7 @@ import {
 import { percentile } from './retrieval.js';
 import { scoreTrajectory } from './trajectory.js';
 
-// Scores one answered case and sums a run's cases up (PLAN 14.2, 14.3, 14.8).
+// Scores one answered case and sums a run's cases up.
 
 export type ScoreOptions = {
   // false: trajectory and computed metrics only, no judge calls (dry runs, tests).

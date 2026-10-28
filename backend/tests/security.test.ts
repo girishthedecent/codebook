@@ -5,7 +5,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import winston from 'winston';
 import { resetDb } from './helpers/db.js';
 
-// The checks from the security review (PLAN 17.1) that need a test of their own. The rest
+// The checks from the security review (docs/security.md) that need a test of their own. The rest
 // are covered next to the code they protect; docs/security.md lists where.
 
 type Layer = {

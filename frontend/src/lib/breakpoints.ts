@@ -2,7 +2,8 @@ import { useSyncExternalStore } from 'react';
 
 export type Breakpoint = 'phone' | 'tablet' | 'desktop';
 
-// Same numbers as the layout table in PLAN.md §5.
+// Phone below 720px, tablet to 1099px, desktop from 1100px: the same widths as the
+// max-[719px] and min-[1100px] classes in the components.
 const TABLET = '(min-width: 720px)';
 const DESKTOP = '(min-width: 1100px)';
 

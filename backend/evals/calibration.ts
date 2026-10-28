@@ -8,7 +8,7 @@ import {
   type StoredPassage,
 } from './answer.types.js';
 
-// Judge calibration (PLAN 14.2): a sample of the grounding judge's claim verdicts for a person
+// Judge calibration: a sample of the grounding judge's claim verdicts for a person
 // to label, then how often the two agree. The file quotes the corpus and the answers, so it
 // stays out of git (evals/calibration/).
 

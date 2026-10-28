@@ -1,6 +1,6 @@
 # CodeBook web app
 
-The browser app for the CodeBook API in `../backend`. Vite + React, TanStack Router and Query, Tailwind with our own tokens. The plan and design rules are in [`PLAN.md`](./PLAN.md).
+The browser app for the CodeBook API in `../backend`. Vite + React, TanStack Router and Query, Tailwind with our own tokens.
 
 ## Run
 

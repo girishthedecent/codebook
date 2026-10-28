@@ -1,7 +1,7 @@
 import { normalizeUrl } from '../src/modules/ingestion/web/crawler.js';
 import type { ExpectedRef } from './dataset.js';
 
-// When a retrieved chunk counts as finding an expected ref (PLAN 10.4).
+// When a retrieved chunk counts as finding an expected ref.
 
 export type MatchableChunk = {
   // From the corpus sources; null for a chunk from a source outside the corpus.

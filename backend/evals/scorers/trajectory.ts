@@ -1,6 +1,6 @@
 import type { StoredTrajectory, TrajectoryScores } from '../answer.types.js';
 
-// How the agent got to its answer (PLAN 14.3): did it reach for the tool the question
+// How the agent got to its answer: did it reach for the tool the question
 // needs, and how much did it waste on the way.
 
 const TOOL_TAG = 'tool:';

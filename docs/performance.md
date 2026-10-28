@@ -1,7 +1,7 @@
 # Performance pass
 
-PLAN.md 17.3: the main queries under `EXPLAIN (ANALYZE, BUFFERS)`, the HNSW `ef_search`
-setting, and the reranker batch size. Measured 2026-10-25 on the dev database with the
+The main queries under `EXPLAIN (ANALYZE, BUFFERS)`, the HNSW `ef_search` setting, and the
+reranker batch size. Measured 2026-10-25 on the dev database with the
 indexed eval corpus.
 
 ## Setup and caveats
