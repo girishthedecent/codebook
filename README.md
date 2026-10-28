@@ -1,8 +1,24 @@
-# CodeBook
+<div align="center">
+  <h1>CodeBook</h1>
+  <p><strong>An agentic RAG workspace that answers questions about books, docs and code, with citations</strong></p>
 
-[![ci](https://github.com/girishthedecent/codebook/actions/workflows/ci.yml/badge.svg)](https://github.com/girishthedecent/codebook/actions/workflows/ci.yml)
-[![frontend](https://github.com/girishthedecent/codebook/actions/workflows/frontend.yml/badge.svg)](https://github.com/girishthedecent/codebook/actions/workflows/frontend.yml)
-[![evals](https://github.com/girishthedecent/codebook/actions/workflows/evals.yml/badge.svg)](https://github.com/girishthedecent/codebook/actions/workflows/evals.yml)
+  ![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?style=for-the-badge&logo=typescript&logoColor=white)
+  ![Node.js](https://img.shields.io/badge/Node.js-43853D?style=for-the-badge&logo=nodedotjs&logoColor=white)
+  ![Express](https://img.shields.io/badge/Express-404D59?style=for-the-badge&logo=express&logoColor=white)
+  ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?style=for-the-badge&logo=postgresql&logoColor=white)
+  ![Prisma](https://img.shields.io/badge/Prisma-3982CE?style=for-the-badge&logo=prisma&logoColor=white)
+  ![React](https://img.shields.io/badge/React-20232A?style=for-the-badge&logo=react&logoColor=white)
+  ![Vite](https://img.shields.io/badge/Vite-646CFF?style=for-the-badge&logo=vite&logoColor=white)
+  ![Vitest](https://img.shields.io/badge/Vitest-6E9F18?style=for-the-badge&logo=vitest&logoColor=white)
+  ![Docker](https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white)
+  ![Gemini](https://img.shields.io/badge/Gemini-8E75B2?style=for-the-badge&logo=googlegemini&logoColor=white)
+
+  [![ci](https://github.com/girishthedecent/codebook/actions/workflows/ci.yml/badge.svg)](https://github.com/girishthedecent/codebook/actions/workflows/ci.yml)
+  [![frontend](https://github.com/girishthedecent/codebook/actions/workflows/frontend.yml/badge.svg)](https://github.com/girishthedecent/codebook/actions/workflows/frontend.yml)
+  [![evals](https://github.com/girishthedecent/codebook/actions/workflows/evals.yml/badge.svg)](https://github.com/girishthedecent/codebook/actions/workflows/evals.yml)
+</div>
+
+---
 
 A workspace that connects what's written about code (books, docs pages, specs) with the code
 itself. You add a PDF, a public GitHub repository or a docs website to a workspace and ask
@@ -21,10 +37,6 @@ The screenshots are the public demo workspace: the book shows a short excerpt of
 page, never the PDF.
 
 ## Tech stack
-
-<p>
-  <img src="https://skillicons.dev/icons?i=nodejs,ts,express,postgres,prisma,react,vite,vitest,docker,githubactions" alt="Node.js, TypeScript, Express, Postgres, Prisma, React, Vite, Vitest, Docker, GitHub Actions">
-</p>
 
 | | |
 |---|---|
