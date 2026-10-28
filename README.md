@@ -1,5 +1,9 @@
 # CodeBook
 
+[![ci](https://github.com/girishthedecent/codebook/actions/workflows/ci.yml/badge.svg)](https://github.com/girishthedecent/codebook/actions/workflows/ci.yml)
+[![frontend](https://github.com/girishthedecent/codebook/actions/workflows/frontend.yml/badge.svg)](https://github.com/girishthedecent/codebook/actions/workflows/frontend.yml)
+[![evals](https://github.com/girishthedecent/codebook/actions/workflows/evals.yml/badge.svg)](https://github.com/girishthedecent/codebook/actions/workflows/evals.yml)
+
 A workspace that connects what's written about code (books, docs pages, specs) with the code
 itself. You add a PDF, a public GitHub repository or a docs website to a workspace and ask
 questions. An agent decides how to look for the answer — search by meaning and keywords, grep
@@ -15,6 +19,22 @@ it (Vite and React, laid out for phones as well as desktops).
 
 The screenshots are the public demo workspace: the book shows a short excerpt of the cited
 page, never the PDF.
+
+## Tech stack
+
+<p>
+  <img src="https://skillicons.dev/icons?i=nodejs,ts,express,postgres,prisma,react,vite,vitest,docker,githubactions" alt="Node.js, TypeScript, Express, Postgres, Prisma, React, Vite, Vitest, Docker, GitHub Actions">
+</p>
+
+| | |
+|---|---|
+| **API** | Node 22, Express 5, TypeScript, zod |
+| **Data** | Postgres with pgvector (Prisma 7), S3-compatible storage for PDFs |
+| **AI** | Vercel AI SDK with Gemini and Groq, a local MiniLM reranker |
+| **Jobs** | Inngest |
+| **Auth** | better-auth (email and password, guests, optional GitHub) |
+| **Web app** | React 19, Vite, TypeScript |
+| **Tests** | Vitest and Supertest, plus the eval suites |
 
 ## Why
 
@@ -218,6 +238,28 @@ in `backend/evals/configs/answer/`:
 
 Security checks and their evidence are written up in [docs/security.md](docs/security.md),
 query plans and tuning in [docs/performance.md](docs/performance.md).
+
+## Project layout
+
+```
+backend/
+  src/
+    modules/      one folder per feature (chat, sources, ingestion, retrieval, ...)
+    llm/          model routing, retries, circuit breaker, prompts, embeddings
+    inngest/      background function registration
+    routers/      /api/v1 mounts
+    middlewares/  auth, rate limits, validation, error handling
+    config/       env parsing and app settings
+  prisma/         schema and migrations
+  evals/          retrieval and answer suites, configs, reports
+  tests/          integration tests
+frontend/
+  src/
+    features/     chat, sources, study, admin
+    routes/       file-based routes
+    api/          typed API client
+docs/             security review, performance notes, screenshots
+```
 
 ## Local setup
 
