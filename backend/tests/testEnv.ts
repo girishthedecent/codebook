@@ -31,6 +31,8 @@ export function useTestEnv() {
   process.env.BETTER_AUTH_URL = 'http://localhost:4000';
   process.env.TRUSTED_ORIGINS = 'http://localhost:3000';
   process.env.LOG_TO_FILE = 'false';
+  // One Gemini key, as in CI; a test that wants the backup key sets it on serverConfig.
+  delete process.env.GEMINI_API_KEY_2;
   // Created by docker compose next to the dev bucket; tests delete what they upload.
   process.env.S3_BUCKET = 'codebook-test';
   // Tests spy on inngest.send; dev mode keeps the client from wanting an event key. The base

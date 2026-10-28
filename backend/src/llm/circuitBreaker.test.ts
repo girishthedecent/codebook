@@ -21,6 +21,16 @@ beforeEach(() => {
   resetCircuitBreaker();
 });
 
+describe('backup key', () => {
+  it('keeps its own state, so the first key running out does not skip the second', () => {
+    const gemini: ModelRef = { provider: 'google', model: 'gemini-3.6-flash' };
+    const backup: ModelRef = { ...gemini, key: 'backup' };
+    for (let i = 0; i < quotaErrors; i++) noteQuotaError(gemini);
+    expect(isOpen(gemini)).toBe(true);
+    expect(isOpen(backup)).toBe(false);
+  });
+});
+
 describe('isQuotaError', () => {
   it('recognizes 429s and quota-exhausted answers', () => {
     expect(isQuotaError(apiError(429))).toBe(true);

@@ -106,6 +106,7 @@ export const knownConfigs: Record<string, string[]> = {
     'long-context',
     'memory-on',
     'memory-off',
+    'prompt-v2',
     'prompt-v3',
     'model-gemini-flash-6k5',
     'model-gpt-oss-120b-6k5',

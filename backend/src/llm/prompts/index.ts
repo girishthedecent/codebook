@@ -1,4 +1,9 @@
-import { agentSystemPrompt, agentSystemPromptV2, agentSystemPromptV3 } from './agentSystem.js';
+import {
+  agentSystemPrompt,
+  agentSystemPromptV2,
+  agentSystemPromptV3,
+  agentSystemPromptV4,
+} from './agentSystem.js';
 import { contextualizePrompt } from './contextualize.js';
 import { contextualizeCodePrompt } from './contextualizeCode.js';
 import { decomposePrompt } from './decompose.js';
@@ -29,6 +34,7 @@ export const prompts: readonly PromptTemplate[] = [
   agentSystemPrompt,
   agentSystemPromptV2,
   agentSystemPromptV3,
+  agentSystemPromptV4,
   titlePrompt,
   summarizeConversationPrompt,
   studyQuizPrompt,

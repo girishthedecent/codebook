@@ -1,6 +1,7 @@
 import { appConfig } from '../../config/app.config.js';
 import type { IngestStage, Prisma, SourceType } from '../../generated/prisma/client.js';
 import { embedTexts } from '../../llm/embeddings.js';
+import { runWithConcurrency } from '../../utils/concurrency.js';
 import type { AdapterContext, AdapterResult } from './adapters/adapter.js';
 import { preparePdf } from './adapters/pdf.adapter.js';
 import { prepareRepo } from './adapters/repo.adapter.js';
@@ -11,7 +12,7 @@ import {
   isContextual,
   unitsPerStep,
 } from './contextUnits.js';
-import { contextualizePack, contextualizeParent } from './contextualizer.js';
+import { contextualizeLanes, contextualizePack, contextualizeParent } from './contextualizer.js';
 import { indexedChildren } from './indexedChildren.js';
 import {
   failIngest,
@@ -139,14 +140,19 @@ export async function contextualizeStep(sourceId: string, runId: string, step: n
 
   let done = 0;
   let failed = 0;
-  for (const unit of units.slice(step * perStep, (step + 1) * perStep)) {
-    const ok =
-      unit.kind === 'parent'
-        ? await contextualizeParent(unit.group.parent, callContext(draft))
-        : await contextualizePack(unit.pack, callContext(draft));
-    if (ok) done++;
-    else failed++;
-  }
+  // One call in flight per Gemini key; the contextualizer paces each key on its own.
+  await runWithConcurrency(
+    units.slice(step * perStep, (step + 1) * perStep),
+    contextualizeLanes(),
+    async (unit) => {
+      const ok =
+        unit.kind === 'parent'
+          ? await contextualizeParent(unit.group.parent, callContext(draft))
+          : await contextualizePack(unit.pack, callContext(draft));
+      if (ok) done++;
+      else failed++;
+    },
+  );
   return { done, failed };
 }
 

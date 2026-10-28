@@ -15,11 +15,19 @@ import { appConfig } from '../config/app.config.js';
 import logger from '../config/logger.config.js';
 import { Prisma } from '../generated/prisma/client.js';
 import { UpstreamError } from '../utils/errors/app.error.js';
-import { modelsFor, textRoutes, type ModelRef, type TextRoute, type TextTask } from './models.js';
+import {
+  backupFirst,
+  modelLabel,
+  modelsFor,
+  textRoutes,
+  type ModelRef,
+  type TextRoute,
+  type TextTask,
+} from './models.js';
 import { isOpen, isQuotaError, noteQuotaError } from './circuitBreaker.js';
 import { estimateCost, type TokenCounts } from './pricing.js';
 import { languageModel } from './providers.js';
-import { describeError, withRetry } from './retry.js';
+import { describeError, quotaHits, withRetry } from './retry.js';
 import { recordUsage } from './usage.repository.js';
 
 export type CallContext = {
@@ -40,6 +48,10 @@ type CallOptions = PromptInput & {
   task: TextTask;
   // Evals pin a model to compare models; an override is tried alone, without fallback.
   modelOverride?: ModelRef;
+  // Bulk work that spreads its calls over both Gemini keys starts some on the backup key.
+  startWith?: 'backup';
+  // Waits before each model is tried, for callers that pace their calls to a key's rate.
+  pace?: (ref: ModelRef) => Promise<void>;
   abortSignal?: AbortSignal;
   ctx?: CallContext;
 };
@@ -48,6 +60,8 @@ type CallOptions = PromptInput & {
 export type CallInfo = TokenCounts & {
   provider: string;
   model: string;
+  // Set when the backup Gemini key answered.
+  key?: 'backup';
   fallbackUsed: boolean;
   costUsd: Prisma.Decimal;
   latencyMs: number;
@@ -129,6 +143,8 @@ export async function streamStep(
     models?: ModelRef[];
     // The caller already moved past its primary model (the agent passes one model a step).
     fallbackUsed?: boolean;
+    // The caller has another model to try if these fail.
+    hasFallback?: boolean;
     onText: (delta: string) => void;
   },
 ): Promise<StreamStepResult> {
@@ -136,7 +152,7 @@ export async function streamStep(
   const route = textRoutes[task];
   const models = options.models ?? modelsFor(task, options.modelOverride);
   const started = performance.now();
-  logPrompt(options);
+  logPrompt(options, models);
 
   let emitted = false;
   let lastError: unknown;
@@ -144,6 +160,7 @@ export async function streamStep(
   for (const [index, ref] of models.entries()) {
     if (skipOpen(ref, index, models.length, task)) continue;
     lastIndex = index;
+    const hasFallback = index < models.length - 1 || options.hasFallback === true;
     try {
       const value = await withRetry(
         async (signal) => {
@@ -179,7 +196,7 @@ export async function streamStep(
           ]);
           return { text, toolCalls, responseMessages, usage };
         },
-        { timeoutMs: route.timeoutMs, signal: abortSignal },
+        { timeoutMs: route.timeoutMs, signal: abortSignal, hasFallback },
       );
       const fellBack = index > 0 || options.fallbackUsed === true;
       const call = callInfo(ref, tokenCounts(value.usage), NO_SPENT, fellBack, started);
@@ -199,13 +216,7 @@ export async function streamStep(
       lastError = error;
       if (isQuotaError(error)) noteQuotaError(ref);
       if (abortSignal?.aborted || emitted) break;
-      logger.warn('Model call failed', {
-        task,
-        provider: ref.provider,
-        model: ref.model,
-        error: describeError(error),
-        willFallBack: index < models.length - 1,
-      });
+      logFailure(task, ref, error, hasFallback);
     }
   }
 
@@ -216,14 +227,24 @@ export async function streamStep(
   throw new UpstreamError('LLM', { task, interrupted: emitted }, { cause: lastError });
 }
 
+function logFailure(task: TextTask, ref: ModelRef, error: unknown, willFallBack: boolean) {
+  const quota = quotaHits(error);
+  logger.warn('Model call failed', {
+    task,
+    model: modelLabel(ref),
+    error: describeError(error),
+    ...(quota.length > 0 && { quota }),
+    willFallBack,
+  });
+}
+
 // A model whose quota keeps running out is skipped while its breaker is open, unless it is
 // the last one left: trying it beats failing without a call.
 function skipOpen(ref: ModelRef, index: number, count: number, task: TextTask) {
   if (index === count - 1 || !isOpen(ref)) return false;
   logger.debug('Skipping a model with an open circuit breaker', {
     task,
-    provider: ref.provider,
-    model: ref.model,
+    model: modelLabel(ref),
   });
   return true;
 }
@@ -236,9 +257,10 @@ function skipOpen(ref: ModelRef, index: number, count: number, task: TextTask) {
 async function callWithFallback<T>(options: CallOptions, attempt: Attempt<T>) {
   const { task, modelOverride, abortSignal, ctx } = options;
   const route = textRoutes[task];
-  const models = modelsFor(task, modelOverride);
+  const routed = modelsFor(task, modelOverride);
+  const models = options.startWith === 'backup' ? backupFirst(routed) : routed;
   const started = performance.now();
-  logPrompt(options);
+  logPrompt(options, models);
 
   let lastError: unknown;
   let lastIndex = 0;
@@ -248,10 +270,12 @@ async function callWithFallback<T>(options: CallOptions, attempt: Attempt<T>) {
   for (const [index, ref] of models.entries()) {
     if (skipOpen(ref, index, models.length, task)) continue;
     lastIndex = index;
+    const hasFallback = index < models.length - 1;
     try {
+      await options.pace?.(ref);
       const { value, usage } = await withRetry(
         (signal) => attempt(languageModel(ref), route, signal),
-        { timeoutMs: route.timeoutMs, signal: abortSignal },
+        { timeoutMs: route.timeoutMs, signal: abortSignal, hasFallback },
       );
       const call = callInfo(ref, tokenCounts(usage), spent, index > 0, started);
       await recordUsage({ ...usageRow(task, call, ctx), ok: true });
@@ -269,13 +293,7 @@ async function callWithFallback<T>(options: CallOptions, attempt: Attempt<T>) {
       }
       // The client went away: nobody is waiting for a fallback answer.
       if (abortSignal?.aborted) break;
-      logger.warn('Model call failed', {
-        task,
-        provider: ref.provider,
-        model: ref.model,
-        error: describeError(error),
-        willFallBack: index < models.length - 1,
-      });
+      logFailure(task, ref, error, hasFallback);
     }
   }
 
@@ -334,6 +352,7 @@ function callInfo(
   return {
     provider: ref.provider,
     model: ref.model,
+    ...(ref.key && { key: ref.key }),
     fallbackUsed,
     ...addTokens(spent.tokens, tokens),
     costUsd: spent.costUsd.add(estimateCost(ref.model, tokens)),
@@ -350,6 +369,7 @@ function usageRow(task: TextTask, call: CallInfo, ctx: CallContext | undefined) 
     messageId: ctx?.messageId,
     provider: call.provider,
     model: call.model,
+    key: call.key,
     tokensIn: call.tokensIn,
     tokensOut: call.tokensOut,
     tokensCached: call.tokensCached,
@@ -360,11 +380,12 @@ function usageRow(task: TextTask, call: CallInfo, ctx: CallContext | undefined) 
 }
 
 // Prompts hold user data, so they're only logged at debug level and cut short.
-function logPrompt(options: CallOptions) {
+function logPrompt(options: CallOptions, models: ModelRef[]) {
   if (!logger.isDebugEnabled()) return;
   const text = options.prompt ?? JSON.stringify(options.messages);
   logger.debug('Model call', {
     task: options.task,
+    models: models.map(modelLabel),
     prompt: text.slice(0, appConfig.llm.logPreviewChars),
   });
 }

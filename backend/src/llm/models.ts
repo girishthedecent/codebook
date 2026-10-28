@@ -1,4 +1,5 @@
 import type { LanguageModelCallOptions } from 'ai';
+import { serverConfig } from '../config/index.js';
 
 export const TASKS = [
   'answer',
@@ -22,6 +23,9 @@ export type ProviderName = 'groq' | 'google';
 export type ModelRef = {
   provider: ProviderName;
   model: string;
+  // Set on the copy of a Google model that uses GEMINI_API_KEY_2, a key from another
+  // project: free-tier quotas are per project, so it still answers when the first is out.
+  key?: 'backup';
 };
 
 export type TextRoute = {
@@ -168,9 +172,36 @@ export const embeddingRoute = {
   },
 };
 
+/** "provider/model", plus "#backup" for the backup key: for logs and per-model state. */
+export const modelLabel = (ref: ModelRef) =>
+  `${ref.provider}/${ref.model}${ref.key ? `#${ref.key}` : ''}`;
+
+/** Puts a backup-key copy right after each Google model, so the same model is tried again on the other project before the next one. */
+export function withBackupKey(refs: ModelRef[], hasBackupKey: boolean): ModelRef[] {
+  if (!hasBackupKey) return refs;
+  return refs.flatMap((ref) =>
+    ref.provider === 'google' ? [ref, { ...ref, key: 'backup' as const }] : [ref],
+  );
+}
+
+/** Swaps each model with the backup-key copy that follows it, so the backup key goes first. */
+export function backupFirst(refs: ModelRef[]): ModelRef[] {
+  const out = [...refs];
+  for (let i = 0; i < out.length - 1; i++) {
+    const [ref, next] = [out[i]!, out[i + 1]!];
+    if (!ref.key && next.key === 'backup' && next.model === ref.model) {
+      [out[i], out[i + 1]] = [next, ref];
+      i++;
+    }
+  }
+  return out;
+}
+
 /** The models to try for a task, in order. An override (used by evals) is tried alone. */
 export function modelsFor(task: TextTask, override?: ModelRef): ModelRef[] {
   if (override) return [override];
   const { primary, fallback } = textRoutes[task];
-  return fallback ? [primary, fallback] : [primary];
+  return withBackupKey(fallback ? [primary, fallback] : [primary], hasBackupKey());
 }
+
+export const hasBackupKey = () => Boolean(serverConfig.GEMINI_API_KEY_2);

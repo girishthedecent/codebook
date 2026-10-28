@@ -124,6 +124,8 @@ model UsageEvent {
   task         String
   provider     String
   model        String
+  // "backup" when GEMINI_API_KEY_2 answered, so each key's use and failures can be told apart.
+  key          String?
   tokensIn     Int
   tokensOut    Int
   tokensCached Int       @default(0)
@@ -466,7 +468,7 @@ model EvalRun {
   id             String        @id @default(cuid())
   datasetId      String
   dataset        EvalDataset   @relation(fields: [datasetId], references: [id], onDelete: Cascade)
-  // `retrieval` now; answers and the agent in Phase 14.
+  // `retrieval` or `answer`.
   suite          String
   // The config file's name, e.g. hybrid-rerank.
   name           String

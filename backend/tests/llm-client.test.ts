@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import prismaClient from '../src/config/db.config.js';
+import { serverConfig } from '../src/config/index.js';
+import { resetCircuitBreaker } from '../src/llm/circuitBreaker.js';
 import { generate, generateObject } from '../src/llm/client.js';
 import { textRoutes } from '../src/llm/models.js';
 import { estimateCost } from '../src/llm/pricing.js';
@@ -24,6 +26,8 @@ const LITE = 'gemini-3.5-flash-lite';
 
 beforeEach(async () => {
   await resetDb();
+  // Quota errors from one test would otherwise open a breaker for the next.
+  resetCircuitBreaker();
 });
 
 afterEach(() => {
@@ -92,8 +96,8 @@ describe('routing', () => {
 });
 
 describe('retries and fallback', () => {
-  it('retries a 429 on the same model', async () => {
-    const primary = scriptedModel([apiError(429), 'second try']);
+  it('retries a server error once on the same model', async () => {
+    const primary = scriptedModel([apiError(503), 'second try']);
     const fallback = textModel('fallback');
     useModels({ [BIG]: primary, [FLASH]: fallback });
 
@@ -104,17 +108,61 @@ describe('retries and fallback', () => {
     expect(fallback.doGenerateCalls).toHaveLength(0);
   });
 
-  it('falls back after the retries run out and records it', async () => {
-    const primary = failingModel(apiError(429));
+  it('falls back after one retry while a fallback is waiting, and records it', async () => {
+    const primary = failingModel(apiError(503));
     useModels({ [BIG]: primary, [FLASH]: textModel('fallback') });
 
     const { text, call } = await generate({ task: 'answer', prompt: 'hi' });
     expect(text).toBe('fallback');
-    expect(primary.doGenerateCalls).toHaveLength(3);
+    expect(primary.doGenerateCalls).toHaveLength(2);
     expect(call).toMatchObject({ provider: 'google', model: FLASH, fallbackUsed: true });
 
     const [row] = await usageRows();
     expect(row).toMatchObject({ model: FLASH, fallbackUsed: true, ok: true });
+  });
+
+  it('goes to the fallback without retrying when the quota is used up', async () => {
+    const primary = failingModel(apiError(429));
+    useModels({ [BIG]: primary, [FLASH]: textModel('fallback') });
+
+    const { call } = await generate({ task: 'answer', prompt: 'hi' });
+    expect(call.fallbackUsed).toBe(true);
+    expect(primary.doGenerateCalls).toHaveLength(1);
+  });
+
+  it('tries the same Gemini model on the backup key before the next model', async () => {
+    serverConfig.GEMINI_API_KEY_2 = 'backup-key';
+    try {
+      const flash = scriptedModel([apiError(429), 'from backup']);
+      const groq = textModel('groq');
+      useModels({ [FLASH]: flash, [BIG]: groq });
+
+      const { text, call } = await generate({ task: 'study', prompt: 'hi' });
+      expect(text).toBe('from backup');
+      expect(call).toMatchObject({ model: FLASH, key: 'backup', fallbackUsed: true });
+      expect(groq.doGenerateCalls).toHaveLength(0);
+      const rows = await usageRows();
+      expect(rows.at(-1)).toMatchObject({ model: FLASH, key: 'backup', ok: true });
+    } finally {
+      serverConfig.GEMINI_API_KEY_2 = undefined;
+    }
+  });
+
+  it('paces each attempt against the key it is about to use', async () => {
+    serverConfig.GEMINI_API_KEY_2 = 'backup-key';
+    try {
+      useModels({ [LITE]: scriptedModel([apiError(429), 'ok']) });
+      const paced: string[] = [];
+
+      await generate({
+        task: 'contextualize',
+        prompt: 'hi',
+        pace: async (ref) => void paced.push(ref.key ?? 'primary'),
+      });
+      expect(paced).toEqual(['primary', 'backup']);
+    } finally {
+      serverConfig.GEMINI_API_KEY_2 = undefined;
+    }
   });
 
   it('skips the wait when retry-after is longer than the cap', async () => {

@@ -11,7 +11,13 @@ import { search } from '../src/modules/retrieval/retrieval.service.js';
 import type { SearchOptions, SearchResult } from '../src/modules/retrieval/retrieval.types.js';
 import { authAgent, signedInUser } from './helpers/auth.js';
 import { resetDb } from './helpers/db.js';
-import { fakeEmbeddingModel, fakeVector, textModel, useModels } from './helpers/llm-mock.js';
+import {
+  apiError,
+  fakeEmbeddingModel,
+  fakeVector,
+  textModel,
+  useModels,
+} from './helpers/llm-mock.js';
 import { seedSource, similarTo, vectorOf } from './helpers/retrieval.js';
 
 vi.mock('../src/llm/providers.js', () => import('./helpers/llm-mock.js'));
@@ -197,6 +203,25 @@ describe('workspace isolation', () => {
     expect(result.results).toEqual([]);
     expect(result.debug.ranked).toEqual([]);
     expect(result.debug.weak).toBe(true);
+  });
+});
+
+describe('when the question cannot be embedded', () => {
+  beforeEach(() => {
+    doEmbed.mockRejectedValue(apiError(400));
+  });
+
+  it('falls back to keyword matches in a hybrid search, marked weak', async () => {
+    const result = await find({ query: 'findByEmail', mode: 'hybrid', rerank: false });
+
+    expect(ids(result)).toContain(repo.ids.lookup);
+    expect(result.debug).toMatchObject({ keywordOnly: true, weak: true });
+  });
+
+  it('still fails a vector-only search', async () => {
+    await expect(find({ query: 'findByEmail', mode: 'vector', rerank: false })).rejects.toThrow(
+      'Embeddings request failed',
+    );
   });
 });
 

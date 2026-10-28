@@ -9,6 +9,7 @@ import {
   type MockInstance,
 } from 'vitest';
 import prismaClient from '../src/config/db.config.js';
+import { serverConfig } from '../src/config/index.js';
 import { textRoutes } from '../src/llm/models.js';
 import {
   contextualizeStep,
@@ -203,6 +204,23 @@ describe('ingesting a PDF', () => {
     const again = await ingest(sourceId);
     expect(again.result).toMatchObject({ outcome: 'done', missingContexts: 0 });
     expect(contextCalls).toBe(13);
+  });
+
+  it('spreads the context calls over both Gemini keys when there is a backup key', async () => {
+    serverConfig.GEMINI_API_KEY_2 = 'backup-key';
+    try {
+      const sourceId = await pdfSource();
+      const { result } = await ingest(sourceId);
+      expect(result).toMatchObject({ outcome: 'done', missingContexts: 0 });
+
+      const rows = await prismaClient.usageEvent.findMany({ where: { task: 'contextualize' } });
+      const onBackup = rows.filter((row) => row.key === 'backup').length;
+      expect(rows).toHaveLength(13);
+      expect(onBackup).toBeGreaterThanOrEqual(6);
+      expect(onBackup).toBeLessThanOrEqual(7);
+    } finally {
+      serverConfig.GEMINI_API_KEY_2 = undefined;
+    }
   });
 
   it('embeds a search text that changed after the embed steps ran', async () => {

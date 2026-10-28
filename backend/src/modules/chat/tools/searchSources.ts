@@ -11,6 +11,9 @@ import { toolSources } from './toolSources.js';
 const WEAK_HINT =
   'These results look weak. Try rephrasing (queryMode "rewrite"), browse_toc for a book, search_code for an exact name, or web_search if the sources may not cover it.';
 
+const KEYWORD_ONLY_NOTE =
+  'Search by meaning is unavailable right now, so these are keyword matches only and may miss passages that use other words.';
+
 const input = z.object({
   query: z
     .string()
@@ -87,7 +90,8 @@ export const searchSources: AgentTool<typeof input> = {
     // One citation per block the model reads, located by the children that matched in it.
     const byId = new Map(results.map((chunk) => [chunk.chunkId, chunk]));
     const out = new ToolText();
-    // First, so it survives a full budget.
+    // First, so they survive a full budget.
+    if (debug.keywordOnly) out.add(KEYWORD_ONLY_NOTE);
     if (debug.weak) out.add(WEAK_HINT);
     const sources = new Set<string>();
     let shown = 0;

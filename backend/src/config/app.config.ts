@@ -277,8 +277,10 @@ export const appConfig = {
   },
   llm: {
     retry: {
-      // Retries per model before moving to the fallback.
+      // Retries per model when it's the last one left, and when a fallback is waiting (a
+      // used-up quota goes straight to the fallback either way).
       maxRetries: 2,
+      maxRetriesWithFallback: 1,
       baseDelayMs: 250,
       maxDelayMs: 2_000,
       // A longer retry-after means the minute's quota is gone; the fallback answers sooner.

@@ -139,7 +139,7 @@ describe('demo answer cache', () => {
       content: ANSWER,
       status: 'COMPLETE',
       model: `google/${PRIMARY}`,
-      promptVersion: 'agent-system@v2',
+      promptVersion: 'agent-system@v4',
       tokensIn: 0,
       tokensOut: 0,
       memoryOff: true,

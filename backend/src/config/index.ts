@@ -102,6 +102,8 @@ const baseSchema = z.object({
 
   GROQ_API_KEY: optional,
   GEMINI_API_KEY: optional,
+  // A second Google project's key: tried when the first one's quota is out.
+  GEMINI_API_KEY_2: optional,
   TAVILY_API_KEY: optional,
 
   // bge-reranker-base scores a little better but takes ~23s for 20 chunks on a 4-core CPU;

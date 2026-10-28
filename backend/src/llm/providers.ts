@@ -9,14 +9,19 @@ import type { ModelRef } from './models.js';
 // LLM_MOCK=1 (never in production) swaps in the scripted models for browser tests.
 const groq = createGroq({ apiKey: serverConfig.GROQ_API_KEY });
 const google = createGoogle({ apiKey: serverConfig.GEMINI_API_KEY });
+const googleBackup = serverConfig.GEMINI_API_KEY_2
+  ? createGoogle({ apiKey: serverConfig.GEMINI_API_KEY_2 })
+  : undefined;
+
+const googleFor = (ref: ModelRef) => (ref.key === 'backup' && googleBackup) || google;
 
 export function languageModel(ref: ModelRef): LanguageModel {
   if (serverConfig.LLM_MOCK) return mockLanguageModel(ref);
-  return ref.provider === 'groq' ? groq(ref.model) : google(ref.model);
+  return ref.provider === 'groq' ? groq(ref.model) : googleFor(ref)(ref.model);
 }
 
 export function embeddingModel(ref: ModelRef): EmbeddingModel {
   if (ref.provider !== 'google') throw new Error(`No embedding models on ${ref.provider}`);
   if (serverConfig.LLM_MOCK) return mockEmbeddingModel;
-  return google.embedding(ref.model);
+  return googleFor(ref).embedding(ref.model);
 }

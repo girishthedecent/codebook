@@ -5,6 +5,7 @@ import logger from '../../config/logger.config.js';
 import { Prisma, type Conversation, type Workspace } from '../../generated/prisma/client.js';
 import { inngest } from '../../config/inngest.config.js';
 import { conversationTurnCompleted } from '../../inngest/events.js';
+import { isQuotaError } from '../../llm/circuitBreaker.js';
 import type { ModelRef } from '../../llm/models.js';
 import { AppError, NotFoundError } from '../../utils/errors/app.error.js';
 import { assertTokenBudget } from '../../utils/quotas.js';
@@ -160,7 +161,11 @@ function publicError(error: unknown) {
     return { code: error.code, message: error.message };
   }
   if (error instanceof AppError && error.code === 'UPSTREAM_ERROR') {
-    return { code: error.code, message: 'The model could not answer right now. Try again.' };
+    // The last model tried was out of quota too: the free limits reset within a minute or so.
+    const message = isQuotaError(error.cause)
+      ? 'The models are at their free-tier limit right now. Try again in a minute.'
+      : 'The model could not answer right now. Try again.';
+    return { code: error.code, message };
   }
   return { code: 'INTERNAL', message: 'Something went wrong' };
 }

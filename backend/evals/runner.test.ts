@@ -85,6 +85,7 @@ function answer(results: RetrievedChunk[], weak = false): SearchResult {
     parents: [],
     debug: {
       weak,
+      keywordOnly: false,
       ranked: results.map((item) => item.chunkId),
       rerank: 'used',
       fallbackUsed: false,

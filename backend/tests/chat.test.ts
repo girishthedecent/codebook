@@ -120,7 +120,7 @@ describe('chat turns', () => {
       content: text,
       status: 'COMPLETE',
       model: `google/${PRIMARY}`,
-      promptVersion: 'agent-system@v2',
+      promptVersion: 'agent-system@v4',
       invalidCitations: 0,
       tokensIn: 200,
       tokensOut: 40,
@@ -300,6 +300,18 @@ describe('chat turns', () => {
       where: { messageId: saved!.id, ok: true },
     });
     expect(usage.every((row) => row.fallbackUsed)).toBe(true);
+  });
+
+  it('says so when every model is out of quota', async () => {
+    play([apiError(429)], [apiError(429)]);
+
+    const { events } = await ask('What is a salt?');
+
+    expect(events.at(-1)).toMatchObject({
+      event: 'error',
+      data: { code: 'UPSTREAM_ERROR', message: expect.stringContaining('free-tier limit') },
+    });
+    expect((await answers())[0]!.error).toContain('free-tier limit');
   });
 
   it('treats an empty answer as a failed turn', async () => {

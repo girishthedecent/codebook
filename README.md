@@ -210,7 +210,7 @@ tool used, steps, redundant calls). The configs are in `backend/evals/configs/an
 | `long-context` | the sources stuffed into the prompt instead of retrieval |
 | `model-gemini-flash-6k5`, `model-gpt-oss-120b-6k5`, `model-gpt-oss-20b-6k5` | models at one 6.5K-token budget |
 | `memory-on` vs `memory-off` | personal cases with seeded memories |
-| `prompt-v3` | a prompt experiment |
+| `prompt-v2`, `prompt-v3` | the previous default prompt, and a prompt experiment, against `agent-system@v4` |
 
 A full matrix takes hundreds of free-tier calls, so the numbers will be added once the runs fit
 in the daily quotas.
@@ -228,7 +228,9 @@ in the daily quotas.
   requests, which a multi-step turn soon exceeds. Gemini Flash also has a small daily request
   quota; once it is spent, chat answers fail with `UPSTREAM_ERROR` until it resets. Embeddings are counted per text (about 100 a minute, ~1,000 a day), so a
   book-sized PDF can take more than a day to index from scratch; contextual notes for DDIA
-  took about 27 minutes.
+  took about 27 minutes. Quotas are per Google project: an optional `GEMINI_API_KEY_2` from a
+  second project is tried before the next model and doubles the contextualizing rate. When a
+  question can't be embedded, search falls back to keyword matches and says so.
 - **No OCR.** A PDF whose pages are mostly scans fails ingestion with an error saying so;
   scanned pages inside an otherwise text PDF are indexed as empty.
 - **Public GitHub repositories only**, downloaded as tarballs at one commit (200 MB download,
@@ -266,6 +268,7 @@ never commit it.
 |---|---|---|
 | `BETTER_AUTH_SECRET` | `openssl rand -base64 32` (32+ characters) | always |
 | `GEMINI_API_KEY` | Google AI Studio | chat, embeddings, ingestion |
+| `GEMINI_API_KEY_2` | a second Google AI Studio project (optional; quotas are per project) | used when the first key's quota runs out |
 | `GROQ_API_KEY` | console.groq.com | chat fallback, cheap tasks |
 | `GITHUB_TOKEN` | GitHub fine-grained token, public repositories, read-only | repository sources |
 | `TAVILY_API_KEY` | tavily.com | the `web_search` tool |

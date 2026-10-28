@@ -1,7 +1,7 @@
 import { APICallError, RetryError } from 'ai';
 import { appConfig } from '../config/app.config.js';
 import logger from '../config/logger.config.js';
-import type { ModelRef } from './models.js';
+import { modelLabel, type ModelRef } from './models.js';
 
 // Free tiers run out per model (Groq counts each model on its own). A model that keeps
 // answering "quota exhausted" is skipped for a while, so calls go straight to the fallback
@@ -11,7 +11,8 @@ type ModelState = { errors: number[]; openUntil: number };
 
 const states = new Map<string, ModelState>();
 
-const keyOf = (ref: ModelRef) => `${ref.provider}/${ref.model}`;
+// The backup key is another project with its own quota, so it has its own state.
+const keyOf = modelLabel;
 
 /** True for a rate-limit or quota-exhausted answer from the provider. */
 export function isQuotaError(error: unknown): boolean {
@@ -31,8 +32,7 @@ export function noteQuotaError(ref: ModelRef, now = Date.now()) {
     state.openUntil = now + coolOffMs;
     state.errors = [];
     logger.warn('Model quota exhausted; skipping it for a while', {
-      provider: ref.provider,
-      model: ref.model,
+      model: modelLabel(ref),
       untilMs: coolOffMs,
     });
   }

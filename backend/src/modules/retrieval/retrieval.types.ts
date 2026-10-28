@@ -89,6 +89,8 @@ export type StageTimings = {
 
 export type SearchDebug = {
   weak: boolean;
+  // The question couldn't be embedded, so only keyword matches were searched.
+  keywordOnly: boolean;
   // Chunk ids in final order before the score threshold; evals rank on this.
   ranked: string[];
   rerank: 'used' | 'off' | 'unavailable';

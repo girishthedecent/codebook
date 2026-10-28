@@ -1,0 +1,5 @@
+{
+  "name": "prompt-v2",
+  "description": "adaptive-agent with agent-system@v2, the default before v4 (no rule for questions about the workspace itself).",
+  "promptId": "agent-system@v2"
+}

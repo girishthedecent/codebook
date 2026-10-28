@@ -2,11 +2,19 @@ import { createHash } from 'node:crypto';
 import { embedMany } from 'ai';
 import { appConfig } from '../config/app.config.js';
 import logger from '../config/logger.config.js';
+import { runWithConcurrency } from '../utils/concurrency.js';
 import { UpstreamError } from '../utils/errors/app.error.js';
 import { createWindowLimiter } from '../utils/pacer.js';
 import type { CallContext } from './client.js';
 import { findCachedEmbeddings, saveCachedEmbeddings } from './embeddingCache.repository.js';
-import { embeddingRoute, type EmbedKind } from './models.js';
+import { isOpen, isQuotaError, noteQuotaError } from './circuitBreaker.js';
+import {
+  embeddingRoute,
+  hasBackupKey,
+  withBackupKey,
+  type EmbedKind,
+  type ModelRef,
+} from './models.js';
 import { estimateCost } from './pricing.js';
 import { embeddingModel } from './providers.js';
 import { describeError, withRetry } from './retry.js';
@@ -73,22 +81,49 @@ async function embedMissing(entries: [key: string, input: string][], options: Em
   const batches: [string, string][][] = [];
   for (let i = 0; i < entries.length; i += batchSize) batches.push(entries.slice(i, i + batchSize));
 
+  // The same model on the backup key (another project's quota) when the first key fails.
+  // The vectors are identical, so the two can be mixed freely.
+  const refs = withBackupKey([model], hasBackupKey());
+  let usedBackup = false;
+  // The key of the attempt whose error is thrown; batches in flight can't overwrite it.
+  let failedOn: ModelRef | undefined;
+  const embedWithFallback = async (values: string[]) => {
+    let lastError: unknown;
+    let lastRef = refs[0]!;
+    for (const [index, ref] of refs.entries()) {
+      if (index < refs.length - 1 && isOpen(ref)) continue;
+      lastRef = ref;
+      try {
+        const result = await withRetry(
+          (signal) =>
+            embedMany({
+              model: embeddingModel(ref),
+              values,
+              dimensions,
+              maxRetries: 0,
+              abortSignal: signal,
+            }),
+          { timeoutMs, signal: options.abortSignal, hasFallback: index < refs.length - 1 },
+        );
+        if (ref.key) usedBackup = true;
+        return result;
+      } catch (error) {
+        lastError = error;
+        // With one key there's nothing to skip to, so its breaker would only log.
+        if (refs.length > 1 && isQuotaError(error)) noteQuotaError(ref);
+        if (options.abortSignal?.aborted) break;
+      }
+    }
+    failedOn ??= lastRef;
+    throw lastError;
+  };
+
   const embedBatch = async (batch: [string, string][]) => {
     const values = batch.map(([, input]) => input);
     if (options.kind === 'document' && options.waitForQuota !== false) {
       await quota.take(values.length);
     } else quota.record(values.length);
-    const { embeddings, usage } = await withRetry(
-      (signal) =>
-        embedMany({
-          model: embeddingModel(model),
-          values,
-          dimensions,
-          maxRetries: 0,
-          abortSignal: signal,
-        }),
-      { timeoutMs, signal: options.abortSignal },
-    );
+    const { embeddings, usage } = await embedWithFallback(values);
 
     // Providers that don't report token counts get the route's estimate.
     tokensIn +=
@@ -119,6 +154,9 @@ async function embedMissing(entries: [key: string, input: string][], options: Em
     workspaceId: options.ctx?.workspaceId,
     provider: model.provider,
     model: model.model,
+    // One row covers every batch: a success says whether any went to the backup key, a
+    // failure names the key its last attempt used.
+    key: (error === undefined ? usedBackup : failedOn?.key === 'backup') ? 'backup' : undefined,
     ...tokens,
     costUsd: estimateCost(model.model, tokens),
     latencyMs: Math.round(performance.now() - started),
@@ -142,25 +180,4 @@ export function normalize(vector: number[], dimensions: number) {
   const norm = Math.hypot(...vector);
   if (norm === 0) throw new Error('Got an all-zero embedding');
   return vector.map((value) => value / norm);
-}
-
-// Runs `fn` over items with at most `limit` in flight. The first failure stops new work
-// from starting and is rethrown once the in-flight calls settle.
-async function runWithConcurrency<T>(items: T[], limit: number, fn: (item: T) => Promise<void>) {
-  let next = 0;
-  let failed = false;
-  const worker = async () => {
-    while (!failed && next < items.length) {
-      const item = items[next++]!;
-      try {
-        await fn(item);
-      } catch (error) {
-        failed = true;
-        throw error;
-      }
-    }
-  };
-  const settled = await Promise.allSettled(Array.from({ length: limit }, worker));
-  const rejection = settled.find((result) => result.status === 'rejected');
-  if (rejection) throw rejection.reason;
 }

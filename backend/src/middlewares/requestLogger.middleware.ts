@@ -5,6 +5,11 @@ import logger from '../config/logger.config.js';
 // Load balancers poll these every few seconds.
 const QUIET_PATHS = new Set(['/api/v1/health/live', '/api/v1/health/ready']);
 
+// Inngest registers the app with a PUT, which its dev server repeats every few seconds:
+// below debug, as dev runs at debug. Its POSTs run job steps and stay at info.
+const isInngestSync = (method: string, path: string | undefined) =>
+  method === 'PUT' && path === '/api/inngest';
+
 /** One log line per request once the response is sent. Query strings are left out on purpose. */
 export function requestLoggerMiddleware(req: Request, res: Response, next: NextFunction) {
   if (QUIET_PATHS.has(req.path)) return next();
@@ -22,10 +27,19 @@ export function requestLoggerMiddleware(req: Request, res: Response, next: NextF
       // An event stream normally ends with the client leaving; that isn't worth a warning.
       const isStream = String(res.getHeader('content-type')).startsWith('text/event-stream');
       if (!res.writableFinished && !isStream) {
-        logger.warn(`${req.method} ${path} aborted by client`, { durationMs });
+        // A page reload or navigation cancels its reads; a cut-off write is worth a look.
+        const level = req.method === 'GET' || req.method === 'HEAD' ? 'debug' : 'warn';
+        logger.log(level, `${req.method} ${path} aborted by client`, { durationMs });
         return;
       }
-      const level = res.statusCode >= 500 ? 'error' : res.statusCode >= 400 ? 'warn' : 'info';
+      const level =
+        res.statusCode >= 500
+          ? 'error'
+          : res.statusCode >= 400
+            ? 'warn'
+            : isInngestSync(req.method, path)
+              ? 'silly'
+              : 'info';
       logger.log(level, `${req.method} ${path} ${res.statusCode}`, { durationMs });
     }),
   );

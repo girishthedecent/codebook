@@ -46,12 +46,12 @@ describe('requestLoggerMiddleware', () => {
     expect(log).toHaveBeenCalledWith('error', 'GET /broken 500', expect.any(Object));
   });
 
-  it('logs an aborted request with its correlation id', async () => {
+  it('logs an aborted read at debug, with its correlation id', async () => {
     const seen: (string | undefined)[] = [];
-    vi.spyOn(logger, 'warn').mockImplementation(() => {
-      seen.push(getCorrelationId());
+    vi.spyOn(logger, 'log').mockImplementation(((level: string, message: string) => {
+      if (message.endsWith('aborted by client')) seen.push(`${level} ${getCorrelationId()}`);
       return logger;
-    });
+    }) as typeof logger.log);
 
     let reached!: () => void;
     const handlerReached = new Promise<void>((resolve) => (reached = resolve));
@@ -74,7 +74,7 @@ describe('requestLoggerMiddleware', () => {
       await closed;
       await new Promise((resolve) => setImmediate(resolve));
 
-      expect(seen).toEqual(['abort-1']);
+      expect(seen).toEqual(['debug abort-1']);
     } finally {
       server.close();
     }
@@ -112,6 +112,20 @@ describe('requestLoggerMiddleware', () => {
     } finally {
       server.close();
     }
+  });
+
+  it("logs Inngest's registration PUTs below debug and its step POSTs at info", async () => {
+    const log = vi.spyOn(logger, 'log');
+    const app = express();
+    app.use(requestLoggerMiddleware);
+    app.all('/api/inngest', (_req, res) => {
+      res.json({});
+    });
+
+    await request(app).put('/api/inngest');
+    await request(app).post('/api/inngest');
+    expect(log).toHaveBeenCalledWith('silly', 'PUT /api/inngest 200', expect.any(Object));
+    expect(log).toHaveBeenCalledWith('info', 'POST /api/inngest 200', expect.any(Object));
   });
 
   it('skips health checks', async () => {

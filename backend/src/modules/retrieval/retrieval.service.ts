@@ -4,7 +4,7 @@ import logger from '../../config/logger.config.js';
 import { embedTexts, type EmbedKind } from '../../llm/embeddings.js';
 import { rerank as rerankDocs } from '../../llm/reranker.js';
 import { withRerankSlot } from '../../utils/rateLimit.js';
-import { BadRequestError } from '../../utils/errors/app.error.js';
+import { BadRequestError, UpstreamError } from '../../utils/errors/app.error.js';
 import { excerptOf } from '../demo/excerpt.js';
 import { identifierWords } from '../ingestion/code/identifiers.js';
 import type { WorkspaceSettings } from '../workspaces/workspace.dto.js';
@@ -195,11 +195,23 @@ export async function search(options: SearchOptions): Promise<SearchResult> {
   });
   if (queryMode !== 'none') timings.queryMode = since(stageStart);
 
-  const [vectors, keywords] = await Promise.all([
-    mode === 'keyword' ? [] : vectorLists(expanded.vectorQueries, filters, options, timings),
+  // A hybrid search whose question can't be embedded (the embedding quota is out) still
+  // has its keyword matches; a vector-only search has nothing to fall back on.
+  const [vectorResult, keywords] = await Promise.all([
+    mode === 'keyword'
+      ? []
+      : vectorLists(expanded.vectorQueries, filters, options, timings).catch((error: unknown) => {
+          if (mode === 'vector' || !(error instanceof UpstreamError)) throw error;
+          logger.warn('Search embedding failed; using keyword matches only', {
+            workspaceId: options.workspaceId,
+          });
+          return null;
+        }),
     mode === 'vector' ? [] : keywordLists(expanded.keywordQueries, filters, timings),
   ]);
   options.signal?.throwIfAborted();
+  const keywordOnly = vectorResult === null;
+  const vectors = vectorResult ?? [];
 
   const vectorScores = bestScores(vectors.map(({ list }) => list));
   // The weak check compares question-to-chunk similarity; a HyDE passage, embedded as a
@@ -269,6 +281,8 @@ export async function search(options: SearchOptions): Promise<SearchResult> {
     const bestVector = Math.max(...questionScores.values());
     weak = results.length === 0 || (mode !== 'keyword' && bestVector < config.weakVectorScore);
   }
+  // Keyword matches stand in for a search that couldn't run: never present them as strong.
+  if (keywordOnly) weak = true;
 
   stageStart = performance.now();
   const score: Scorer = (chunk) => chunk.scores.rerank ?? chunk.scores.rrf ?? 0;
@@ -286,6 +300,7 @@ export async function search(options: SearchOptions): Promise<SearchResult> {
 
   const debug: SearchDebug = {
     weak,
+    keywordOnly,
     ranked: candidates.map((chunk) => chunk.chunkId),
     rerank: rerankState,
     queryModeError: expanded.error,
@@ -305,6 +320,7 @@ export async function search(options: SearchOptions): Promise<SearchResult> {
     rerank: rerankState,
     results: results.length,
     weak,
+    ...(keywordOnly && { keywordOnly }),
     timings,
   });
   return { results, parents, debug };

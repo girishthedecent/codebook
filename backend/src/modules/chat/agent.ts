@@ -150,6 +150,7 @@ export async function runAgent(input: AgentInput): Promise<AgentResult> {
           tools: final ? undefined : toolSet,
           models: [models[0]!],
           fallbackUsed: models[0] !== route[0],
+          hasFallback: models.length > 1,
           onText,
           abortSignal: ctx.signal,
           ctx: input.callCtx,
