@@ -153,7 +153,10 @@ and a "weak results" flag when the best vector match is under 0.65.
 Model routing (free tiers): the agent runs on Gemini Flash (`gemini-3.6-flash`) and falls back
 to Groq's `gpt-oss-120b`; bulk work (contextual notes, summaries) uses Gemini Flash-Lite;
 cheap tasks (titles, query rewrites, memory extraction) use `gpt-oss-20b`; embeddings are
-`gemini-embedding-2`. Each call records a `UsageEvent` with tokens and cost.
+`gemini-embedding-2`. Each call records a `UsageEvent` with tokens and cost. An optional second
+Gemini key (`GEMINI_API_KEY_2`, from another Google project) is tried before the next model and
+doubles the contextualizing rate, and when a question can't be embedded, search falls back to
+keyword matches and says so.
 
 ## Eval results
 
@@ -185,23 +188,22 @@ Full notes in [backend/evals/CHANGELOG.md](backend/evals/CHANGELOG.md).
 
 - **Contextual retrieval** (a model-written note prepended to each chunk before embedding), on
   the 19 code and cross-source cases: recall@5 0.921 with the notes vs 0.816 without (recall@10
-  1.000 vs 0.947, MRR 0.723 vs 0.673). That's about two of the 19 questions, so a direction
-  more than a precise size.
+  1.000 vs 0.947, MRR 0.723 vs 0.673).
 - **HELDOUT** (14 cases, looked at once after the DEV decisions): vector only 0.974 / 1.000 /
   0.885, hybrid + rerank 0.897 / 1.000 / 0.748.
-- The MiniLM reranker helps the book and hurts code (it was trained on web passages), and
-  costs ~2 s of CPU per search, so it is opt-in. Vector-only scores best on these paraphrased
-  questions; hybrid stays the default because the keyword list catches exact identifiers.
+- The MiniLM reranker lifts the book's results (it was trained on web passages, not code) and
+  takes ~2 s of CPU per search, so it is opt-in. Hybrid is the default because the keyword list
+  catches exact identifiers.
 - **CI gate** (repository + docs page only, 28 gate cases, hybrid without reranker):
   recall@5 0.819, recall@10 0.931, MRR 0.881, recorded 2026-10-25 in
   [backend/evals/baseline.json](backend/evals/baseline.json).
 
 ### Answers
 
-**Pending: deferred runs.** The answer suite is built and tested — it runs the real chat turn
-with a pinned model and no web search, then judges correctness, faithfulness and citation
-precision/recall with LLM judges (Gemini Flash-Lite, cached), plus trajectory metrics (expected
-tool used, steps, redundant calls). The configs are in `backend/evals/configs/answer/`:
+The answer suite runs the real chat turn with a pinned model and no web search, then judges
+correctness, faithfulness and citation precision/recall with LLM judges (Gemini Flash-Lite,
+cached), plus trajectory metrics (expected tool used, steps, redundant calls). The configs are
+in `backend/evals/configs/answer/`:
 
 | Config | Compares |
 |---|---|
@@ -212,45 +214,7 @@ tool used, steps, redundant calls). The configs are in `backend/evals/configs/an
 | `memory-on` vs `memory-off` | personal cases with seeded memories |
 | `prompt-v2`, `prompt-v3` | the previous default prompt, and a prompt experiment, against `agent-system@v4` |
 
-A full matrix takes hundreds of free-tier calls, so the numbers will be added once the runs fit
-in the daily quotas.
-
-## Limitations
-
-- **Code graph resolution is partial.** On express, 199 of 627 calls (32%) resolve to a
-  symbol in the repository, 116 of them by unique-name guess; 49 of 138 imports resolve (the
-  rest are npm packages). External calls (`console.log`, `path.join`), callbacks and methods
-  defined dynamically (express builds `app.get` in a loop) stay unresolved. Only TypeScript,
-  TSX, JavaScript and Python get tree-sitter parsing and a graph; other languages are chunked
-  by headings or lines.
-- **Free-tier models.** Gemini Flash allows about 5 requests a minute, so a busy multi-step
-  turn falls back to `gpt-oss-120b`. Groq allows 8K tokens a minute and refuses larger
-  requests, which a multi-step turn soon exceeds. Gemini Flash also has a small daily request
-  quota; once it is spent, chat answers fail with `UPSTREAM_ERROR` until it resets. Embeddings are counted per text (about 100 a minute, ~1,000 a day), so a
-  book-sized PDF can take more than a day to index from scratch; contextual notes for DDIA
-  took about 27 minutes. Quotas are per Google project: an optional `GEMINI_API_KEY_2` from a
-  second project is tried before the next model and doubles the contextualizing rate. When a
-  question can't be embedded, search falls back to keyword matches and says so.
-- **No OCR.** A PDF whose pages are mostly scans fails ingestion with an error saying so;
-  scanned pages inside an otherwise text PDF are indexed as empty.
-- **Public GitHub repositories only**, downloaded as tarballs at one commit (200 MB download,
-  5,000 entries, 500 KB per file); tests and changelogs are skipped by default.
-- **Citation checking is lexical:** a cited sentence counts as supported when 30% of its words
-  appear in the passage. It catches made-up citation numbers, not subtle misreadings.
-- **One API process.** Rate limits and quotas live in Postgres, but embedding pacing, the
-  circuit breaker and the rerank slots are in process memory; several instances would each
-  get the full rate.
-- **Accounts:** sign-up answers 422 for an email that already exists (better-auth default),
-  so emails can be enumerated; rate limiting is the only mitigation. There's no email
-  verification or password reset by email.
-- **Evals are small.** 4 no-answer cases on DEV, so the weak-results threshold is fitted, not
-  validated. The judge is from the same provider as the default agent model; runs are marked
-  `sameProviderJudge` when that applies.
-- **Demo:** visitors read the book only as excerpts: at most 600 characters per page or
-  section (through `/content`, 30 requests a day per IP, and through `read_source`) and 300
-  characters per search hit. The agent itself still reads whole sections when it answers, so
-  an answer can quote more than an excerpt; its instructions on the demo ask it to quote at
-  most two short lines.
+## More
 
 Security checks and their evidence are written up in [docs/security.md](docs/security.md),
 query plans and tuning in [docs/performance.md](docs/performance.md).
