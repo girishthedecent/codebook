@@ -3,9 +3,10 @@
 # event streams reach the browser as they are written. Values marked `sync: false` are asked
 # for when the blueprint is created and never stored in the repository.
 #
-# BETTER_AUTH_URL and TRUSTED_ORIGINS are the address people open, which is this service's own
-# address (or your own domain once one points at it). Render adds a suffix to a service name
-# that is already taken, so check the address in the dashboard after creating the service.
+# BETTER_AUTH_URL is the address people open: a custom domain pointing at this service (added
+# under its Custom Domains). TRUSTED_ORIGINS lists every address that may sign in and write,
+# the service's own too. Render adds a suffix to a service name that is already taken, so
+# check that address in the dashboard after creating the service.
 services:
   - type: web
     name: decent-codebook-api
@@ -26,9 +27,9 @@ services:
       - key: TRUST_PROXY
         value: 1
       - key: BETTER_AUTH_URL
-        value: https://decent-codebook-api.onrender.com
+        value: https://codebook.girishthedecent.space
       - key: TRUSTED_ORIGINS
-        value: https://decent-codebook-api.onrender.com
+        value: https://codebook.girishthedecent.space,https://decent-codebook-api.onrender.com
       - key: BETTER_AUTH_SECRET
         generateValue: true
       - key: DATABASE_URL
