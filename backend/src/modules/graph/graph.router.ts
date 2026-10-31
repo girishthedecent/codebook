@@ -3,6 +3,7 @@ import { validateQueryParams } from '../../middlewares/validator.middleware.js';
 import {
   callersHandler,
   dependenciesHandler,
+  overviewHandler,
   pathHandler,
   symbolsHandler,
 } from './graph.controller.js';
@@ -21,3 +22,4 @@ graphRouter.get('/symbols', validateQueryParams(symbolsQuerySchema), symbolsHand
 graphRouter.get('/callers', validateQueryParams(walkQuerySchema), callersHandler);
 graphRouter.get('/dependencies', validateQueryParams(dependenciesQuerySchema), dependenciesHandler);
 graphRouter.get('/path', validateQueryParams(pathQuerySchema), pathHandler);
+graphRouter.get('/overview', overviewHandler);

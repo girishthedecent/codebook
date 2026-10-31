@@ -14,19 +14,22 @@ export async function listDemoSources(workspaceId: string) {
   return prismaClient.source.findMany({ where: { workspaceId }, orderBy: { createdAt: 'asc' } });
 }
 
+/** A system user with no password: made, or brought back to one. */
+function upsertSystemUser(email: string, name: string) {
+  return prismaClient.user.upsert({
+    where: { email },
+    update: { isSystem: true, isGuest: false },
+    create: { id: randomUUID(), name, email, emailVerified: true, isSystem: true },
+  });
+}
+
 /** The owner row, made or brought back to a system user. */
 export async function upsertDemoOwner() {
-  return prismaClient.user.upsert({
-    where: { email: appConfig.demo.ownerEmail },
-    update: { isSystem: true, isGuest: false },
-    create: {
-      id: randomUUID(),
-      name: 'CodeBook demo',
-      email: appConfig.demo.ownerEmail,
-      emailVerified: true,
-      isSystem: true,
-    },
-  });
+  return upsertSystemUser(appConfig.demo.ownerEmail, 'CodeBook demo');
+}
+
+export async function upsertDemoVisitor() {
+  return upsertSystemUser(appConfig.demo.visitorEmail, 'CodeBook demo visitor');
 }
 
 export async function hasPasswordLogin(userId: string) {

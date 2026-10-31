@@ -14,8 +14,10 @@ import {
   SourceStatus,
   SourceType,
   StudyType,
+  UsageType,
   WorkspaceTemplate,
 } from '../generated/prisma/enums.js';
+import { STUDY_ERROR_CODES } from '../modules/study/study.errors.js';
 import { AGENT_TOOLS, SEARCH_MODES } from '../modules/workspaces/workspace.validator.js';
 
 // Response bodies as the controllers send them. These only describe the API for the docs:
@@ -43,9 +45,24 @@ export const errorSchema = z
   .object({
     success: z.literal(false),
     message: z.string(),
-    code: z.string(),
-    // Validation issues ({ path, message }[]), or retryAfterSeconds on a 429.
-    details: json.optional(),
+    code: z
+      .string()
+      .describe(
+        'VALIDATION_ERROR, UNAUTHENTICATED, FORBIDDEN, NOT_FOUND, CONFLICT, PAYLOAD_TOO_LARGE, ' +
+          'UPSTREAM_ERROR, SERVICE_UNAVAILABLE, INTERNAL, or on a 429 the limit that was hit: ' +
+          'GUEST_LIMIT (the demo allowance), HOURLY_LIMIT, DAILY_LIMIT (questions), ' +
+          "TOKEN_BUDGET (the day's model budget) or RATE_LIMITED (any other limit).",
+      ),
+    // On a 429: seconds until the limit's window ends (the Retry-After header has it too).
+    retryAfterSec: z.int().optional(),
+    // What the error says more about: the issues of a 400, or on a 409 for an ambiguous graph
+    // symbol the candidates.
+    details: z
+      .union([
+        z.array(z.object({ path: z.string(), message: z.string() })),
+        z.object({ candidates: z.array(z.lazy(() => graphSymbolSchema)) }),
+      ])
+      .optional(),
     correlationId: z.string().optional(),
   })
   .meta({ id: 'Error' });
@@ -126,7 +143,12 @@ export const sourceSchema = z
   .meta({ id: 'Source' });
 
 export const demoSchema = z
-  .object({ workspace: workspaceSchema, sources: z.array(sourceSchema) })
+  .object({
+    workspace: workspaceSchema,
+    sources: z.array(sourceSchema),
+    // Three or four questions worth asking the demo's sources, in the order to show them.
+    starterQuestions: z.array(z.string()),
+  })
   .meta({ id: 'Demo' });
 
 type TocNode = {
@@ -225,6 +247,9 @@ export const citationSchema = z
 
 export const toolCallSchema = z
   .object({
+    // The id its `step` events carry. Missing on answers saved before calls had ids.
+    id: z.string().optional(),
+    // The model step that made the call; a step can make several.
     step: z.int(),
     tool: z.string(),
     args: json,
@@ -251,6 +276,17 @@ export const messageSchema = z
     feedback: z.enum(Feedback).nullable(),
     feedbackNote: z.string().nullable(),
     createdAt: date,
+    // On answers, for the owner of the workspace they were asked in; left out for visitors of
+    // the demo and on questions. What the turn used, as it was saved.
+    model: z.string().nullable().optional(),
+    latencyMs: z.int().nullable().optional(),
+    firstTokenMs: z.int().nullable().optional(),
+    tokensIn: z.int().optional(),
+    tokensOut: z.int().optional(),
+    tokensCached: z.int().optional(),
+    costUsd: z.string().optional(),
+    // Every search came back weak: the answer may rest on little.
+    weakRetrieval: z.boolean().optional(),
   })
   .meta({ id: 'Message' });
 
@@ -272,14 +308,27 @@ const sseEvent = <T extends z.ZodType>(name: string, data: T, description: strin
 export const turnEventsSchema = z
   .discriminatedUnion('event', [
     sseEvent(
+      'title',
+      z.object({ title: z.string() }),
+      'The question named the conversation, which had the default name. Sent first, once; the ' +
+        'title model may replace the name later, after the first answer.',
+    ),
+    sseEvent(
       'step',
       z.object({
+        // Unique within the turn, the same on the start and the end event and in the saved
+        // message.
+        id: z.string(),
+        // The model step that made the call; a step can make several calls.
         index: z.int(),
         tool: z.string(),
         args: json,
         status: z.enum(['start', 'end']),
+        // The next three come with `end`.
         ms: z.int().optional(),
         summary: z.string().optional(),
+        // The tool ran without failing; false when it was refused or threw.
+        ok: z.boolean().optional(),
       }),
       'A tool call started or ended.',
     ),
@@ -291,7 +340,13 @@ export const turnEventsSchema = z
     ),
     sseEvent(
       'done',
-      z.object({ messageId: id, usage: turnUsageSchema, latencyMs: z.int() }),
+      z.object({
+        messageId: id,
+        usage: turnUsageSchema,
+        latencyMs: z.int(),
+        // The answer came from the demo's cache of a visitor's earlier question; no model ran.
+        cached: z.boolean(),
+      }),
       'The answer is saved. Last event.',
     ),
     sseEvent(
@@ -304,7 +359,8 @@ export const turnEventsSchema = z
     id: 'TurnEvents',
     description:
       'Server-Sent Events, one per block: `event: <event>` and `data: <JSON of data>`. ' +
-      'Order: step and token events as the agent works, then citations and done, or error.',
+      'Order: title (when the question named the conversation), step and token events as the ' +
+      'agent works, then citations and done, or error.',
   });
 
 const sourceProgressSchema = z.object({
@@ -372,6 +428,18 @@ export const graphDependenciesSchema = graphWalkSchema
     ),
   })
   .meta({ id: 'GraphDependencies' });
+
+export const graphOverviewSchema = z
+  .object({
+    // The symbols with the most resolved calls in and out, files aside. A constructor counts
+    // with its class.
+    topSymbols: z.array(graphSymbolSchema.extend({ callers: z.int(), calls: z.int() })),
+    // The files with the most symbols.
+    files: z.array(z.object({ path: z.string(), symbols: z.int() })),
+    // Packages the code calls into, by number of calls (names read from the files' imports).
+    packages: z.array(z.object({ name: z.string(), calls: z.int() })),
+  })
+  .meta({ id: 'GraphOverview' });
 
 export const graphPathSchema = z
   .object({
@@ -450,8 +518,18 @@ export const studySchema = z
     title: z.string(),
     status: z.enum(JobStatus),
     // The request it was made from, minus the type.
-    input: z.record(z.string(), json),
+    input: z.object({
+      sourceIds: z.array(id),
+      tocNodeId: z.string().optional(),
+      pathPrefix: z.string().optional(),
+      topic: z.string().optional(),
+      count: z.int().optional(),
+      difficulty: z.enum(['easy', 'medium', 'hard']),
+    }),
+    // A FAILED set: why, in words a user can read.
     error: z.string().nullable(),
+    // Why, as a code. A set the owner stopped is FAILED with CANCELLED. Null unless FAILED.
+    errorCode: z.enum(STUDY_ERROR_CODES).nullable(),
     model: z.string().nullable(),
     promptVersion: z.string().nullable(),
     createdAt: date,
@@ -488,6 +566,9 @@ export const usageSchema = z
       messagesToday: remainingSchema,
       tokensToday: remainingSchema,
     }),
+    // A guest's question allowance for the demo, counted per IP address; null for signed-up
+    // users. `used` stops at `limit`.
+    guest: z.object({ limit: z.int(), used: z.int(), resetsAt: date }).nullable(),
   })
   .meta({ id: 'Usage' });
 
@@ -508,7 +589,15 @@ export const monitoringStatsSchema = z
       invalidCitationRate: rate,
       weakRetrievalRate: rate,
     }),
-    usagePerDay: z.array(z.record(z.string(), json)),
+    usagePerDay: z.array(
+      z.object({
+        day: z.string(),
+        calls: z.int(),
+        tokensIn: z.int(),
+        tokensOut: z.int(),
+        costUsd: z.string(),
+      }),
+    ),
     providers: z.object({
       fallbackRate: rate,
       errorRate: rate,
@@ -546,6 +635,100 @@ export const failedQuerySchema = z
     invalidCitations: z.int(),
   })
   .meta({ id: 'FailedQuery' });
+
+const modelUseFields = {
+  calls: z.int(),
+  errors: z.int(),
+  // Model calls answered by a fallback model or key after the first choice failed.
+  fallbacks: z.int(),
+  tokensIn: z.int(),
+  tokensOut: z.int(),
+  costUsd: z.string(),
+};
+
+export const modelUsageSchema = z
+  .object({
+    from: date,
+    to: date,
+    // By model and the key it was called with (null for the main key), busiest first.
+    models: z.array(
+      z.object({
+        type: z.enum(UsageType),
+        provider: z.string(),
+        model: z.string(),
+        key: z.string().nullable(),
+        ...modelUseFields,
+      }),
+    ),
+    // By task: agent, cheap, contextualize, embed...
+    tasks: z.array(z.object({ task: z.string(), ...modelUseFields })),
+  })
+  .meta({ id: 'ModelUsage' });
+
+export const ingestionFailureSchema = z
+  .object({
+    sourceId: id,
+    workspaceId: id,
+    userId: id,
+    title: z.string(),
+    type: z.enum(SourceType),
+    // Where in the pipeline it stopped.
+    stage: z.enum(IngestStage),
+    error: z.string().nullable(),
+    failedAt: date,
+  })
+  .meta({ id: 'IngestionFailure' });
+
+export const rateLimitUseSchema = z
+  .object({
+    from: date,
+    to: date,
+    limits: z.array(
+      z.object({
+        name: z.string(),
+        points: z.int(),
+        // Null for a limit that counts a calendar month.
+        windowSec: z.int().nullable(),
+        requests: z.int(),
+        // Requests past the limit, which were turned away.
+        blocked: z.int(),
+        // Different clients (users, or IP addresses for guests) that went past it.
+        clientsBlocked: z.int(),
+      }),
+    ),
+  })
+  .meta({
+    id: 'RateLimitUse',
+    description:
+      'Counters are deleted a couple of days after their window ends, so older ranges are empty.',
+  });
+
+export const circuitBreakerSchema = z
+  .object({
+    // A model with this many quota errors inside `windowMs` is skipped for `coolOffMs`.
+    quotaErrors: z.int(),
+    windowMs: z.int(),
+    coolOffMs: z.int(),
+    // Every model a task can use. The state is this server process's own: it is not shared
+    // between instances and starts empty after a restart.
+    models: z.array(
+      z.object({
+        model: z.string(),
+        open: z.boolean(),
+        openUntil: date.nullable(),
+        recentQuotaErrors: z.int(),
+      }),
+    ),
+  })
+  .meta({ id: 'CircuitBreaker' });
+
+export const evalsStatusSchema = z
+  .object({
+    // False when no eval worker is connected to this deployment: POST /evals/runs answers 503.
+    canStartRuns: z.boolean(),
+    reason: z.string().nullable(),
+  })
+  .meta({ id: 'EvalsStatus' });
 
 export const evalDatasetSchema = z
   .object({

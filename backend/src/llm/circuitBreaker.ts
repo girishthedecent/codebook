@@ -45,6 +45,29 @@ export function isOpen(ref: ModelRef, now = Date.now()) {
   return state !== undefined && state.openUntil > now;
 }
 
+export type BreakerState = {
+  // modelLabel(): "provider/model", plus "#backup" for the backup key.
+  model: string;
+  open: boolean;
+  openUntil: Date | null;
+  // Quota errors inside the current window, not yet enough to open it.
+  recentQuotaErrors: number;
+};
+
+/** What the breaker knows about every model it has seen a quota error from. For monitoring. */
+export function breakerStates(now = Date.now()): BreakerState[] {
+  const { windowMs } = appConfig.circuitBreaker;
+  return [...states].map(([model, state]) => {
+    const open = state.openUntil > now;
+    return {
+      model,
+      open,
+      openUntil: open ? new Date(state.openUntil) : null,
+      recentQuotaErrors: state.errors.filter((at) => now - at < windowMs).length,
+    };
+  });
+}
+
 /** Forgets every model's state. For tests. */
 export function resetCircuitBreaker() {
   states.clear();

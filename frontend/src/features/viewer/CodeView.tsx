@@ -127,7 +127,7 @@ function windowQuery(path: string, w: number) {
 function MoreButton({ onClick, children }: { onClick: () => void; children: string }) {
   return (
     <div className="px-3 py-1.5">
-      <Button variant="ghost" size="sm" className="max-[719px]:h-11" onClick={onClick}>
+      <Button variant="ghost" size="sm" className="max-sm:h-11" onClick={onClick}>
         {children}
       </Button>
     </div>
@@ -174,7 +174,7 @@ function CodeBar({
           <Button
             variant="ghost"
             size="sm"
-            className="max-[719px]:h-11"
+            className="max-sm:h-11"
             onClick={() => toGraph('callers')}
           >
             {s.callers}
@@ -182,7 +182,7 @@ function CodeBar({
           <Button
             variant="ghost"
             size="sm"
-            className="max-[719px]:h-11"
+            className="max-sm:h-11"
             onClick={() => toGraph('dependencies')}
           >
             {s.dependencies}

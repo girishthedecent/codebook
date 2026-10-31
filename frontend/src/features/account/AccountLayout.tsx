@@ -22,7 +22,7 @@ export function AccountLayout() {
       <header className="flex min-h-12 items-center gap-4 border-b border-rule px-4">
         <Link
           to="/w"
-          className="flex shrink-0 items-center font-mono text-xs tracking-wide text-ink-2 hover:text-ink max-[719px]:min-h-11"
+          className="flex shrink-0 items-center font-mono text-xs tracking-wide text-ink-2 hover:text-ink max-sm:min-h-11"
         >
           {en.app.name}
         </Link>
@@ -32,7 +32,7 @@ export function AccountLayout() {
           type="button"
           onClick={openCommandMenu}
           aria-label={en.nav.search}
-          className="ml-auto flex size-11 shrink-0 items-center justify-center rounded-sm text-ink-2 hover:text-ink min-[720px]:hidden"
+          className="ml-auto flex size-11 shrink-0 items-center justify-center rounded-sm text-ink-2 hover:text-ink sm:hidden"
         >
           <MagnifyingGlass size={20} aria-hidden />
         </button>
@@ -40,11 +40,11 @@ export function AccountLayout() {
       <div
         className={cn(
           'mx-auto flex flex-col',
-          wide ? 'max-w-[1200px]' : 'max-w-[1040px] min-[720px]:flex-row',
+          wide ? 'max-w-[1200px]' : 'max-w-[1040px] sm:flex-row',
         )}
       >
         <AccountNav row={wide} />
-        <main id="main" className="min-w-0 flex-1 px-4 py-6 min-[720px]:px-8 min-[720px]:py-10">
+        <main id="main" className="min-w-0 flex-1 px-4 py-6 sm:px-8 sm:py-10">
           <Outlet />
         </main>
       </div>
@@ -64,7 +64,7 @@ function BackLink() {
       <Link
         to="/w/$workspaceId"
         params={{ workspaceId: id }}
-        className="flex min-w-0 items-center gap-1.5 text-sm text-ink-2 hover:text-ink max-[719px]:min-h-11"
+        className="flex min-w-0 items-center gap-1.5 text-sm text-ink-2 hover:text-ink max-sm:min-h-11"
       >
         <ArrowLeft size={14} aria-hidden className="shrink-0" />
         <span className="truncate">{strings.layout.back(name)}</span>
@@ -74,7 +74,7 @@ function BackLink() {
   return (
     <Link
       to="/w"
-      className="flex min-w-0 items-center gap-1.5 text-sm text-ink-2 hover:text-ink max-[719px]:min-h-11"
+      className="flex min-w-0 items-center gap-1.5 text-sm text-ink-2 hover:text-ink max-sm:min-h-11"
     >
       <ArrowLeft size={14} aria-hidden className="shrink-0" />
       <span className="truncate">{strings.layout.backFallback}</span>
@@ -84,7 +84,7 @@ function BackLink() {
 
 const linkClass =
   'block whitespace-nowrap rounded-sm px-3 py-2 text-sm text-ink-2 hover:bg-paper-2 hover:text-ink ' +
-  '[&.active]:bg-paper-2 [&.active]:font-medium [&.active]:text-ink max-[719px]:min-h-11 max-[719px]:py-2.5';
+  '[&.active]:bg-paper-2 [&.active]:font-medium [&.active]:text-ink max-sm:min-h-11 max-sm:py-2.5';
 
 function AccountNav({ row }: { row: boolean }) {
   const { isAdmin, isGuest } = useMe();
@@ -93,10 +93,10 @@ function AccountNav({ row }: { row: boolean }) {
       aria-label={strings.layout.nav}
       className={cn(
         'shrink-0 border-b border-rule px-2 py-2',
-        !row && 'min-[720px]:w-52 min-[720px]:border-b-0 min-[720px]:py-10',
+        !row && 'sm:w-52 sm:border-b-0 sm:py-10',
       )}
     >
-      <ul className={cn('flex gap-1 overflow-x-auto', !row && 'min-[720px]:flex-col')}>
+      <ul className={cn('flex gap-1 overflow-x-auto', !row && 'sm:flex-col')}>
         {!isGuest && (
           <li>
             <Link to="/memory" className={linkClass}>

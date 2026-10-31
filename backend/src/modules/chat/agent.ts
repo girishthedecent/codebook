@@ -15,20 +15,20 @@ import { neutralize } from '../citations/citationRegistry.js';
 import { countTokens } from '../../utils/tokens.js';
 import type { AgentTool, ToolContext } from './tools/tool.types.js';
 
+// A tool call's `id` is the same on its start and end events and in the saved message; it is
+// unique within the turn, while `index` is the model step that made the call (a step can
+// make several).
+type StepEvent = { type: 'step'; id: string; index: number; tool: string; args: unknown };
+
 export type AgentEvent =
   | { type: 'token'; text: string }
-  | {
-      type: 'step';
-      index: number;
-      tool: string;
-      args: unknown;
-      status: 'start' | 'end';
-      ms?: number;
-      summary?: string;
-    };
+  | (StepEvent & { status: 'start' })
+  | (StepEvent & { status: 'end'; ms: number; summary: string; ok: boolean });
 
 /** One tool call as the assistant message stores it. */
 export type SavedToolCall = {
+  // Missing on answers saved before calls had ids.
+  id?: string;
   step: number;
   tool: string;
   args: unknown;
@@ -163,14 +163,17 @@ export async function runAgent(input: AgentInput): Promise<AgentResult> {
     }
   };
 
+  let callCount = 0;
   const callTool = async (index: number, call: StreamedToolCall) => {
+    const id = `call-${++callCount}`;
     const runStarted = performance.now();
     const args = safeArgs(call.input);
-    onEvent({ type: 'step', index, tool: call.toolName, args, status: 'start' });
+    onEvent({ type: 'step', id, index, tool: call.toolName, args, status: 'start' });
     const { run, summary } = await runTool(byName.get(call.toolName), call, ctx);
     const ms = Math.round(performance.now() - runStarted);
     toolMs += ms;
     saved.push({
+      id,
       step: index,
       tool: call.toolName,
       args,
@@ -179,7 +182,17 @@ export async function runAgent(input: AgentInput): Promise<AgentResult> {
       ms,
       resultTokens: countTokens(run.text),
     });
-    onEvent({ type: 'step', index, tool: call.toolName, args, status: 'end', ms, summary });
+    onEvent({
+      type: 'step',
+      id,
+      index,
+      tool: call.toolName,
+      args,
+      status: 'end',
+      ms,
+      summary,
+      ok: run.ok,
+    });
     return run;
   };
 

@@ -93,7 +93,7 @@ export function Exchange({
 
       <Steps steps={view.steps} live={streaming} totalMs={view.done?.latencyMs} />
 
-      <div className="mt-4 border-l border-rule-2 pl-4 max-[719px]:pl-3">
+      <div className="mt-4 border-l border-rule-2 pl-4 max-sm:pl-3">
         {view.text && (
           <Answer
             text={view.text}
@@ -113,7 +113,7 @@ export function Exchange({
               <button
                 type="button"
                 onClick={() => onRetry(view.question)}
-                className="text-accent underline underline-offset-2 max-[719px]:min-h-11"
+                className="text-accent underline underline-offset-2 max-sm:min-h-11"
               >
                 {chat.retry}
               </button>

@@ -57,7 +57,7 @@ function ThemePicker() {
 function Shortcuts() {
   return (
     // No keyboard on a phone, so the list would only be noise there.
-    <section className="max-[719px]:hidden">
+    <section className="max-sm:hidden">
       <SectionHeading>{s.shortcuts}</SectionHeading>
       <dl>
         {s.shortcutRows.map((row) => (

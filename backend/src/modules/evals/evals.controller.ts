@@ -10,12 +10,17 @@ import type {
 } from './evals.dto.js';
 import {
   compareRunsService,
+  evalsStatusService,
   getRunService,
   listDatasetsService,
   listResultsService,
   listRunsService,
   requestRunService,
 } from './evals.service.js';
+
+export function evalsStatusHandler(_req: Request, res: Response) {
+  res.json(successResponse('Eval status', evalsStatusService()));
+}
 
 export async function listDatasetsHandler(_req: Request, res: Response) {
   res.json(successResponse('Eval datasets', await listDatasetsService()));

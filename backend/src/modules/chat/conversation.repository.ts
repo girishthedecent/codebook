@@ -54,7 +54,31 @@ export async function listConversations(
 export async function findConversationForUser(userId: string, conversationId: string) {
   return prismaClient.conversation.findFirst({
     where: { id: conversationId, ...visibleTo(userId) },
+    include: { workspace: { select: { userId: true } } },
   });
+}
+
+/** The newest messages of a conversation, newest first. */
+export async function lastMessages(conversationId: string, take: number) {
+  return prismaClient.message.findMany({
+    where: { conversationId },
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    take,
+  });
+}
+
+/** Saves the question, and in the same step removes the messages of the attempt it replaces. */
+export async function saveQuestion(
+  data: Prisma.MessageUncheckedCreateInput,
+  replacedIds: string[],
+) {
+  const [, question] = await prismaClient.$transaction([
+    prismaClient.message.deleteMany({
+      where: { id: { in: replacedIds }, conversationId: data.conversationId },
+    }),
+    prismaClient.message.create({ data }),
+  ]);
+  return question;
 }
 
 /** A conversation's messages in the order they were written. */
@@ -104,10 +128,11 @@ export async function countConversations(userId: string, workspaceId: string) {
   return prismaClient.conversation.count({ where: { userId, workspaceId } });
 }
 
-/** A message in one of this user's conversations, or null. */
+/** A message in one of this user's conversations, with its workspace's owner; or null. */
 export async function findMessageForUser(userId: string, messageId: string) {
   return prismaClient.message.findFirst({
     where: { id: messageId, conversation: visibleTo(userId) },
+    include: { conversation: { select: { workspace: { select: { userId: true } } } } },
   });
 }
 
@@ -164,8 +189,8 @@ export async function firstExchange(conversationId: string) {
   return { question, answer };
 }
 
-/** Only replaces a title nobody has set yet, so a rename made meanwhile wins. */
-export async function replaceDefaultTitle(conversationId: string, from: string, to: string) {
+/** Only replaces the title `from`, so a rename made meanwhile wins. */
+export async function replaceTitle(conversationId: string, from: string, to: string) {
   const { count } = await prismaClient.conversation.updateMany({
     where: { id: conversationId, title: from },
     data: { title: to },

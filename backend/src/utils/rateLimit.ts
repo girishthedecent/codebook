@@ -1,6 +1,6 @@
 import { appConfig } from '../config/app.config.js';
 import prismaClient from '../config/db.config.js';
-import { TooManyRequestsError } from './errors/app.error.js';
+import { TooManyRequestsError, type RateLimitCode } from './errors/app.error.js';
 
 export type LimitName = keyof typeof appConfig.limits.windows;
 
@@ -52,10 +52,48 @@ export async function consume(
   return { allowed: row!.count <= appConfig.limits.windows[name].points, retryAfterSec };
 }
 
+const { guestMessages, messagesHourly, messagesDaily } = appConfig.limits.windows;
+
+// The limits on asking questions get their own code and wording, so a client can say which
+// one it ran into. The rest are plain RATE_LIMITED.
+const LIMIT_ERRORS: Partial<Record<LimitName, { code: RateLimitCode; message: string }>> = {
+  guestMessages: {
+    code: 'GUEST_LIMIT',
+    message: `The demo allows ${guestMessages.points} questions a day. Sign up to ask more, or come back when it resets.`,
+  },
+  messagesHourly: {
+    code: 'HOURLY_LIMIT',
+    message: `You can ask ${messagesHourly.points} questions an hour. Try again when the hour is up.`,
+  },
+  messagesDaily: {
+    code: 'DAILY_LIMIT',
+    message: `You can ask ${messagesDaily.points} questions a day. Try again tomorrow.`,
+  },
+};
+
+/** The 429 for a window of `name` that is used up. */
+export function limitError(name: LimitName, retryAfterSec: number) {
+  const known = LIMIT_ERRORS[name];
+  return new TooManyRequestsError(retryAfterSec, known?.code, known?.message);
+}
+
 /** consume() for services and tools: throws a 429 when the limit is used up. */
 export async function assertWithinLimit(name: LimitName, key: string) {
   const { allowed, retryAfterSec } = await consume(name, key);
-  if (!allowed) throw new TooManyRequestsError(retryAfterSec);
+  if (!allowed) throw limitError(name, retryAfterSec);
+}
+
+/**
+ * Gives back one point of the window that `at` falls in, for a request that cost nothing
+ * (the models were out of quota). Pass the time the request was counted, so a refund after
+ * midnight doesn't take a point from the next day's window.
+ */
+export async function refund(name: LimitName, key: string, at = Date.now()) {
+  const { start } = windowAt(name, at);
+  await prismaClient.rateLimitHit.updateMany({
+    where: { key: `${name}:${key}`, windowStart: start, count: { gt: 0 } },
+    data: { count: { decrement: 1 } },
+  });
 }
 
 /**

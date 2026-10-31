@@ -117,7 +117,7 @@ function Loaded({
             <Button
               size="sm"
               variant="ghost"
-              className="h-10! md:h-7!"
+              className="h-10! sm:h-7!"
               loading={regenerate.isPending}
               onClick={remake}
             >
@@ -126,7 +126,7 @@ function Loaded({
             <Button
               size="sm"
               variant="ghost"
-              className="h-10! md:h-7!"
+              className="h-10! sm:h-7!"
               onClick={() => setConfirm(true)}
             >
               {s.delete}
@@ -152,7 +152,7 @@ function Loaded({
               <Button
                 size="sm"
                 variant="ghost"
-                className="mt-2 h-10! md:h-7!"
+                className="mt-2 h-10! sm:h-7!"
                 loading={cancel.isPending}
                 onClick={() => cancel.mutate(study.id)}
               >
@@ -173,7 +173,7 @@ function Loaded({
               <Button
                 size="sm"
                 variant="secondary"
-                className="mt-3 h-10! md:h-7!"
+                className="mt-3 h-10! sm:h-7!"
                 loading={regenerate.isPending}
                 onClick={remake}
               >

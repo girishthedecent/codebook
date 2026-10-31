@@ -64,6 +64,8 @@ describe('webRouter', () => {
 
     expect(policy).toContain(`script-src 'self' ${hash(THEME)} ${hash(PRELOAD)};`);
     expect(policy).toContain("script-src-attr 'none'");
+    // Images: the app's own, inline ones, and a GitHub user's avatar; nowhere else.
+    expect(policy).toContain("img-src 'self' data: https://avatars.githubusercontent.com;");
     expect(policy).toContain("object-src 'none'");
     expect(policy).not.toContain('upgrade-insecure-requests');
     expect(policy).not.toContain("'unsafe-inline'; script");

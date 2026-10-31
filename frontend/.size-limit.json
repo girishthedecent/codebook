@@ -8,7 +8,7 @@
   {
     "name": "css",
     "path": "dist/assets/*.css",
-    "limit": "15 KB",
+    "limit": "16 KB",
     "gzip": true
   }
 ]

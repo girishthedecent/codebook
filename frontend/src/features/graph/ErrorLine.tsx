@@ -18,7 +18,7 @@ export function ErrorLine({
     <div role="alert" className="text-sm">
       <p className="text-error">{text}</p>
       {onRetry && status !== 404 && (
-        <Button size="sm" variant="secondary" className="mt-2 h-10! md:h-7!" onClick={onRetry}>
+        <Button size="sm" variant="secondary" className="mt-2 h-10! sm:h-7!" onClick={onRetry}>
           {t.retry}
         </Button>
       )}

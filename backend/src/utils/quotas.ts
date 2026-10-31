@@ -45,7 +45,11 @@ export async function tokensUsedToday(userId: string, now = new Date()) {
 export async function assertTokenBudget(userId: string, now = new Date()) {
   if ((await tokensUsedToday(userId, now)) < appConfig.limits.dailyTokensPerUser) return;
   const nextDay = startOfUtcDay(now).getTime() + 24 * 60 * 60 * 1000;
-  throw new TooManyRequestsError(Math.ceil((nextDay - now.getTime()) / 1000));
+  throw new TooManyRequestsError(
+    Math.ceil((nextDay - now.getTime()) / 1000),
+    'TOKEN_BUDGET',
+    "You've used up today's model budget. It resets at midnight UTC.",
+  );
 }
 
 function startOfUtcDay(date: Date) {

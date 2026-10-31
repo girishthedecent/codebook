@@ -11,6 +11,7 @@ import {
   InternalServerError,
   NotFoundError,
   PayloadTooLargeError,
+  TooManyRequestsError,
 } from '../utils/errors/app.error.js';
 import { getCorrelationId } from '../utils/helpers/request.helpers.js';
 
@@ -106,16 +107,15 @@ export function genericErrorHandler(err: unknown, req: Request, res: Response, n
     });
   }
 
-  const retryAfter = (appError.details as { retryAfterSeconds?: unknown } | undefined)
-    ?.retryAfterSeconds;
-  if (appError.statusCode === 429 && typeof retryAfter === 'number') {
-    res.set('Retry-After', String(retryAfter));
-  }
+  const retryAfterSec =
+    appError instanceof TooManyRequestsError ? appError.retryAfterSec : undefined;
+  if (retryAfterSec !== undefined) res.set('Retry-After', String(retryAfterSec));
 
   res.status(appError.statusCode).json({
     success: false,
     message: appError.message,
     code: appError.code,
+    ...(retryAfterSec !== undefined && { retryAfterSec }),
     ...(appError.details !== undefined && { details: appError.details }),
     correlationId: getCorrelationId(),
   });

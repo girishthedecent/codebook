@@ -2,8 +2,8 @@ import { useSyncExternalStore } from 'react';
 
 export type Breakpoint = 'phone' | 'tablet' | 'desktop';
 
-// Phone below 720px, tablet to 1099px, desktop from 1100px: the same widths as the
-// max-[719px] and min-[1100px] classes in the components.
+// Phone below 720px, tablet to 1099px, desktop from 1100px: the widths of the sm and lg
+// breakpoints in styles/tokens.css, so `max-sm:` and `useBreakpoint() === 'phone'` agree.
 const TABLET = '(min-width: 720px)';
 const DESKTOP = '(min-width: 1100px)';
 

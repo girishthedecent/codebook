@@ -72,10 +72,8 @@ export function ChatHome({ workspaceId }: { workspaceId: string }) {
 
   return (
     <div className="flex min-h-full flex-1 flex-col">
-      <div className="mx-auto w-full max-w-[720px] flex-1 px-4 pt-6 pb-6 md:px-6 md:pt-20">
-        <p className="min-h-4 font-mono text-xs text-ink-3 max-[719px]:hidden">
-          {workspace.data?.name}
-        </p>
+      <div className="mx-auto w-full max-w-[720px] flex-1 px-4 pt-6 pb-6 sm:px-6 sm:pt-20">
+        <p className="min-h-4 font-mono text-xs text-ink-3 max-sm:hidden">{workspace.data?.name}</p>
         <h1 className="mt-2 min-h-7 font-serif text-xl font-semibold text-ink">
           {sourcesQuery.isPending ? '' : noSources ? chat.homeEmpty : chat.homeLine}
         </h1>
@@ -83,7 +81,7 @@ export function ChatHome({ workspaceId }: { workspaceId: string }) {
           <Link
             to="/w/$workspaceId/sources"
             params={{ workspaceId }}
-            className="mt-3 inline-flex text-sm text-accent underline underline-offset-2 max-[719px]:min-h-11 max-[719px]:items-center"
+            className="mt-3 inline-flex text-sm text-accent underline underline-offset-2 max-sm:min-h-11 max-sm:items-center"
           >
             {chat.addSource}
           </Link>
@@ -97,7 +95,7 @@ export function ChatHome({ workspaceId }: { workspaceId: string }) {
                   type="button"
                   disabled={create.isPending}
                   onClick={() => ask(q, !isGuest, false)}
-                  className="w-full py-2.5 text-left font-serif text-base text-ink-2 hover:text-ink disabled:opacity-50 max-[719px]:min-h-11"
+                  className="w-full py-2.5 text-left font-serif text-base text-ink-2 hover:text-ink disabled:opacity-50 max-sm:min-h-11"
                 >
                   {q}
                 </button>

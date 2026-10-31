@@ -1,6 +1,5 @@
 import type { NextFunction, Request, Response } from 'express';
-import { TooManyRequestsError } from '../utils/errors/app.error.js';
-import { consume, type LimitName } from '../utils/rateLimit.js';
+import { consume, limitError, type LimitName } from '../utils/rateLimit.js';
 import type { AuthSession } from '../config/auth.config.js';
 import { getAuthUser } from './auth.middleware.js';
 
@@ -30,6 +29,6 @@ export function limit(name: LimitName, keyOf: LimitKey = perUser) {
     const key = keyOf(req, res);
     if (key === null) return next();
     const { allowed, retryAfterSec } = await consume(name, key);
-    next(allowed ? undefined : new TooManyRequestsError(retryAfterSec));
+    next(allowed ? undefined : limitError(name, retryAfterSec));
   };
 }

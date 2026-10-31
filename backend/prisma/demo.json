@@ -1,5 +1,11 @@
 {
   "description": "The Little Book of Deep Learning by François Fleuret (CC BY-NC-SA 4.0), Andrej Karpathy's nanoGPT and Hugging Face's text generation guide. Sign in as a guest and ask how a GPT works.",
+  "starterQuestions": [
+    "How does causal self-attention work in nanoGPT, and how does the book explain it?",
+    "How is a GPT trained to predict the next token, in the book and in nanoGPT's training loop?",
+    "How does nanoGPT generate new text, and what do temperature and top-k change?",
+    "What common mistakes does the Hugging Face text generation guide warn about?"
+  ],
   "sources": [
     {
       "sourceKey": "book",

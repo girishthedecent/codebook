@@ -24,12 +24,15 @@ function inlineScriptHashes(html: string) {
 }
 
 // Helmet's default policy for the page, with the hashes of its inline scripts (the theme
-// before first paint, the preload list). Minus upgrade-insecure-requests, as for the docs
-// page: it would send the page's own files to https on a plain-http host.
+// before first paint, the preload list) and GitHub's avatar host for images (the picture of
+// a user who signed in with GitHub). Minus upgrade-insecure-requests, as for the docs page:
+// it would send the page's own files to https on a plain-http host.
 function pagePolicy(scriptHashes: string[]) {
+  const defaults = helmet.contentSecurityPolicy.getDefaultDirectives();
   const directives = {
-    ...helmet.contentSecurityPolicy.getDefaultDirectives(),
+    ...defaults,
     'script-src': ["'self'", ...scriptHashes],
+    'img-src': [...(defaults['img-src'] as string[]), 'https://avatars.githubusercontent.com'],
   };
   delete (directives as Record<string, unknown>)['upgrade-insecure-requests'];
   return Object.entries(directives)

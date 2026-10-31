@@ -107,8 +107,66 @@ describe('OpenAPI document', () => {
       (schemas[id] as { oneOf?: { properties: { event: { enum: string[] } } }[] }).oneOf!.map(
         (event) => event.properties.event.enum[0],
       );
-    expect(names('TurnEvents')).toEqual(['step', 'token', 'citations', 'done', 'error']);
+    expect(names('TurnEvents')).toEqual(['title', 'step', 'token', 'citations', 'done', 'error']);
     expect(names('SourceEvents')).toEqual(['progress', 'done', 'failed', 'deleted', 'error']);
+  });
+
+  it('describes the fields clients read for limits, turns, titles and failures', () => {
+    const document = openApiDocument();
+    const schemas = document.components!.schemas as unknown as Record<
+      string,
+      {
+        properties: Record<string, { enum?: string[]; type?: string | string[] }>;
+        required?: string[];
+      }
+    >;
+    const paths = document.paths!;
+
+    expect(Object.keys(schemas.Error!.properties)).toEqual(
+      expect.arrayContaining(['code', 'retryAfterSec', 'details']),
+    );
+    expect(Object.keys(schemas.Demo!.properties)).toContain('starterQuestions');
+    expect(Object.keys(schemas.Usage!.properties)).toContain('guest');
+    expect(Object.keys(schemas.Message!.properties)).toEqual(
+      expect.arrayContaining([
+        'model',
+        'latencyMs',
+        'firstTokenMs',
+        'tokensIn',
+        'tokensOut',
+        'tokensCached',
+        'costUsd',
+        'weakRetrieval',
+      ]),
+    );
+    // Only the owner of the workspace gets those; the rest of a message is always there.
+    expect(schemas.Message!.required).not.toContain('model');
+    expect(schemas.Message!.required).toContain('content');
+    expect(Object.keys(schemas.ToolCall!.properties)).toContain('id');
+    expect(schemas.Study!.properties.errorCode!.enum).toEqual(
+      expect.arrayContaining(['CANCELLED', 'VALIDATION_FAILED', 'MODEL_UNAVAILABLE', 'TIMEOUT']),
+    );
+    expect(Object.keys(schemas.GraphOverview!.properties)).toEqual([
+      'topSymbols',
+      'files',
+      'packages',
+    ]);
+    expect(Object.keys(schemas.EvalsStatus!.properties)).toEqual(['canStartRuns', 'reason']);
+
+    const events = JSON.stringify(schemas.TurnEvents);
+    for (const field of ['"cached"', '"ok"', '"title"']) expect(events).toContain(field);
+
+    const send = paths[`${API}/conversations/{conversationId}/messages`]!.post!;
+    const body = JSON.stringify(send.requestBody);
+    expect(body).toContain('"retry"');
+    expect(Object.keys(send.responses!['429'].content)).toEqual(['application/json']);
+
+    const file = paths[`${API}/sources/{sourceId}/file`]!.get!;
+    expect(Object.keys(file.responses!['200'].headers)).toEqual(['Content-Disposition']);
+    expect(paths[`${API}/sources/{sourceId}/graph/overview`]!.get).toBeDefined();
+    expect(JSON.stringify(paths[`${API}/monitoring/stats`]!.get!.parameters)).toContain(
+      'includeSystem',
+    );
   });
 
   it('marks public and admin routes', () => {

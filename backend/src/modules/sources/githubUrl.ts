@@ -39,3 +39,13 @@ export function isValidGitRef(ref: string) {
     !/^[./]|[./]$|\.lock(\/|$)|\/\./.test(ref)
   );
 }
+
+/**
+ * A repository source's name: `owner/repo`, with the ref after an `@` unless it is the default
+ * branch. A full commit hash is cut to its first seven characters, as git shows it.
+ */
+export function repoTitle(fullName: string, ref: string, defaultBranch: string) {
+  if (ref === defaultBranch) return fullName;
+  const label = /^[0-9a-f]{40}$/i.test(ref) ? ref.slice(0, 7).toLowerCase() : ref;
+  return `${fullName}@${label}`;
+}

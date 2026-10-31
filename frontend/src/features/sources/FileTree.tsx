@@ -64,14 +64,14 @@ export function FileTree({ sourceId }: { sourceId: string }) {
             type="button"
             onClick={() => setPrefix(parentOf(prefix))}
             aria-label={strings.detail.up}
-            className="flex size-7 items-center justify-center rounded-xs text-ink-3 max-[719px]:size-10 hover:bg-paper-2 hover:text-ink"
+            className="flex size-7 items-center justify-center rounded-xs text-ink-3 max-sm:size-10 hover:bg-paper-2 hover:text-ink"
           >
             <ArrowUp size={14} />
           </button>
         )}
         <nav
           aria-label="Folder"
-          className="flex min-w-0 flex-wrap items-baseline gap-x-1 py-1.5 break-all max-[719px]:py-2.5"
+          className="flex min-w-0 flex-wrap items-baseline gap-x-1 py-1.5 break-all max-sm:py-2.5"
         >
           <button
             type="button"

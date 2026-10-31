@@ -7,7 +7,8 @@ import { inngest } from '../src/config/inngest.config.js';
 import { textRoutes } from '../src/llm/models.js';
 import { search } from '../src/modules/retrieval/retrieval.service.js';
 import type { SearchResult } from '../src/modules/retrieval/retrieval.types.js';
-import { generateStudyArtifact } from '../src/modules/study/study.function.js';
+import { generateStudyArtifact, onStudyFailure } from '../src/modules/study/study.function.js';
+import { LlmTimeoutError } from '../src/llm/retry.js';
 import type { StudyInput } from '../src/modules/study/study.dto.js';
 import { MAX_GROUPS } from '../src/modules/study/study.gather.js';
 import { generateStudy as generateOnce } from '../src/modules/study/study.generate.js';
@@ -78,6 +79,7 @@ type StudyBody = {
   data: {
     status: string;
     error: string | null;
+    errorCode: string | null;
     title: string;
     data: Record<string, { citations: number[]; uncited?: true }[]> & { title: string };
     sources: { n: number; sourceTitle: string; heading?: string; snippet: string }[];
@@ -204,6 +206,7 @@ describe('generation', () => {
     expect(prompts[1]).toContain('Question 1 has 3 options');
     expect(body.status).toBe('FAILED');
     expect(body.error).toMatch(/quiz didn't pass checks: Question 1 has 3 options/);
+    expect(body.errorCode).toBe('VALIDATION_FAILED');
   });
 
   it('keeps the retried answer when it passes', async () => {
@@ -250,6 +253,7 @@ describe('generation', () => {
     expect((await getStudy(id)).body).toMatchObject({
       status: 'FAILED',
       error: 'Nothing indexed was found for this selection.',
+      errorCode: 'NO_MATERIAL',
     });
   });
 
@@ -585,7 +589,11 @@ describe('POST /study/:id/cancel', () => {
     const cancelled = await cancel(id);
 
     expect(cancelled.status).toBe(200);
-    expect((await getStudy(id)).body).toMatchObject({ status: 'FAILED', error: 'Cancelled.' });
+    expect((await getStudy(id)).body).toMatchObject({
+      status: 'FAILED',
+      error: 'Cancelled.',
+      errorCode: 'CANCELLED',
+    });
   });
 
   it('does not start a run for a set cancelled before it began', async () => {
@@ -597,7 +605,11 @@ describe('POST /study/:id/cancel', () => {
     await run(id);
 
     expect(prompts).toHaveLength(0);
-    expect((await getStudy(id)).body).toMatchObject({ status: 'FAILED', error: 'Cancelled.' });
+    expect((await getStudy(id)).body).toMatchObject({
+      status: 'FAILED',
+      error: 'Cancelled.',
+      errorCode: 'CANCELLED',
+    });
   });
 
   it('rejects a finished set and leaves it alone', async () => {
@@ -650,6 +662,145 @@ describe('POST /study/:id/cancel', () => {
 
     await prismaClient.workspace.update({ where: { id: workspaceId }, data: { isDemo: true } });
     expect((await cancel(id, bob)).status).toBe(404);
+  });
+});
+
+describe('why a set failed', () => {
+  const failure = (artifactId: string, error: Error) =>
+    onStudyFailure({ event: { data: { event: { data: { artifactId } } } }, error });
+
+  /** The error that ends a run whose model step failed, as the failure handler gets it. */
+  async function runThatFails(replies: Record<string, ReturnType<typeof scriptedModel>>) {
+    useModels(replies);
+    const res = await createStudy({ type: 'QUIZ', sourceIds: [book.sourceId] });
+    const id = (res.body as { data: { id: string } }).data.id;
+    // The engine hands back the error in the serialized form Inngest keeps: name, message, code.
+    const { error } = await run(id);
+    expect(error).toMatchObject({ message: expect.any(String), code: expect.any(String) });
+    return { id, error: error as Error };
+  }
+
+  it('says the models could not answer when every one failed', async () => {
+    const { id, error } = await runThatFails({
+      [STUDY.primary!.model]: scriptedModel([apiError(500)]),
+      [STUDY.fallback!.model]: scriptedModel([apiError(500)]),
+    });
+    expect((error as { code?: string }).code).toBe('MODEL_UNAVAILABLE');
+
+    await failure(id, error);
+
+    expect((await getStudy(id)).body).toMatchObject({
+      status: 'FAILED',
+      errorCode: 'MODEL_UNAVAILABLE',
+      error: "The models couldn't answer right now. Try again in a few minutes.",
+    });
+  });
+
+  it('says the model took too long when it did', async () => {
+    const { id, error } = await runThatFails({
+      [STUDY.primary!.model]: scriptedModel([new LlmTimeoutError(60_000)]),
+      [STUDY.fallback!.model]: scriptedModel([new LlmTimeoutError(60_000)]),
+    });
+
+    await failure(id, error);
+
+    expect((await getStudy(id)).body).toMatchObject({
+      status: 'FAILED',
+      errorCode: 'TIMEOUT',
+      error: 'The model took too long to answer. Try again in a few minutes.',
+    });
+  });
+
+  it('keeps provider details out of what the user is told', async () => {
+    const { id, error } = await runThatFails({
+      [STUDY.primary!.model]: scriptedModel([apiError(500)]),
+      [STUDY.fallback!.model]: scriptedModel([apiError(500)]),
+    });
+    await failure(id, error);
+
+    const { body } = await getStudy(id);
+    expect(body.error).not.toMatch(/500|google|groq|gemini|gpt-oss/i);
+  });
+
+  it('falls back to a general failure for an error nothing explains', async () => {
+    const res = await createStudy({ type: 'QUIZ', sourceIds: [book.sourceId] });
+    const id = (res.body as { data: { id: string } }).data.id;
+
+    await failure(id, new Error('database went away'));
+
+    expect((await getStudy(id)).body).toMatchObject({
+      status: 'FAILED',
+      errorCode: 'GENERATION_FAILED',
+      error: 'Generation failed. Try again in a few minutes.',
+    });
+  });
+
+  it('leaves a cancelled set cancelled when the run fails afterwards', async () => {
+    const res = await createStudy({ type: 'QUIZ', sourceIds: [book.sourceId] });
+    const id = (res.body as { data: { id: string } }).data.id;
+    await alice.post(`/api/v1/study/${id}/cancel`);
+
+    await failure(id, new Error('too late'));
+
+    expect((await getStudy(id)).body).toMatchObject({
+      errorCode: 'CANCELLED',
+      error: 'Cancelled.',
+    });
+  });
+
+  it('clears the reason when a failed set is generated again', async () => {
+    const res = await createStudy({ type: 'QUIZ', sourceIds: [book.sourceId] });
+    const id = (res.body as { data: { id: string } }).data.id;
+    await failure(id, new Error('boom'));
+    expect((await getStudy(id)).body.errorCode).toBe('GENERATION_FAILED');
+
+    const again = await alice.post(`/api/v1/study/${id}/regenerate`);
+
+    expect(again.status).toBe(202);
+    expect((await getStudy(id)).body).toMatchObject({
+      status: 'PENDING',
+      error: null,
+      errorCode: null,
+    });
+  });
+
+  it('reads a set that failed before codes were kept from its message', async () => {
+    const { userId } = await prismaClient.workspace.findUniqueOrThrow({
+      where: { id: workspaceId },
+    });
+    const make = (error: string) =>
+      prismaClient.studyArtifact.create({
+        data: {
+          workspaceId,
+          userId,
+          type: 'QUIZ',
+          title: 'Old',
+          input: { sourceIds: [book.sourceId], difficulty: 'medium' },
+          status: 'FAILED',
+          error,
+        },
+      });
+    const cancelled = await make('Cancelled.');
+    const other = await make('Generation failed. Try again in a few minutes.');
+
+    const list = await alice.get(`/api/v1/workspaces/${workspaceId}/study`);
+
+    const items = (list.body as { data: { items: { id: string; errorCode: string | null }[] } })
+      .data.items;
+    expect(Object.fromEntries(items.map((item) => [item.id, item.errorCode]))).toEqual({
+      [cancelled.id]: 'CANCELLED',
+      [other.id]: 'GENERATION_FAILED',
+    });
+  });
+
+  it('has no code on a set that did not fail', async () => {
+    studyModel((_prompt, numbers) => ({ title: 'Quiz', questions: [question(1, [numbers[0]!])] }));
+    const id = await generateStudy({ type: 'QUIZ', sourceIds: [book.sourceId], count: 5 });
+    expect((await getStudy(id)).body).toMatchObject({
+      status: 'DONE',
+      error: null,
+      errorCode: null,
+    });
   });
 });
 

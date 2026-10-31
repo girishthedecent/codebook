@@ -40,7 +40,7 @@ export function CitedSources({
 
   return (
     <details className="group mt-5 border-t border-rule pt-1">
-      <summary className="flex min-h-9 cursor-pointer list-none items-center gap-1.5 text-xs font-medium text-ink-3 select-none hover:text-ink max-[719px]:min-h-11 [&::-webkit-details-marker]:hidden">
+      <summary className="flex min-h-9 cursor-pointer list-none items-center gap-1.5 text-xs font-medium text-ink-3 select-none hover:text-ink max-sm:min-h-11 [&::-webkit-details-marker]:hidden">
         <CaretRight
           size={10}
           weight="bold"
@@ -83,7 +83,7 @@ function SourceRow({
       disabled={dest.kind === 'none' || deleted}
       title={deleted ? 'This source was deleted' : undefined}
       className={cn(
-        '-mx-1.5 flex w-[calc(100%+0.75rem)] min-w-0 items-baseline gap-2.5 rounded-xs px-1.5 py-1 text-left text-xs hover:bg-paper-2 disabled:cursor-default disabled:hover:bg-transparent max-[719px]:min-h-11 max-[719px]:items-center',
+        '-mx-1.5 flex w-[calc(100%+0.75rem)] min-w-0 items-baseline gap-2.5 rounded-xs px-1.5 py-1 text-left text-xs hover:bg-paper-2 disabled:cursor-default disabled:hover:bg-transparent max-sm:min-h-11 max-sm:items-center',
         lit && !deleted && 'bg-accent-wash',
       )}
     >

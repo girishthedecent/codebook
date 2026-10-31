@@ -17,7 +17,7 @@ export function ConnectionBanner() {
       <button
         type="button"
         onClick={retryFailed}
-        className="shrink-0 py-1 text-accent underline underline-offset-2 max-[719px]:min-h-9"
+        className="shrink-0 py-1 text-accent underline underline-offset-2 max-sm:min-h-9"
       >
         Try again
       </button>

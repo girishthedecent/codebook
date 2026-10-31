@@ -86,6 +86,7 @@ afterEach(() => {
 
 describe('admin only', () => {
   const reads = [
+    '/api/v1/evals/status',
     '/api/v1/evals/datasets',
     '/api/v1/evals/runs',
     '/api/v1/evals/runs/cm0000000000000000000000',
@@ -307,6 +308,53 @@ describe('GET /compare', () => {
       w: { a: null, b: 1, delta: null },
     });
     expect(metricDeltas(null, undefined)).toEqual({});
+  });
+});
+
+describe('can runs be started here', () => {
+  const body = { suite: 'retrieval', config: 'hybrid' };
+  const status = async () => {
+    const res = await admin.agent.get('/api/v1/evals/status');
+    expect(res.status).toBe(200);
+    return res.body.data as { canStartRuns: boolean; reason: string | null };
+  };
+
+  afterEach(() => {
+    serverConfig.INNGEST_DEV = true;
+    serverConfig.EVALS_WORKER_ENABLED = undefined;
+  });
+
+  it('is yes in dev mode, where the worker shares the local Inngest server', async () => {
+    expect(await status()).toEqual({ canStartRuns: true, reason: null });
+  });
+
+  it('is no on a deployment without a worker, which then refuses to queue a run', async () => {
+    serverConfig.INNGEST_DEV = false;
+
+    expect(await status()).toEqual({
+      canStartRuns: false,
+      reason:
+        'The eval worker does not run on this deployment. Start it where the eval corpus is built (pnpm evals:worker) to run evals.',
+    });
+    const res = await admin.agent.post('/api/v1/evals/runs').set('origin', ORIGIN).send(body);
+    expect(res.status).toBe(503);
+    expect(res.body).toMatchObject({
+      code: 'SERVICE_UNAVAILABLE',
+      message: expect.stringContaining('does not run on this deployment'),
+    });
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('can be switched on for a deployment that has a worker, or off in dev mode', async () => {
+    serverConfig.INNGEST_DEV = false;
+    serverConfig.EVALS_WORKER_ENABLED = true;
+    expect((await status()).canStartRuns).toBe(true);
+    const res = await admin.agent.post('/api/v1/evals/runs').set('origin', ORIGIN).send(body);
+    expect(res.status).toBe(202);
+
+    serverConfig.INNGEST_DEV = true;
+    serverConfig.EVALS_WORKER_ENABLED = false;
+    expect((await status()).canStartRuns).toBe(false);
   });
 });
 

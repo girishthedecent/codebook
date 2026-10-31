@@ -23,6 +23,8 @@ export const en = {
     guestBar: "You're trying the demo.",
     guestKeep: 'Sign in to keep your work',
     guestNoWrite: 'Sign in to add your own sources.',
+    signOutFailed: "Couldn't sign out",
+    signOutFailedHint: 'Check your connection and try again.',
   },
   common: {
     cancel: 'Cancel',

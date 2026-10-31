@@ -1,6 +1,7 @@
 import type { Request, Response } from 'express';
 import { getAuthUser } from '../../middlewares/auth.middleware.js';
 import type { PaginationQuery } from '../../utils/helpers/pagination.helpers.js';
+import { inlineDisposition } from '../../utils/helpers/contentDisposition.js';
 import { successResponse } from '../../utils/helpers/response.helpers.js';
 import { TooManyRequestsError } from '../../utils/errors/app.error.js';
 import { takeEventStreamSlot } from '../../utils/rateLimit.js';
@@ -114,7 +115,7 @@ export async function getFileHandler(req: Request, res: Response) {
   res.status(file.range ? 206 : 200).set({
     'Content-Type': 'application/pdf',
     'Content-Length': String(length),
-    'Content-Disposition': `inline; filename="${file.fileName.replace(/["\\\r\n]/g, '_')}"`,
+    'Content-Disposition': inlineDisposition(file.fileName),
     'Cache-Control': 'private, max-age=3600',
     'Accept-Ranges': 'bytes',
     ...(file.range

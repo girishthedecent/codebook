@@ -1,7 +1,13 @@
 import { APICallError, RetryError } from 'ai';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { appConfig } from '../config/app.config.js';
-import { isOpen, isQuotaError, noteQuotaError, resetCircuitBreaker } from './circuitBreaker.js';
+import {
+  breakerStates,
+  isOpen,
+  isQuotaError,
+  noteQuotaError,
+  resetCircuitBreaker,
+} from './circuitBreaker.js';
 import type { ModelRef } from './models.js';
 
 const groq: ModelRef = { provider: 'groq', model: 'openai/gpt-oss-120b' };
@@ -88,5 +94,48 @@ describe('circuit breaker', () => {
 
     noteQuotaError(groq, reopenAt);
     expect(isOpen(groq, reopenAt)).toBe(false);
+  });
+});
+
+describe('breakerStates', () => {
+  const start = 1_000_000;
+
+  it('is empty until a model has had a quota error', () => {
+    expect(breakerStates(start)).toEqual([]);
+  });
+
+  it('reports a model with errors short of opening, and counts only the window', () => {
+    noteQuotaError(groq, start);
+    noteQuotaError(groq, start + windowMs - 1);
+
+    expect(breakerStates(start + windowMs - 1)).toEqual([
+      { model: 'groq/openai/gpt-oss-120b', open: false, openUntil: null, recentQuotaErrors: 2 },
+    ]);
+    expect(breakerStates(start + windowMs)[0]).toMatchObject({ recentQuotaErrors: 1 });
+  });
+
+  it('reports an open model with when it closes, and closed again after that', () => {
+    for (let i = 0; i < quotaErrors; i++) noteQuotaError(groq, start);
+    noteQuotaError(otherGroq, start);
+
+    const states = breakerStates(start + 1);
+    expect(states.find((state) => state.model === 'groq/openai/gpt-oss-120b')).toEqual({
+      model: 'groq/openai/gpt-oss-120b',
+      open: true,
+      openUntil: new Date(start + coolOffMs),
+      recentQuotaErrors: 0,
+    });
+    expect(states.find((state) => state.model === 'groq/openai/gpt-oss-20b')?.open).toBe(false);
+
+    expect(breakerStates(start + coolOffMs)[0]).toMatchObject({ open: false, openUntil: null });
+  });
+
+  it('lists a backup key apart from its model', () => {
+    const backup: ModelRef = { provider: 'google', model: 'gemini-3.6-flash', key: 'backup' };
+    noteQuotaError(backup, start);
+
+    expect(breakerStates(start).map((state) => state.model)).toEqual([
+      'google/gemini-3.6-flash#backup',
+    ]);
   });
 });

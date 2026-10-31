@@ -119,7 +119,7 @@ export function SymbolCombobox({
               }}
               onMouseEnter={() => setActive(i)}
               className={cn(
-                'flex min-h-11 cursor-pointer flex-col justify-center px-3 py-1.5 md:min-h-0',
+                'flex min-h-11 cursor-pointer flex-col justify-center px-3 py-1.5 sm:min-h-0',
                 i === active && 'bg-paper-2',
               )}
             >

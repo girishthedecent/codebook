@@ -1,6 +1,12 @@
+import { serverConfig } from '../../config/index.js';
 import { inngest } from '../../config/inngest.config.js';
 import { evalRunRequested } from '../../inngest/events.js';
-import { BadRequestError, ConflictError, NotFoundError } from '../../utils/errors/app.error.js';
+import {
+  AppError,
+  BadRequestError,
+  ConflictError,
+  NotFoundError,
+} from '../../utils/errors/app.error.js';
 import type { CompareQuery, CreateRunInput, ListRunsQuery, ResultsQuery } from './evals.dto.js';
 import {
   countResults,
@@ -255,11 +261,28 @@ export async function compareRunsService({ runs: [idA, idB] }: CompareQuery) {
 }
 
 /**
+ * Whether a run queued here would be picked up. The eval worker is its own process (eval code
+ * never ships in the API build), so a deployment without one only records the request.
+ */
+export function evalsStatusService() {
+  const canStartRuns = serverConfig.EVALS_WORKER_ENABLED ?? serverConfig.INNGEST_DEV;
+  return {
+    canStartRuns,
+    reason: canStartRuns
+      ? null
+      : 'The eval worker does not run on this deployment. Start it where the eval corpus is ' +
+        'built (pnpm evals:worker) to run evals.',
+  };
+}
+
+/**
  * Queues a run for the eval worker, which checks the names and owns the run from there.
  * Runs go one at a time (they share the free-tier quotas), so a request while one is still
  * going is refused here rather than dropped by the worker.
  */
 export async function requestRunService(input: CreateRunInput, requestedBy: string) {
+  const { canStartRuns, reason } = evalsStatusService();
+  if (!canStartRuns) throw new AppError(reason!, 503, 'SERVICE_UNAVAILABLE');
   const now = new Date();
   const active = (await runningRuns()).find((run) => !isStale(run, now));
   if (active) {

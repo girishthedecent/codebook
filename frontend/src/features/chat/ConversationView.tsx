@@ -116,12 +116,12 @@ export function ConversationView({
 
   if (query.isError && isApiError(query.error, 404)) {
     return (
-      <div className="mx-auto max-w-[720px] px-4 py-16 md:px-6">
+      <div className="mx-auto max-w-[720px] px-4 py-16 sm:px-6">
         <p className="text-ink-2">{chat.notFound}</p>
         <Link
           to="/w/$workspaceId"
           params={{ workspaceId }}
-          className="mt-3 inline-flex text-sm text-accent underline underline-offset-2 max-[719px]:min-h-11 max-[719px]:items-center"
+          className="mt-3 inline-flex text-sm text-accent underline underline-offset-2 max-sm:min-h-11 max-sm:items-center"
         >
           {chat.newInstead}
         </Link>
@@ -138,14 +138,14 @@ export function ConversationView({
         title={conversation?.title}
       />
 
-      <div className="mx-auto w-full max-w-[720px] flex-1 px-4 md:px-6">
+      <div className="mx-auto w-full max-w-[720px] flex-1 px-4 sm:px-6">
         {loadFailed ? (
           <div className="py-10">
             <p className="text-sm text-ink-2">{chat.loadFailed}</p>
             <Button
               variant="secondary"
               size="sm"
-              className="mt-3 max-[719px]:h-11"
+              className="mt-3 max-sm:h-11"
               onClick={() => void query.refetch()}
             >
               {chat.retry}
@@ -171,7 +171,7 @@ export function ConversationView({
       </div>
 
       {!atBottom && streaming && (
-        <div className="pointer-events-none sticky bottom-[7.5rem] z-20 flex h-0 justify-center max-[719px]:fixed max-[719px]:inset-x-0 max-[719px]:bottom-[calc(10.5rem+env(safe-area-inset-bottom))]">
+        <div className="pointer-events-none sticky bottom-[7.5rem] z-20 flex h-0 justify-center max-sm:fixed max-sm:inset-x-0 max-sm:bottom-[calc(10.5rem+env(safe-area-inset-bottom))]">
           <ChipButton
             onClick={jump}
             className="pointer-events-auto -translate-y-full bg-paper shadow-float"

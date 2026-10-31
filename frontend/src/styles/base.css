@@ -8,7 +8,54 @@
 @import '@fontsource/ibm-plex-sans/latin-ext-600.css';
 @import '@fontsource/ibm-plex-mono/latin-400.css';
 @import '@fontsource/ibm-plex-mono/latin-500.css';
-@import '@fontsource-variable/source-serif-4';
+/* Optical size and italic axes: headings at 28px and body at 17px each get their own cut. */
+@import '@fontsource-variable/source-serif-4/opsz.css';
+@import '@fontsource-variable/source-serif-4/opsz-italic.css';
+
+/* One heading scale, all serif: display 40, page title 28, section 20, minor 17. UI text is
+   15px sans and metadata 13px; mono is for code, ids and numbers only. */
+@utility heading-display {
+  font-family: var(--font-serif);
+  font-size: var(--text-2xl);
+  line-height: var(--text-2xl--line-height);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+
+@utility heading-page {
+  font-family: var(--font-serif);
+  font-size: var(--text-xl);
+  line-height: var(--text-xl--line-height);
+  font-weight: 600;
+  letter-spacing: -0.012em;
+  text-wrap: balance;
+}
+
+@utility heading-section {
+  font-family: var(--font-serif);
+  font-size: var(--text-md);
+  line-height: var(--text-md--line-height);
+  font-weight: 600;
+  letter-spacing: -0.006em;
+  text-wrap: balance;
+}
+
+@utility heading-minor {
+  font-family: var(--font-serif);
+  font-size: var(--text-base);
+  line-height: 1.35;
+  font-weight: 600;
+  text-wrap: balance;
+}
+
+/* For labels and kickers. The packaged serif has no small-cap glyphs, so the browser scales
+   capitals and the spacing evens them out; real glyphs are used if the font gains them.
+   Oldstyle numerals are Tailwind's oldstyle-nums, which the packaged font doesn't draw yet. */
+@utility small-caps {
+  font-variant-caps: all-small-caps;
+  letter-spacing: 0.06em;
+}
 
 @layer base {
   html {
@@ -35,7 +82,7 @@
     font-size: var(--text-base);
     line-height: var(--text-base--line-height);
     font-variant-numeric: oldstyle-nums;
-    max-width: 65ch;
+    max-width: var(--container-prose);
     overflow-wrap: break-word;
   }
   .prose p {
@@ -47,21 +94,31 @@
   }
   .prose h1,
   .prose h2,
-  .prose h3 {
-    font-family: var(--font-sans);
+  .prose h3,
+  .prose h4 {
+    font-family: var(--font-serif);
     font-weight: 600;
     line-height: 1.3;
-    margin: 1.4em 0 0.5em;
+    margin: 1.5em 0 0.45em;
     text-wrap: balance;
   }
   .prose h1 {
     font-size: var(--text-lg);
+    letter-spacing: -0.008em;
   }
   .prose h2 {
-    font-size: var(--text-base);
+    font-size: var(--text-md);
+    letter-spacing: -0.006em;
   }
   .prose h3 {
-    font-size: var(--text-sm);
+    font-size: var(--text-base);
+  }
+  .prose h4 {
+    font-size: var(--text-base);
+    font-style: italic;
+  }
+  .prose > :first-child {
+    margin-top: 0;
   }
   .prose ul,
   .prose ol {

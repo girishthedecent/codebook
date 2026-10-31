@@ -8,6 +8,7 @@ import { inngest } from '../src/config/inngest.config.js';
 import { s3Client } from '../src/config/storage.config.js';
 import { getRepo, refExists } from '../src/utils/github.js';
 import { createSource } from '../src/modules/sources/source.repository.js';
+import { createSourceService } from '../src/modules/sources/source.service.js';
 import { isValidGitRef, parseGithubUrl } from '../src/modules/sources/githubUrl.js';
 import { isCleanupPrefix, pdfStorageKey } from '../src/modules/sources/source.storage.js';
 import { drainRegistry } from '../src/utils/helpers/shutdown.helpers.js';
@@ -236,6 +237,48 @@ describe('GitHub repo', () => {
       origin: { ref: 'release/v2' },
     });
     expect(refExists).toHaveBeenCalledWith('acme', 'widgets', 'release/v2');
+  });
+
+  it('names a source pinned to a commit by its first seven characters', async () => {
+    const sha = 'A1b2c3d4e5f60718293a4b5c6d7e8f9012345678';
+    const res = await addRepo(alice, { ref: sha });
+
+    expect(res.status).toBe(201);
+    // The ref itself is kept whole: that is what gets downloaded.
+    expect(bodyOf(res)).toMatchObject({
+      title: 'acme/widgets@a1b2c3d',
+      origin: { ref: sha, defaultBranch: 'main' },
+    });
+    expect(refExists).toHaveBeenCalledWith('acme', 'widgets', sha);
+  });
+
+  it.each([
+    ['a branch', 'release/v2'],
+    ['a tag', 'v1.2.3'],
+    ['a short commit', 'abc1234'],
+    ['a name that only looks like a long commit', 'a'.repeat(39)],
+  ])('keeps %s in the title as it is', async (_, ref) => {
+    const res = await addRepo(alice, { ref });
+    expect(bodyOf(res).title).toBe(`acme/widgets@${ref}`);
+  });
+
+  it('gives the default branch no suffix, even when named by its commit', async () => {
+    vi.mocked(getRepo).mockResolvedValueOnce({ ...REPO, defaultBranch: 'a'.repeat(40) });
+    const res = await addRepo(alice, { ref: 'a'.repeat(40) });
+    expect(bodyOf(res).title).toBe('acme/widgets');
+  });
+
+  it('lets a script that builds a source from a spec choose its title', async () => {
+    const sha = 'f'.repeat(40);
+
+    const source = await createSourceService(
+      alice.userId,
+      workspaceId,
+      { type: 'GITHUB_REPO', url: 'https://github.com/acme/widgets', ref: sha },
+      { title: `acme/widgets@${sha}` },
+    );
+
+    expect(source.title).toBe(`acme/widgets@${sha}`);
   });
 
   it('rejects missing, private, oversized repos and unknown refs', async () => {

@@ -20,14 +20,15 @@ const base =
 
 const variants: Record<Variant, string> = {
   primary: 'bg-accent text-paper hover:bg-accent-2 active:bg-accent-2',
-  secondary: 'border border-rule-2 text-ink hover:bg-paper-2 active:bg-paper-3',
+  secondary: 'border border-edge text-ink hover:bg-paper-2 active:bg-paper-3',
   danger: 'border border-error text-error hover:bg-error-wash active:bg-error-wash',
   ghost: 'text-ink-2 hover:bg-paper-2 hover:text-ink active:bg-paper-3',
 };
 
+// Phones get a 44px target whatever the size, so call sites never override the height.
 const sizes: Record<Size, string> = {
-  sm: 'h-7 px-2.5 text-xs max-[719px]:h-10',
-  md: 'h-9 px-3.5 text-sm max-[719px]:h-10',
+  sm: 'h-7 px-2.5 text-xs max-sm:h-11 max-sm:px-3',
+  md: 'h-9 px-3.5 text-sm max-sm:h-11',
 };
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(

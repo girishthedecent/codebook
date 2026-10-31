@@ -2,7 +2,12 @@ import { randomBytes } from 'node:crypto';
 import { appConfig } from '../../config/app.config.js';
 import prismaClient from '../../config/db.config.js';
 import logger from '../../config/logger.config.js';
-import { Prisma, type Conversation, type Workspace } from '../../generated/prisma/client.js';
+import {
+  Prisma,
+  type Conversation,
+  type Message,
+  type Workspace,
+} from '../../generated/prisma/client.js';
 import { inngest } from '../../config/inngest.config.js';
 import { conversationTurnCompleted } from '../../inngest/events.js';
 import { isQuotaError } from '../../llm/circuitBreaker.js';
@@ -18,7 +23,6 @@ import {
   storeCachedAnswer,
   type CachedAnswer,
 } from '../demo/answerCache.js';
-import { excerptOf } from '../demo/excerpt.js';
 import { assertWorkspaceAccess } from '../workspaces/workspace.service.js';
 import {
   runAgent,
@@ -29,14 +33,21 @@ import {
 } from './agent.js';
 import { DEFAULT_AGENT_PROMPT } from '../../llm/prompts/agentSystem.js';
 import { buildAgentContext, type AgentPromptId } from './context.js';
-import { findConversationForUser, replaceDefaultTitle } from './conversation.repository.js';
-import { DEFAULT_TITLE } from './conversation.service.js';
+import {
+  findConversationForUser,
+  lastMessages,
+  replaceTitle,
+  saveQuestion,
+} from './conversation.repository.js';
+import { DEFAULT_TITLE, provisionalTitle } from './conversation.service.js';
 import { agentTools } from './tools/index.js';
 
 export type TurnEvent =
   | AgentEvent
+  | { type: 'title'; title: string }
   | { type: 'citations'; items: unknown[] }
-  | { type: 'done'; messageId: string; usage: TurnUsage; latencyMs: number }
+  // `cached`: the answer was kept from an earlier visitor's, no model ran.
+  | { type: 'done'; messageId: string; usage: TurnUsage; latencyMs: number; cached: boolean }
   | { type: 'error'; code: string; message: string };
 
 export type TurnUsage = {
@@ -55,6 +66,8 @@ export type PreparedTurn = {
   isSystem: boolean;
   questionId: string;
   question: string;
+  // The name this turn gave a conversation that still had the default one.
+  titleSet: string | null;
 };
 
 export type TurnOptions = {
@@ -91,6 +104,8 @@ export type TurnOutcome = {
   latencyMs: number;
   firstTokenMs: number | null;
   error: string | null;
+  // What the client was told when the turn failed (UPSTREAM_ERROR, INTERNAL...); null otherwise.
+  errorCode: string | null;
 };
 
 /**
@@ -101,17 +116,44 @@ function newMessageId() {
   return `c${Date.now().toString(36)}${randomBytes(8).toString('hex')}`;
 }
 
+// A question with no saved answer may still be answering; one older than any turn can run
+// is taken as abandoned (the server stopped before it saved a failure).
+const ABANDONED_AFTER_MS = appConfig.chat.maxAgentSteps * appConfig.chat.stepTimeoutMs;
+
+/**
+ * The messages a retry of `question` replaces: the last exchange when it ended without an
+ * answer (a failed or cut-off reply, or none at all) and asked the same thing. Empty
+ * otherwise, and then the retry is an ordinary question. `last` is the conversation's newest
+ * messages, newest first.
+ */
+export function retriedMessages(last: Message[], question: string, now = Date.now()) {
+  const same = (message?: Message) =>
+    message?.role === 'USER' && message.content.trim() === question.trim();
+  const [newest, before] = last;
+  if (newest?.role === 'ASSISTANT' && newest.status !== 'COMPLETE' && same(before)) {
+    return [newest.id, before!.id];
+  }
+  if (same(newest) && now - newest!.createdAt.getTime() > ABANDONED_AFTER_MS) return [newest!.id];
+  return [];
+}
+
 /**
  * Everything that can fail with a plain HTTP error runs before the stream opens: access,
- * the daily token budget, and saving the question.
+ * the daily token budget, and saving the question. A conversation that still has the default
+ * name is named after the question.
  */
 export async function prepareTurnService(
   user: { id: string; isGuest?: boolean | null; isSystem?: boolean | null },
   conversationId: string,
   content: string,
-  // The request's toggle: off, the question is never read by memory extraction.
-  useMemory = true,
+  options: {
+    // Off: the question is never read by memory extraction.
+    useMemory?: boolean;
+    // Replace the failed attempt of this question instead of adding another.
+    retry?: boolean;
+  } = {},
 ): Promise<PreparedTurn> {
+  const { useMemory = true, retry = false } = options;
   const userId = user.id;
   const conversation = await findConversationForUser(userId, conversationId);
   if (!conversation) throw new NotFoundError('Conversation not found');
@@ -120,18 +162,27 @@ export async function prepareTurnService(
   });
   // The eval user runs whole datasets in a day; its spend is bounded by the run itself.
   if (user.isSystem !== true) await assertTokenBudget(userId);
-  const question = await prismaClient.message.create({
-    data: {
+  const replaced = retry ? retriedMessages(await lastMessages(conversationId, 2), content) : [];
+  const question = await saveQuestion(
+    {
       conversationId,
       role: 'USER',
       content,
       memoryOff: !useMemory || user.isGuest === true,
     },
-  });
+    replaced,
+  );
   await prismaClient.conversation.update({
     where: { id: conversationId },
     data: { updatedAt: new Date() },
   });
+
+  // The title model only runs after the first answer; until then the question names it.
+  const title =
+    user.isSystem !== true && conversation.title === DEFAULT_TITLE
+      ? provisionalTitle(content)
+      : null;
+  const named = title !== null && (await replaceTitle(conversationId, DEFAULT_TITLE, title));
   return {
     userId,
     conversation,
@@ -140,6 +191,7 @@ export async function prepareTurnService(
     isSystem: user.isSystem === true,
     questionId: question.id,
     question: content,
+    titleSet: named ? title : null,
   };
 }
 
@@ -198,6 +250,8 @@ export async function runTurnService(
   let partial = '';
   let result: AgentResult | undefined;
   const progress: AgentProgress = { toolCalls: [] };
+
+  if (turn.titleSet) emit({ type: 'title', title: turn.titleSet });
 
   // Demo visitors' first questions: a repeat is answered from the cache, without the model.
   let cacheKey: string | null = null;
@@ -258,7 +312,8 @@ export async function runTurnService(
     const content = normalizeCitations(partial);
     const report = checkCitations(content, registry, appConfig.chat.supportOverlap);
     const status = aborted ? 'ABORTED' : 'ERROR';
-    const message = aborted ? 'The client disconnected' : publicError(error).message;
+    const shown = aborted ? null : publicError(error);
+    const message = shown?.message ?? 'The client disconnected';
     const latencyMs = Math.round(performance.now() - started);
     const usage = await saveAnswer(turn, messageId, promptId, {
       content,
@@ -271,7 +326,7 @@ export async function runTurnService(
       toolCalls: progress.toolCalls,
       model: progress.model,
     });
-    if (!aborted) emit({ type: 'error', ...publicError(error) });
+    if (shown) emit({ type: 'error', ...shown });
     return {
       messageId,
       status,
@@ -290,6 +345,7 @@ export async function runTurnService(
       firstTokenMs: null,
       // The real cause, for eval logs: the client only ever sees the public message.
       error: error instanceof Error ? error.message : String(error),
+      errorCode: shown?.code ?? null,
     };
   }
 
@@ -316,7 +372,7 @@ export async function runTurnService(
       passages: registry.all().map((passage) => passage.text),
     });
   }
-  emit({ type: 'done', messageId, usage, latencyMs });
+  emit({ type: 'done', messageId, usage, latencyMs, cached: false });
 
   // Eval turns would spend the quota of the models being measured on titles and summaries.
   if (!turn.isSystem) await sendTurnCompleted(turn, messageId);
@@ -338,15 +394,14 @@ export async function runTurnService(
     latencyMs,
     firstTokenMs: result.firstTokenMs,
     error: null,
+    errorCode: null,
   };
 }
-
-const TITLE_FROM_QUESTION_CHARS = 60;
 
 /**
  * Sends a cached answer the way a live one streams (text, citations, done) and saves it as
  * this conversation's answer. No model runs at all, so turn.completed isn't sent and the
- * conversation is named after the question instead of by the title model.
+ * conversation keeps the name the question gave it.
  */
 async function replayCachedAnswer(
   turn: PreparedTurn,
@@ -366,12 +421,7 @@ async function replayCachedAnswer(
     citations: cached.citations,
     modelName: cached.model,
   });
-  emit({ type: 'done', messageId, usage, latencyMs });
-  await replaceDefaultTitle(
-    turn.conversation.id,
-    DEFAULT_TITLE,
-    excerptOf(turn.question, TITLE_FROM_QUESTION_CHARS).text,
-  );
+  emit({ type: 'done', messageId, usage, latencyMs, cached: true });
   return {
     messageId,
     status: 'COMPLETE',
@@ -389,6 +439,7 @@ async function replayCachedAnswer(
     latencyMs,
     firstTokenMs: null,
     error: null,
+    errorCode: null,
   };
 }
 

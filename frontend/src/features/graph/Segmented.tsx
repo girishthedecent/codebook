@@ -36,7 +36,7 @@ export function Segmented<V extends string | number>({
     <div
       role="radiogroup"
       aria-label={label}
-      className="inline-flex h-10 items-stretch rounded-sm border border-rule-2 md:h-8"
+      className="inline-flex h-10 items-stretch rounded-sm border border-rule-2 sm:h-8"
     >
       {options.map((o, i) => (
         <button

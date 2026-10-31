@@ -1,9 +1,28 @@
+import { appConfig } from '../../config/app.config.js';
 import prismaClient from '../../config/db.config.js';
+import { Prisma } from '../../generated/prisma/client.js';
 import type { PageQuery } from '../../utils/helpers/pagination.helpers.js';
 
 // Time ranges come in as Dates; timestamps are stored as UTC without a zone, so the ISO
 // strings are read back as UTC.
 const utc = (date: Date) => date.toISOString();
+
+// Rows of system users (the eval runner, the demo's owner) are left out unless asked for.
+// `userId` is the row's user column. A row with no user (embeddings for an ingest) stays.
+function notSystem(includeSystem: boolean, userId: Prisma.Sql) {
+  if (includeSystem) return Prisma.empty;
+  return Prisma.sql`AND NOT EXISTS (
+    SELECT 1 FROM "user" su WHERE su.id = ${userId} AND su."isSystem"
+  )`;
+}
+
+const messageUser = Prisma.raw(
+  '(SELECT c."userId" FROM "Conversation" c WHERE c.id = "Message"."conversationId")',
+);
+const usageUser = Prisma.raw('"UsageEvent"."userId"');
+const sourceUser = Prisma.raw(
+  '(SELECT w."userId" FROM "Workspace" w WHERE w.id = "Source"."workspaceId")',
+);
 
 type AnswerRow = {
   answers: number;
@@ -21,7 +40,7 @@ type AnswerRow = {
 };
 
 /** Latency percentiles and quality counts over the assistant's answers in [from, to). */
-export async function answerStats(from: Date, to: Date) {
+export async function answerStats(from: Date, to: Date, includeSystem: boolean) {
   const [row] = await prismaClient.$queryRaw<AnswerRow[]>`
     SELECT count(*)::int AS answers,
       percentile_cont(0.5) WITHIN GROUP (ORDER BY "latencyMs") AS "latencyP50",
@@ -39,6 +58,7 @@ export async function answerStats(from: Date, to: Date) {
     WHERE role = 'ASSISTANT'
       AND "createdAt" >= ${utc(from)}::timestamptz AT TIME ZONE 'UTC'
       AND "createdAt" < ${utc(to)}::timestamptz AT TIME ZONE 'UTC'
+      ${notSystem(includeSystem, messageUser)}
   `;
   return row!;
 }
@@ -52,7 +72,7 @@ export type DayRow = {
 };
 
 /** Model and embedding usage per UTC day, days without any included. */
-export async function usagePerDay(from: Date, to: Date) {
+export async function usagePerDay(from: Date, to: Date, includeSystem: boolean) {
   return prismaClient.$queryRaw<DayRow[]>`
     WITH bounds AS (
       SELECT ${utc(from)}::timestamptz AT TIME ZONE 'UTC' AS "from",
@@ -69,6 +89,7 @@ export async function usagePerDay(from: Date, to: Date) {
         sum(u."costUsd") AS "costUsd"
       FROM "UsageEvent" u, bounds b
       WHERE u."createdAt" >= b."from" AND u."createdAt" < b."to"
+        ${notSystem(includeSystem, Prisma.raw('u."userId"'))}
       GROUP BY 1
     )
     SELECT to_char(d.day, 'YYYY-MM-DD') AS day,
@@ -91,7 +112,7 @@ export type ProviderRow = {
 };
 
 /** Calls per provider: how many failed, and how many model calls the fallback answered. */
-export async function providerStats(from: Date, to: Date) {
+export async function providerStats(from: Date, to: Date, includeSystem: boolean) {
   return prismaClient.$queryRaw<ProviderRow[]>`
     SELECT provider,
       count(*)::int AS calls,
@@ -101,6 +122,7 @@ export async function providerStats(from: Date, to: Date) {
     FROM "UsageEvent"
     WHERE "createdAt" >= ${utc(from)}::timestamptz AT TIME ZONE 'UTC'
       AND "createdAt" < ${utc(to)}::timestamptz AT TIME ZONE 'UTC'
+      ${notSystem(includeSystem, usageUser)}
     GROUP BY provider
     ORDER BY provider
   `;
@@ -118,7 +140,7 @@ type IngestionRow = {
  * creation to the last successful ingest: close for a first ingest, but it also counts
  * queue time, and a resynced source's runs aren't stored one by one.
  */
-export async function ingestionStats(from: Date, to: Date) {
+export async function ingestionStats(from: Date, to: Date, includeSystem: boolean) {
   const [row] = await prismaClient.$queryRaw<IngestionRow[]>`
     SELECT count(*) FILTER (WHERE status = 'READY')::int AS ready,
       count(*) FILTER (WHERE status = 'FAILED')::int AS failed,
@@ -128,8 +150,120 @@ export async function ingestionStats(from: Date, to: Date) {
     FROM "Source"
     WHERE "createdAt" >= ${utc(from)}::timestamptz AT TIME ZONE 'UTC'
       AND "createdAt" < ${utc(to)}::timestamptz AT TIME ZONE 'UTC'
+      ${notSystem(includeSystem, sourceUser)}
   `;
   return row!;
+}
+
+export type ModelUsageRow = {
+  type: string;
+  provider: string;
+  model: string;
+  key: string | null;
+  calls: number;
+  errors: number;
+  fallbacks: number;
+  tokensIn: number;
+  tokensOut: number;
+  costUsd: string;
+};
+
+/** Calls, failures, fallbacks, tokens and cost per model (and the key it was called with). */
+export async function usageByModel(from: Date, to: Date, includeSystem: boolean) {
+  return prismaClient.$queryRaw<ModelUsageRow[]>`
+    SELECT type::text AS type, provider, model, key,
+      count(*)::int AS calls,
+      count(*) FILTER (WHERE NOT ok)::int AS errors,
+      count(*) FILTER (WHERE "fallbackUsed")::int AS fallbacks,
+      coalesce(sum("tokensIn"), 0)::int AS "tokensIn",
+      coalesce(sum("tokensOut"), 0)::int AS "tokensOut",
+      trim_scale(coalesce(sum("costUsd"), 0))::text AS "costUsd"
+    FROM "UsageEvent"
+    WHERE "createdAt" >= ${utc(from)}::timestamptz AT TIME ZONE 'UTC'
+      AND "createdAt" < ${utc(to)}::timestamptz AT TIME ZONE 'UTC'
+      ${notSystem(includeSystem, usageUser)}
+    GROUP BY type, provider, model, key
+    ORDER BY calls DESC, provider, model, key
+  `;
+}
+
+export type TaskUsageRow = Omit<ModelUsageRow, 'type' | 'provider' | 'model' | 'key'> & {
+  task: string;
+};
+
+/** The same per task (agent, title, contextualize...). */
+export async function usageByTask(from: Date, to: Date, includeSystem: boolean) {
+  return prismaClient.$queryRaw<TaskUsageRow[]>`
+    SELECT task,
+      count(*)::int AS calls,
+      count(*) FILTER (WHERE NOT ok)::int AS errors,
+      count(*) FILTER (WHERE "fallbackUsed")::int AS fallbacks,
+      coalesce(sum("tokensIn"), 0)::int AS "tokensIn",
+      coalesce(sum("tokensOut"), 0)::int AS "tokensOut",
+      trim_scale(coalesce(sum("costUsd"), 0))::text AS "costUsd"
+    FROM "UsageEvent"
+    WHERE "createdAt" >= ${utc(from)}::timestamptz AT TIME ZONE 'UTC'
+      AND "createdAt" < ${utc(to)}::timestamptz AT TIME ZONE 'UTC'
+      ${notSystem(includeSystem, usageUser)}
+    GROUP BY task
+    ORDER BY calls DESC, task
+  `;
+}
+
+/** Sources whose last ingest failed, the latest first. */
+export async function findIngestionFailures(limit: number, includeSystem: boolean) {
+  return prismaClient.source.findMany({
+    where: {
+      status: 'FAILED',
+      ...(includeSystem ? {} : { workspace: { user: { isSystem: false } } }),
+    },
+    orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
+    take: limit,
+    select: {
+      id: true,
+      workspaceId: true,
+      title: true,
+      type: true,
+      stage: true,
+      error: true,
+      updatedAt: true,
+      workspace: { select: { userId: true } },
+    },
+  });
+}
+
+export type RateLimitRow = {
+  name: string;
+  requests: number;
+  blocked: number;
+  clientsBlocked: number;
+};
+
+/**
+ * What each limit counted over the range: all requests, the ones past its points (turned
+ * away) and the clients that went past it. Counters are pruned a couple of days after their
+ * window ends, so older ranges come back empty.
+ */
+export async function rateLimitUse(from: Date, to: Date) {
+  const limits = Object.entries(appConfig.limits.windows);
+  const names = limits.map(([name]) => name);
+  const points = limits.map(([, window]) => window.points);
+  return prismaClient.$queryRaw<RateLimitRow[]>`
+    WITH limits(name, points) AS (
+      SELECT * FROM unnest(${names}::text[], ${points}::int[])
+    )
+    SELECT l.name,
+      coalesce(sum(h.count), 0)::int AS requests,
+      coalesce(sum(h.count - l.points) FILTER (WHERE h.count > l.points), 0)::int AS blocked,
+      count(DISTINCT h.key) FILTER (WHERE h.count > l.points)::int AS "clientsBlocked"
+    FROM limits l
+    LEFT JOIN "RateLimitHit" h
+      ON split_part(h.key, ':', 1) = l.name
+      AND h."windowStart" >= ${utc(from)}::timestamptz AT TIME ZONE 'UTC'
+      AND h."windowStart" < ${utc(to)}::timestamptz AT TIME ZONE 'UTC'
+    GROUP BY l.name
+    ORDER BY l.name
+  `;
 }
 
 const FAILED_FIELDS = {

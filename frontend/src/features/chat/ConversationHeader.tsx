@@ -64,7 +64,7 @@ export function ConversationHeader({
 
   return (
     <header className="sticky top-0 z-10 border-b border-rule bg-paper">
-      <div className="mx-auto flex h-12 w-full max-w-[720px] items-center gap-2 px-4 md:px-6">
+      <div className="mx-auto flex h-12 w-full max-w-[720px] items-center gap-2 px-4 sm:px-6">
         {phone && (
           <BackLink to="/w/$workspaceId" params={{ workspaceId }} className="shrink-0">
             <span className="sr-only">{chat.back}</span>
@@ -90,7 +90,7 @@ export function ConversationHeader({
               ref={menuButton}
               type="button"
               aria-label={chat.options}
-              className="flex size-8 shrink-0 items-center justify-center rounded-sm text-ink-3 hover:bg-paper-2 hover:text-ink max-[719px]:size-11"
+              className="flex size-8 shrink-0 items-center justify-center rounded-sm text-ink-3 hover:bg-paper-2 hover:text-ink max-sm:size-11"
             >
               <DotsThree size={18} weight="bold" />
             </button>
@@ -114,7 +114,7 @@ export function ConversationHeader({
         failed={remove.isError}
       />
       {rename.isError && (
-        <p className="mx-auto max-w-[720px] px-4 pb-2 text-xs text-error md:px-6" role="alert">
+        <p className="mx-auto max-w-[720px] px-4 pb-2 text-xs text-error sm:px-6" role="alert">
           {chat.renameFailed}
         </p>
       )}

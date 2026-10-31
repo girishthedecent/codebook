@@ -8,13 +8,19 @@ import {
   listDemoSources,
   markDemo,
   upsertDemoOwner,
+  upsertDemoVisitor,
 } from './demo.repository.js';
+import { starterQuestions } from './starterQuestions.js';
 
 /** What a visitor sees before signing in as a guest. */
 export async function getDemoService() {
   const workspace = await findDemoWorkspace();
   if (!workspace) throw new NotFoundError('The demo workspace has not been set up');
-  return { workspace, sources: await listDemoSources(workspace.id) };
+  return {
+    workspace,
+    sources: await listDemoSources(workspace.id),
+    starterQuestions: starterQuestions(),
+  };
 }
 
 // ---- seeding (pnpm db:seed -- --demo) ---------------------------------------------------
@@ -30,6 +36,15 @@ export async function ensureDemoOwner() {
     throw new Error(`${appConfig.demo.ownerEmail} has a password; delete that user first`);
   }
   return owner;
+}
+
+/** The system user whose questions warm the answer cache; same rule: nobody signs in as it. */
+export async function ensureDemoVisitor() {
+  const visitor = await upsertDemoVisitor();
+  if (await hasPasswordLogin(visitor.id)) {
+    throw new Error(`${appConfig.demo.visitorEmail} has a password; delete that user first`);
+  }
+  return visitor;
 }
 
 /** The owner's demo workspace, created on the first run and found again on later ones. */

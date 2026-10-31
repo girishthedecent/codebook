@@ -39,14 +39,14 @@ export function Switch({
         disabled={disabled}
         aria-describedby={descId}
         className={cn(
-          'relative h-5 w-9 shrink-0 rounded-full border border-rule-2 bg-paper-3 transition-colors duration-150 ease-out',
+          'relative h-6 w-11 shrink-0 rounded-full border border-edge bg-paper-3 transition-colors duration-150 ease-out',
           'data-[state=checked]:border-accent data-[state=checked]:bg-accent disabled:opacity-50',
         )}
       >
         <RadixSwitch.Thumb
           className={cn(
-            'block size-3.5 translate-x-0.5 rounded-full bg-paper shadow-[0_0_0_1px_var(--rule)] transition-transform duration-150 ease-out',
-            'data-[state=checked]:translate-x-[18px]',
+            'block size-[18px] translate-x-0.5 rounded-full bg-ink-3 transition-[transform,background-color] duration-150 ease-out',
+            'data-[state=checked]:translate-x-[22px] data-[state=checked]:bg-paper',
           )}
         />
       </RadixSwitch.Root>

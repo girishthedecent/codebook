@@ -119,7 +119,7 @@ function MemoryRow({ memory }: { memory: Memory }) {
   if (editing) return <EditRow memory={memory} onDone={finishEdit} />;
 
   return (
-    <li className="flex gap-x-4 gap-y-1 border-b border-rule py-3 last:border-b-0 max-[719px]:flex-col min-[720px]:items-start">
+    <li className="flex gap-x-4 gap-y-1 border-b border-rule py-3 last:border-b-0 max-sm:flex-col sm:items-start">
       <div className={cn('min-w-0 flex-1', deleted && 'text-ink-3')}>
         <p className={cn('font-serif text-base', deleted && 'line-through')}>{memory.content}</p>
         <p className="mt-1 font-mono text-xs text-ink-3">
@@ -127,7 +127,7 @@ function MemoryRow({ memory }: { memory: Memory }) {
           {!deleted && memory.lastUsedAt && ` · ${s.used(formatWhen(memory.lastUsedAt))}`}
         </p>
       </div>
-      <div className="flex shrink-0 gap-1 max-[719px]:-ml-2.5">
+      <div className="flex shrink-0 gap-1 max-sm:-ml-2.5">
         {deleted ? (
           <Button
             variant="ghost"
@@ -221,7 +221,7 @@ function AddMemory() {
     <section>
       <SectionHeading>{s.addTitle}</SectionHeading>
       <form
-        className="mt-3 grid gap-3 min-[720px]:grid-cols-[1fr_10rem] min-[720px]:items-end"
+        className="mt-3 grid gap-3 sm:grid-cols-[1fr_10rem] sm:items-end"
         onSubmit={(e) => {
           e.preventDefault();
           if (!trimmed) return;

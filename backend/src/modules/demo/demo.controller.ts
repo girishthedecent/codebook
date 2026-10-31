@@ -5,11 +5,12 @@ import { toWorkspaceResponse } from '../workspaces/workspace.dto.js';
 import { getDemoService } from './demo.service.js';
 
 export async function getDemoHandler(_req: Request, res: Response) {
-  const { workspace, sources } = await getDemoService();
+  const { workspace, sources, starterQuestions } = await getDemoService();
   res.json(
     successResponse('Demo workspace', {
       workspace: toWorkspaceResponse(workspace),
       sources: sources.map(toSourceResponse),
+      starterQuestions,
     }),
   );
 }

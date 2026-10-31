@@ -16,6 +16,22 @@ async function remaining(name: 'messagesHourly' | 'messagesDaily', limitKey: str
   return { limit: points, remaining: Math.max(0, points - used) };
 }
 
+/**
+ * A guest's question allowance for the demo: what the IP has used of today's allowance, and
+ * when the window ends. `used` stops at the limit, though the counter goes on counting the
+ * requests it turned away.
+ */
+export async function guestWindow(limitKey: string, now = Date.now()) {
+  const { points, windowSec } = appConfig.limits.windows.guestMessages;
+  const start = windowStart(windowSec, now);
+  const used = await rateLimitCount(`guestMessages:${limitKey}`, start);
+  return {
+    limit: points,
+    used: Math.min(used, points),
+    resetsAt: new Date(start.getTime() + windowSec * 1000),
+  };
+}
+
 /** What the user has used today and over the last 7 and 30 days, and what is left. */
 export async function myUsageService(userId: string, limitKey: string, now = Date.now()) {
   const today = new Date(Math.floor(now / DAY_MS) * DAY_MS);

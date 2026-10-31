@@ -53,7 +53,7 @@ export async function listConversationsHandler(_req: Request, res: Response) {
 export async function getConversationHandler(_req: Request, res: Response) {
   const user = getAuthUser(res);
   const { conversationId } = res.locals.params as ConversationParams;
-  const { conversation, messages } = await getConversationService(
+  const { conversation, messages, ownsWorkspace } = await getConversationService(
     user.id,
     conversationId,
     res.locals.query as PaginationQuery,
@@ -61,7 +61,10 @@ export async function getConversationHandler(_req: Request, res: Response) {
   res.json(
     successResponse('Conversation', {
       ...toConversationResponse(conversation),
-      messages: { items: messages.items.map(toMessageResponse), nextCursor: messages.nextCursor },
+      messages: {
+        items: messages.items.map((message) => toMessageResponse(message, { ownsWorkspace })),
+        nextCursor: messages.nextCursor,
+      },
     }),
   );
 }
@@ -87,6 +90,10 @@ export async function deleteConversationHandler(_req: Request, res: Response) {
 export async function feedbackHandler(req: Request, res: Response) {
   const user = getAuthUser(res);
   const { messageId } = res.locals.params as MessageParams;
-  const message = await feedbackService(user.id, messageId, req.body as FeedbackInput);
-  res.json(successResponse('Feedback saved', toMessageResponse(message)));
+  const { message, ownsWorkspace } = await feedbackService(
+    user.id,
+    messageId,
+    req.body as FeedbackInput,
+  );
+  res.json(successResponse('Feedback saved', toMessageResponse(message, { ownsWorkspace })));
 }

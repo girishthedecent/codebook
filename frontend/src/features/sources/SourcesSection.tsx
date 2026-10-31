@@ -31,7 +31,7 @@ export function SourcesSection({
 
   return (
     <section aria-labelledby="sidebar-sources" className="px-2">
-      <div className="flex h-8 items-center justify-between px-2 max-[719px]:h-10">
+      <div className="flex h-8 items-center justify-between px-2 max-sm:h-10">
         <h2 id="sidebar-sources" className="text-xs font-medium text-ink-3">
           {strings.title}
         </h2>
@@ -41,7 +41,7 @@ export function SourcesSection({
             onClick={() => setAdding(true)}
             aria-label={strings.add}
             title={strings.add}
-            className="flex size-6 items-center justify-center rounded-xs text-sm max-[719px]:size-10 max-[719px]:text-base text-ink-3 hover:bg-paper-3 hover:text-ink"
+            className="flex size-6 items-center justify-center rounded-xs text-sm max-sm:size-10 max-sm:text-base text-ink-3 hover:bg-paper-3 hover:text-ink"
           >
             +
           </button>
@@ -53,7 +53,7 @@ export function SourcesSection({
             <Link
               to="/w/$workspaceId/sources/$sourceId"
               params={{ workspaceId, sourceId: source.id }}
-              className="flex items-baseline gap-2 rounded-sm px-2 py-1.5 text-sm max-[719px]:min-h-11 max-[719px]:items-center text-ink-2 hover:bg-paper-3 hover:text-ink [&.active]:text-ink [&.active]:font-medium"
+              className="flex items-baseline gap-2 rounded-sm px-2 py-1.5 text-sm max-sm:min-h-11 max-sm:items-center text-ink-2 hover:bg-paper-3 hover:text-ink [&.active]:text-ink [&.active]:font-medium"
             >
               <span className="w-8 shrink-0 font-mono text-[11px] text-ink-3">
                 {typeMark[source.type]}
@@ -79,7 +79,7 @@ export function SourcesSection({
           <button
             type="button"
             onClick={() => void query.refetch()}
-            className="text-accent underline underline-offset-2 max-[719px]:py-2.5"
+            className="text-accent underline underline-offset-2 max-sm:py-2.5"
           >
             {strings.retry}
           </button>
@@ -89,7 +89,7 @@ export function SourcesSection({
         <Link
           to="/w/$workspaceId/sources"
           params={{ workspaceId }}
-          className="block px-2 py-1.5 text-xs text-ink-3 hover:text-accent max-[719px]:py-3"
+          className="block px-2 py-1.5 text-xs text-ink-3 hover:text-accent max-sm:py-3"
         >
           {sources.length === 0 && canManage ? strings.add : strings.all}
         </Link>

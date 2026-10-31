@@ -5,6 +5,7 @@ import { inngest } from '../src/config/inngest.config.js';
 import { resetCircuitBreaker } from '../src/llm/circuitBreaker.js';
 import { textRoutes } from '../src/llm/models.js';
 import { agentSystemPrompt } from '../src/llm/prompts/agentSystem.js';
+import { DEFAULT_TITLE } from '../src/modules/chat/conversation.service.js';
 import { countTokens } from '../src/utils/tokens.js';
 import {
   prepareTurnService,
@@ -67,10 +68,10 @@ function parseSse(body: string): SseEvent[] {
     });
 }
 
-async function ask(content: string, user = alice, id = conversationId) {
+async function ask(content: string, user = alice, id = conversationId, extra = {}) {
   const res = await user.agent
     .post(`/api/v1/conversations/${id}/messages`)
-    .send({ content })
+    .send({ content, ...extra })
     .buffer(true);
   return { res, events: res.status === 200 ? parseSse(res.text) : [] };
 }
@@ -96,11 +97,15 @@ describe('chat turns', () => {
     expect(res.status).toBe(200);
     expect(res.headers['content-type']).toContain('text/event-stream');
     const kinds = events.map((e) => e.event);
-    expect(kinds.slice(0, 2)).toEqual(['step', 'step']);
+    expect(kinds.slice(0, 3)).toEqual(['title', 'step', 'step']);
     expect(kinds).toContain('token');
     expect(kinds.slice(-2)).toEqual(['citations', 'done']);
-    expect(events[0]!.data).toMatchObject({ index: 1, tool: 'search_sources', status: 'start' });
-    expect(events[1]!.data).toMatchObject({ index: 1, tool: 'search_sources', status: 'end' });
+    expect(events[0]!.data).toEqual({ title: 'What is a salt?' });
+    const [start, end] = [events[1]!.data, events[2]!.data];
+    expect(start).toMatchObject({ index: 1, tool: 'search_sources', status: 'start' });
+    expect(end).toMatchObject({ index: 1, tool: 'search_sources', status: 'end', ok: true });
+    expect(start).not.toHaveProperty('ok');
+    expect(end.id).toBe(start.id);
 
     const text = events
       .filter((e) => e.event === 'token')
@@ -126,10 +131,11 @@ describe('chat turns', () => {
       tokensOut: 40,
     });
     expect(saved!.toolCalls).toEqual([
-      expect.objectContaining({ step: 1, tool: 'search_sources', ok: true }),
+      expect.objectContaining({ id: start.id, step: 1, tool: 'search_sources', ok: true }),
     ]);
     const done = events.at(-1)!.data;
     expect(done.messageId).toBe(saved!.id);
+    expect(done.cached).toBe(false);
     expect(send).toHaveBeenCalledWith(
       expect.objectContaining({
         name: 'conversation/turn.completed',
@@ -220,7 +226,7 @@ describe('chat turns', () => {
       controller.signal,
     );
 
-    expect(events.map((e) => e.type)).toEqual(['token']);
+    expect(events.map((e) => e.type)).toEqual(['title', 'token']);
     const [saved] = await answers();
     expect(saved).toMatchObject({ status: 'ABORTED', content: 'Salts ' });
   });
@@ -433,5 +439,212 @@ describe('turn options', () => {
       { role: 'USER', memoryOff: true },
       { role: 'ASSISTANT', memoryOff: true },
     ]);
+  });
+});
+
+describe('step events', () => {
+  it('gives each call an id of its own, shared by its start and end', async () => {
+    play([
+      { toolCalls: [search, { name: 'search_sources', input: { query: 'a pepper' } }] },
+      { text: 'Done [1].' },
+    ]);
+
+    const { events } = await ask('What is a salt?');
+
+    const steps = events.filter((e) => e.event === 'step').map((e) => e.data);
+    expect(steps.map((step) => step.status)).toEqual(['start', 'end', 'start', 'end']);
+    expect(steps.map((step) => step.index)).toEqual([1, 1, 1, 1]);
+    expect(steps[0]!.id).toBe(steps[1]!.id);
+    expect(steps[2]!.id).toBe(steps[3]!.id);
+    expect(steps[0]!.id).not.toBe(steps[2]!.id);
+    const [saved] = await answers();
+    expect((saved!.toolCalls as { id: string }[]).map((call) => call.id)).toEqual([
+      steps[0]!.id,
+      steps[2]!.id,
+    ]);
+  });
+
+  it('says on the end event when the call failed', async () => {
+    // search_sources needs a query: the call is refused, and the model is told so.
+    play([{ toolCalls: [{ name: 'search_sources', input: {} }] }, { text: 'Sorry.' }]);
+
+    const { events } = await ask('What is a salt?');
+
+    const end = events.find((e) => e.event === 'step' && e.data.status === 'end')!;
+    expect(end.data).toMatchObject({
+      tool: 'search_sources',
+      ok: false,
+      summary: expect.stringContaining('Invalid arguments'),
+    });
+    const [saved] = await answers();
+    expect(saved!.toolCalls).toEqual([expect.objectContaining({ ok: false })]);
+  });
+});
+
+describe('conversation titles', () => {
+  const titleOf = async (id = conversationId) =>
+    (await prismaClient.conversation.findUniqueOrThrow({ where: { id } })).title;
+
+  it('names a new conversation after the question as the turn starts, even if the answer fails', async () => {
+    play([apiError(400)], [apiError(400)]);
+
+    const { events } = await ask('What is a salt?');
+
+    expect(events[0]).toEqual({ event: 'title', data: { title: 'What is a salt?' } });
+    expect(events.at(-1)!.event).toBe('error');
+    expect(await titleOf()).toBe('What is a salt?');
+  });
+
+  it('cuts a long question at a word', async () => {
+    play([{ text: 'Salts are random data.' }]);
+
+    await ask('What is a salt in a password hash? Please explain it in detail for a beginner');
+
+    expect(await titleOf()).toBe('What is a salt in a password hash? Please explain it in…');
+  });
+
+  it('leaves a title that is already set, and names a conversation only once', async () => {
+    play([{ text: 'Salts are random data.' }]);
+    const named = await alice.agent
+      .post(`/api/v1/workspaces/${workspaceId}/conversations`)
+      .send({ title: 'My salt notes' });
+    const namedId = (named.body as { data: { id: string } }).data.id;
+
+    const own = await ask('What is a salt?', alice, namedId);
+    expect(own.events.map((e) => e.event)).not.toContain('title');
+    expect(await titleOf(namedId)).toBe('My salt notes');
+
+    play([{ text: 'Salts are random data.' }]);
+    await ask('What is a salt?');
+    play([{ text: 'Peppers are secret.' }]);
+    const again = await ask('And a pepper?');
+    expect(again.events.map((e) => e.event)).not.toContain('title');
+    expect(await titleOf()).toBe('What is a salt?');
+  });
+
+  it('does not name the conversations of the eval user', async () => {
+    const turn = await prepareTurnService(
+      { id: alice.userId, isSystem: true },
+      conversationId,
+      'What is a salt?',
+    );
+
+    expect(turn.titleSet).toBeNull();
+    expect(await titleOf()).toBe(DEFAULT_TITLE);
+  });
+});
+
+describe('retrying a question', () => {
+  const messages = () =>
+    prismaClient.message.findMany({
+      where: { conversationId },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+    });
+  const brief = async () =>
+    (await messages()).map(({ role, status, content }) => [role, status, content]);
+
+  it('replaces the failed attempt instead of stacking another pair on it', async () => {
+    play([apiError(400)], [apiError(400)]);
+    await ask('What is a salt?');
+    const failed = await messages();
+    expect(failed.map((m) => m.status)).toEqual(['COMPLETE', 'ERROR']);
+
+    play([{ toolCalls: [search] }, { text: 'A salt is random data [1].' }]);
+    const { events } = await ask('What is a salt?', alice, conversationId, { retry: true });
+
+    expect(events.at(-1)!.event).toBe('done');
+    expect(await brief()).toEqual([
+      ['USER', 'COMPLETE', 'What is a salt?'],
+      ['ASSISTANT', 'COMPLETE', 'A salt is random data [1].'],
+    ]);
+    const ids = (await messages()).map((m) => m.id);
+    expect(ids.some((id) => failed.some((old) => old.id === id))).toBe(false);
+  });
+
+  it('replaces a cut-off answer too, and several failures in a row leave one attempt', async () => {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      play([apiError(400)], [apiError(400)]);
+      await ask('What is a salt?', alice, conversationId, { retry: attempt > 0 });
+    }
+    expect(await brief()).toEqual([
+      ['USER', 'COMPLETE', 'What is a salt?'],
+      ['ASSISTANT', 'ERROR', expect.any(String)],
+    ]);
+
+    useModels({ [PRIMARY]: stallingStreamModel('Salts ') });
+    const turn = await prepareTurnService({ id: alice.userId }, conversationId, 'What is a salt?', {
+      retry: true,
+    });
+    const controller = new AbortController();
+    await runTurnService(
+      turn,
+      (event) => {
+        if (event.type === 'token') controller.abort();
+      },
+      controller.signal,
+    );
+    expect(await brief()).toEqual([
+      ['USER', 'COMPLETE', 'What is a salt?'],
+      ['ASSISTANT', 'ABORTED', 'Salts '],
+    ]);
+
+    play([{ text: 'Salts are random data.' }]);
+    await ask('What is a salt?', alice, conversationId, { retry: true });
+    expect(await brief()).toEqual([
+      ['USER', 'COMPLETE', 'What is a salt?'],
+      ['ASSISTANT', 'COMPLETE', 'Salts are random data.'],
+    ]);
+  });
+
+  it('keeps the failed attempt without the flag', async () => {
+    play([apiError(400)], [apiError(400)]);
+    await ask('What is a salt?');
+    play([{ text: 'Salts are random data.' }]);
+    await ask('What is a salt?');
+
+    expect((await messages()).map((m) => m.status)).toEqual([
+      'COMPLETE',
+      'ERROR',
+      'COMPLETE',
+      'COMPLETE',
+    ]);
+  });
+
+  it('is an ordinary question when the last one is a different one or was answered', async () => {
+    play([apiError(400)], [apiError(400)]);
+    await ask('What is a salt?');
+    play([{ text: 'Peppers are secret.' }]);
+    await ask('And a pepper?', alice, conversationId, { retry: true });
+    expect((await messages()).map((m) => m.content)).toEqual([
+      'What is a salt?',
+      expect.any(String),
+      'And a pepper?',
+      'Peppers are secret.',
+    ]);
+
+    play([{ text: 'Peppers are secret.' }]);
+    await ask('And a pepper?', alice, conversationId, { retry: true });
+    expect(await messages()).toHaveLength(6);
+  });
+
+  it('shows the model the earlier turns and the question once', async () => {
+    play([{ text: 'Salts are random data.' }]);
+    await ask('What is a salt?');
+    play([apiError(400)], [apiError(400)]);
+    await ask('And a pepper?');
+
+    const models = play([{ text: 'Peppers are secret.' }]);
+    await ask('And a pepper?', alice, conversationId, { retry: true });
+
+    const prompt = JSON.stringify(models[PRIMARY]!.doStreamCalls[0]!.prompt);
+    expect(prompt).toContain('What is a salt?');
+    expect(prompt).toContain('Salts are random data.');
+    expect(prompt.split('And a pepper?')).toHaveLength(2);
+  });
+
+  it("does not touch someone else's conversation", async () => {
+    const bob = await signedInUser('bob@example.com');
+    const res = await ask('What is a salt?', bob, conversationId, { retry: true });
+    expect(res.res.status).toBe(404);
   });
 });

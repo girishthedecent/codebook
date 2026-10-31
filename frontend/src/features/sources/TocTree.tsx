@@ -36,7 +36,7 @@ function TocItem({ node, sourceId, depth }: { node: TocNode; sourceId: string; d
   return (
     <li role="treeitem" aria-expanded={hasChildren ? open : undefined} aria-selected={false}>
       <div
-        className="flex min-h-9 items-baseline gap-1 border-b border-rule max-[719px]:min-h-11"
+        className="flex min-h-9 items-baseline gap-1 border-b border-rule max-sm:min-h-11"
         // Capped so a deep outline still leaves room for the title at 320px.
         style={{ paddingLeft: Math.min(depth, 4) * 14 }}
       >
@@ -45,7 +45,7 @@ function TocItem({ node, sourceId, depth }: { node: TocNode; sourceId: string; d
             type="button"
             onClick={() => setOpen(!open)}
             aria-label={open ? `Collapse ${node.title}` : `Expand ${node.title}`}
-            className="flex size-6 shrink-0 translate-y-1 items-center max-[719px]:size-10 max-[719px]:translate-y-0 max-[719px]:self-center justify-center rounded-xs text-ink-3 hover:bg-paper-2 hover:text-ink"
+            className="flex size-6 shrink-0 translate-y-1 items-center max-sm:size-10 max-sm:translate-y-0 max-sm:self-center justify-center rounded-xs text-ink-3 hover:bg-paper-2 hover:text-ink"
           >
             <CaretRight
               size={12}
@@ -53,14 +53,14 @@ function TocItem({ node, sourceId, depth }: { node: TocNode; sourceId: string; d
             />
           </button>
         ) : (
-          <span className="w-6 shrink-0 max-[719px]:w-10" />
+          <span className="w-6 shrink-0 max-sm:w-10" />
         )}
         <button
           type="button"
           disabled={!page}
           onClick={() => page && openInViewer({ kind: 'page', sourceId, page })}
           className={cn(
-            'flex min-w-0 flex-1 items-baseline justify-between gap-3 py-2 text-left max-[719px]:min-h-11',
+            'flex min-w-0 flex-1 items-baseline justify-between gap-3 py-2 text-left max-sm:min-h-11',
             depth === 0 ? 'text-sm font-medium text-ink' : 'text-sm text-ink-2',
             !!page && 'hover:text-accent',
           )}

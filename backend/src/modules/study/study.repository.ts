@@ -81,7 +81,7 @@ export async function requeueArtifact(artifactId: string, staleBefore: Date) {
       id: artifactId,
       OR: [{ status: { notIn: ['PENDING', 'RUNNING'] } }, { updatedAt: { lt: staleBefore } }],
     },
-    data: { status: 'PENDING', error: null },
+    data: { status: 'PENDING', error: null, errorCode: null },
   });
   return artifact ?? null;
 }

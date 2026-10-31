@@ -6,6 +6,10 @@ export type ErrorCode =
   | 'CONFLICT'
   | 'PAYLOAD_TOO_LARGE'
   | 'RATE_LIMITED'
+  | 'GUEST_LIMIT'
+  | 'HOURLY_LIMIT'
+  | 'DAILY_LIMIT'
+  | 'TOKEN_BUDGET'
   | 'UPSTREAM_ERROR'
   | 'NOT_IMPLEMENTED'
   | 'SERVICE_UNAVAILABLE'
@@ -61,9 +65,21 @@ export class PayloadTooLargeError extends AppError {
   }
 }
 
+// The limits a client tells apart: a visitor, an hour, a day, the token budget. Any other is
+// plain RATE_LIMITED.
+export type RateLimitCode = Extract<
+  ErrorCode,
+  'RATE_LIMITED' | 'GUEST_LIMIT' | 'HOURLY_LIMIT' | 'DAILY_LIMIT' | 'TOKEN_BUDGET'
+>;
+
 export class TooManyRequestsError extends AppError {
-  constructor(retryAfterSeconds?: number) {
-    super('Too many requests', 429, 'RATE_LIMITED', { retryAfterSeconds });
+  constructor(
+    // Seconds until the limit's window ends; sent as the Retry-After header and in the body.
+    readonly retryAfterSec?: number,
+    code: RateLimitCode = 'RATE_LIMITED',
+    message = 'Too many requests',
+  ) {
+    super(message, 429, code);
   }
 }
 

@@ -50,8 +50,10 @@ export async function listWorkspacesService(userId: string, page: PaginationQuer
   return listWorkspaces(userId, page);
 }
 
+// The demo workspace can be read by anyone signed in; the counts are the reader's own
+// conversations in it and the demo's sources.
 export async function getWorkspaceService(userId: string, workspaceId: string) {
-  const workspace = await assertWorkspaceAccess(userId, workspaceId);
+  const workspace = await assertWorkspaceAccess(userId, workspaceId, { allowDemoRead: true });
   const [sources, conversations] = await Promise.all([
     countSourcesService(workspaceId),
     countConversationsService(userId, workspaceId),

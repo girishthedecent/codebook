@@ -118,6 +118,9 @@ export const appConfig = {
     maxResults: 100,
     maxWalkRows: 20_000,
     maxCandidates: 20,
+    // What the overview lists: the most connected symbols, and the most called packages.
+    overviewSymbols: 6,
+    overviewPackages: 8,
   },
   retrieval: {
     // Taken from each list (per query), fused, and the best rerankK go to the reranker.
@@ -225,6 +228,9 @@ export const appConfig = {
   demo: {
     // The demo workspace's owner, made by `pnpm db:seed -- --demo` (no password, never signs in).
     ownerEmail: 'demo@codebook.local',
+    // Asks the starter questions at seed time, as a visitor would (the owner's turns read whole
+    // pages and quote freely, so their answers aren't shared).
+    visitorEmail: 'demo-visitor@codebook.local',
     workspaceName: 'CodeBook demo',
     // Visitors who don't own the demo read short excerpts, never whole pages of a book (unless
     // DEMO_FULL_BOOKS is on).

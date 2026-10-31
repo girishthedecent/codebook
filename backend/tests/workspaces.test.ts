@@ -313,20 +313,28 @@ describe('isolation between users', () => {
     expect(res.body.data.items.map((w: { name: string }) => w.name)).toEqual(["Bob's"]);
   });
 
-  it("keeps another user's demo workspace out of the workspace routes", async () => {
+  it('lets another user read a demo workspace, but not change it', async () => {
     await prismaClient.workspace.update({
       where: { id: aliceWorkspaceId },
       data: { isDemo: true },
     });
     const url = `/api/v1/workspaces/${aliceWorkspaceId}`;
 
+    const read = await bob.agent.get(url);
+    expect(read.status).toBe(200);
+    expect(read.body.data).toMatchObject({ id: aliceWorkspaceId, isDemo: true });
+    // The counts are the demo's sources and the reader's own conversations.
+    expect(read.body.data.counts.conversations).toBe(0);
     for (const res of [
-      await bob.agent.get(url),
       await bob.agent.patch(url).send({ name: 'Mine now' }),
       await bob.agent.delete(url),
     ]) {
       expect(res.status).toBe(404);
     }
+  });
+
+  it('keeps a workspace that is not the demo to its owner', async () => {
+    expect((await bob.agent.get(`/api/v1/workspaces/${aliceWorkspaceId}`)).status).toBe(404);
   });
 
   it('lets anyone read the demo workspace only when the caller allows it', async () => {

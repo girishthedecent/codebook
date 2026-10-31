@@ -45,7 +45,7 @@ if (cssTag) {
 // stylesheet has been parsed, a round trip later; preloading starts them with the stylesheet.
 if (cssTag) {
   const css = await readFile(dist + cssTag[1]!.slice(1), 'utf8');
-  const wanted = [/source-serif-4-latin-wght-normal/, /ibm-plex-sans-latin-(400|500)-normal/];
+  const wanted = [/source-serif-4-latin-opsz-normal/, /ibm-plex-sans-latin-(400|500)-normal/];
   const fonts = [...css.matchAll(/url\((\/assets\/[^)]+\.woff2)\)/g)]
     .map((m) => m[1]!)
     .filter((url) => wanted.some((re) => re.test(url)));

@@ -19,7 +19,7 @@ import type { SseStream } from '../../utils/sse.js';
 import { deleteObject, getObjectRange, putObject } from '../../utils/storage.js';
 import { assertWorkspaceAccess } from '../workspaces/workspace.service.js';
 import { getRepo, refExists } from '../../utils/github.js';
-import { isValidGitRef, parseGithubUrl } from './githubUrl.js';
+import { isValidGitRef, parseGithubUrl, repoTitle } from './githubUrl.js';
 import {
   type CreateSourceInput,
   type PdfOrigin,
@@ -88,14 +88,21 @@ export async function listSourcesService(
 
 // ---- adding -----------------------------------------------------------------------------
 
+// `title` is for callers that build a source from a spec (the eval corpus, the demo seed): the
+// title is part of every embedding input, so a copy that must match an indexed one keeps its
+// title instead of taking the service's.
 export async function createSourceService(
   userId: string,
   workspaceId: string,
   input: CreateSourceInput,
+  options: { title?: string } = {},
 ) {
   await assertWorkspaceAccess(userId, workspaceId);
   const data = input.type === 'GITHUB_REPO' ? await repoSource(input) : await websiteSource(input);
-  const source = await insertSource(workspaceId, data);
+  const source = await insertSource(workspaceId, {
+    ...data,
+    title: options.title ?? data.title,
+  });
   return queueIngest(source, 'created');
 }
 
@@ -176,7 +183,7 @@ async function repoSource(input: Extract<CreateSourceInput, { type: 'GITHUB_REPO
   const origin: RepoOrigin = { owner, repo: name, ref, defaultBranch: repo.defaultBranch };
   return {
     type: 'GITHUB_REPO',
-    title: ref === repo.defaultBranch ? repo.fullName : `${repo.fullName}@${ref}`,
+    title: repoTitle(repo.fullName, ref, repo.defaultBranch),
     origin,
     // Owner and repo names are case-insensitive on GitHub; refs are not.
     dedupeKey: `github:${repo.fullName.toLowerCase()}@${ref}`,

@@ -41,10 +41,10 @@ export function CommandMenu() {
     <>
       <RadixDialog.Root open={open} onOpenChange={setOpen}>
         <RadixDialog.Portal>
-          <RadixDialog.Overlay className="fixed inset-0 z-40 bg-black/40" />
+          <RadixDialog.Overlay className="fixed inset-0 z-40 bg-overlay" />
           <RadixDialog.Content
             aria-describedby={undefined}
-            className="fixed inset-x-4 top-[14vh] max-[719px]:top-[8vh] z-50 mx-auto max-w-[560px] overflow-hidden rounded-md border border-rule bg-paper shadow-float outline-none"
+            className="fixed inset-x-4 top-[14vh] max-sm:top-[8vh] z-50 mx-auto max-w-[560px] overflow-hidden rounded-md border border-rule bg-paper shadow-float outline-none"
           >
             <VisuallyHidden>
               <RadixDialog.Title>{s.label}</RadixDialog.Title>
@@ -207,7 +207,7 @@ function Item({
     <Command.Item
       value={value}
       onSelect={onSelect}
-      className="flex min-h-10 cursor-pointer items-center justify-between gap-3 rounded-sm px-3 text-sm text-ink data-[selected=true]:bg-paper-2 max-[719px]:min-h-11"
+      className="flex min-h-10 cursor-pointer items-center justify-between gap-3 rounded-sm px-3 text-sm text-ink data-[selected=true]:bg-paper-2 max-sm:min-h-11"
     >
       {children}
     </Command.Item>

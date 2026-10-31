@@ -190,7 +190,7 @@ export function Composer({
   if (phone) return <PhoneDock>{form}</PhoneDock>;
 
   return (
-    <div className="sticky bottom-0 z-10 bg-paper px-4 pt-2 pb-4 [box-shadow:0_-1px_0_var(--rule)] md:px-6">
+    <div className="sticky bottom-0 z-10 bg-paper px-4 pt-2 pb-4 [box-shadow:0_-1px_0_var(--rule)] sm:px-6">
       {form}
     </div>
   );

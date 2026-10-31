@@ -23,14 +23,33 @@ import {
   listConversations,
   listMessages,
   messagesAfter,
-  replaceDefaultTitle,
+  replaceTitle,
   saveSummary,
   setFeedback,
   updateConversationTitle,
 } from './conversation.repository.js';
 
-// Replaced by a generated title after the first answer, unless the user renamed it first.
+// Replaced by the start of the first question when it is asked, and by a generated title
+// after the first answer, unless the user renamed the conversation first.
 export const DEFAULT_TITLE = 'New conversation';
+
+const PROVISIONAL_TITLE_CHARS = 60;
+
+/**
+ * A conversation's name until the title model has seen an answer: the start of the question,
+ * cut at a word. Null when the question has no text worth a title.
+ */
+export function provisionalTitle(question: string) {
+  const chars = Array.from(question.replace(/\s+/g, ' ').trim());
+  if (chars.length <= PROVISIONAL_TITLE_CHARS) return chars.join('') || null;
+
+  const head = chars.slice(0, PROVISIONAL_TITLE_CHARS);
+  const space = chars[PROVISIONAL_TITLE_CHARS] === ' ' ? head.length : head.lastIndexOf(' ');
+  // A single long word is cut where it is.
+  const words = space > PROVISIONAL_TITLE_CHARS / 2 ? head.slice(0, space) : head;
+  const text = words.join('').replace(/[\s,;:.!?()[\]{}"'“”‘’\-–—/]+$/u, '');
+  return text ? `${text}…` : null;
+}
 
 async function conversationFor(userId: string, conversationId: string) {
   const conversation = await findConversationForUser(userId, conversationId);
@@ -64,7 +83,12 @@ export async function getConversationService(
   page: PaginationQuery,
 ) {
   const conversation = await conversationFor(userId, conversationId);
-  return { conversation, messages: await listMessages(conversation.id, page) };
+  return {
+    conversation,
+    messages: await listMessages(conversation.id, page),
+    // Visitors of the demo chat in someone else's workspace; what a turn cost is for owners.
+    ownsWorkspace: conversation.workspace.userId === userId,
+  };
 }
 
 export async function updateConversationService(
@@ -94,7 +118,8 @@ export async function feedbackService(userId: string, messageId: string, input: 
   if (message.role !== 'ASSISTANT') {
     throw new BadRequestError('Only answers can be rated');
   }
-  return setFeedback(message.id, input.value, input.note ?? null);
+  const rated = await setFeedback(message.id, input.value, input.note ?? null);
+  return { message: rated, ownsWorkspace: message.conversation.workspace.userId === userId };
 }
 
 // A failed or cut-off answer is left out of what the model reads back.
@@ -136,13 +161,18 @@ export function cleanTitle(reply: string) {
   return words.join(' ').slice(0, 80);
 }
 
-/** Names a conversation still called DEFAULT_TITLE after its first answer. */
+/**
+ * Names a conversation after its first answer, if it still has a title of ours: the default,
+ * or the start of its first question. A title the user typed is left alone.
+ */
 export async function nameConversation(conversationId: string) {
   const conversation = await findConversation(conversationId);
-  if (!conversation || conversation.title !== DEFAULT_TITLE) return false;
+  if (!conversation) return false;
 
   const { question, answer } = await firstExchange(conversationId);
   if (!question || !answer) return false;
+  const ours = [DEFAULT_TITLE, provisionalTitle(question.content)];
+  if (!ours.includes(conversation.title)) return false;
 
   const { text } = await generate({
     task: 'cheap',
@@ -150,7 +180,7 @@ export async function nameConversation(conversationId: string) {
     ctx: { userId: conversation.userId, workspaceId: conversation.workspaceId },
   });
   const title = cleanTitle(text);
-  return title ? replaceDefaultTitle(conversationId, DEFAULT_TITLE, title) : false;
+  return title ? replaceTitle(conversationId, conversation.title, title) : false;
 }
 
 const transcript = (messages: Message[]) =>

@@ -8,13 +8,15 @@
   --font-serif: 'Source Serif 4 Variable', 'Source Serif 4', Georgia, 'Times New Roman', serif;
   --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
 
-  /* Type scale: 13 / 15 / 17 / 22 / 28 / 40 */
+  /* Type scale: 13 / 15 / 17 / 20 / 22 / 28 / 40 */
   --text-xs: 0.8125rem;
   --text-xs--line-height: 1.4;
   --text-sm: 0.9375rem;
   --text-sm--line-height: 1.5;
   --text-base: 1.0625rem;
   --text-base--line-height: 1.55;
+  --text-md: 1.25rem;
+  --text-md--line-height: 1.3;
   --text-lg: 1.375rem;
   --text-lg--line-height: 1.35;
   --text-xl: 1.75rem;
@@ -22,14 +24,27 @@
   --text-2xl: 2.5rem;
   --text-2xl--line-height: 1.1;
 
+  /* Phone below sm, tablet up to lg, desktop from lg. Same widths as lib/breakpoints.ts;
+     md, xl and 2xl are dropped so no third threshold creeps back in. */
+  --breakpoint-*: initial;
+  --breakpoint-sm: 720px;
+  --breakpoint-lg: 1100px;
+
+  --container-prose: 65ch;
+  --container-narrow: 720px;
+  --container-wide: 1200px;
+
   --radius-xs: 3px;
   --radius-sm: 4px;
   --radius-md: 6px;
   --radius-full: 999px;
 
   --shadow-float: 0 4px 16px -4px rgb(28 26 23 / 0.18), 0 0 0 1px rgb(28 26 23 / 0.06);
+}
 
-  /* Semantic colors are CSS variables so dark mode can swap them. */
+/* Semantic colors are CSS variables so dark mode can swap them. Inline, so a utility reads
+   the variable where it is used and a subtree with its own theme (the dev gallery) works. */
+@theme inline {
   --color-paper: var(--paper);
   --color-paper-2: var(--paper-2);
   --color-paper-3: var(--paper-3);
@@ -38,14 +53,26 @@
   --color-ink-3: var(--ink-3);
   --color-rule: var(--rule);
   --color-rule-2: var(--rule-2);
+  --color-edge: var(--edge);
+  --color-overlay: var(--overlay);
   --color-accent: var(--accent);
   --color-accent-2: var(--accent-2);
   --color-accent-wash: var(--accent-wash);
   --color-ok: var(--ok);
+  --color-ok-wash: var(--ok-wash);
   --color-warn: var(--warn);
+  --color-warn-wash: var(--warn-wash);
   --color-error: var(--error);
   --color-error-wash: var(--error-wash);
   --color-highlight: var(--highlight);
+  --color-kind-book: var(--kind-book);
+  --color-kind-book-wash: var(--kind-book-wash);
+  --color-kind-repo: var(--kind-repo);
+  --color-kind-repo-wash: var(--kind-repo-wash);
+  --color-kind-site: var(--kind-site);
+  --color-kind-site-wash: var(--kind-site-wash);
+  --color-series-1: var(--series-1);
+  --color-series-2: var(--series-2);
 }
 
 :root {
@@ -58,14 +85,29 @@
   --ink-3: #666057;
   --rule: rgb(31 28 24 / 0.1);
   --rule-2: rgb(31 28 24 / 0.34);
+  /* Borders of controls (inputs, switches, buttons): 3.6:1 on paper, 3.3:1 on paper-2. */
+  --edge: #857f73;
+  --overlay: rgb(31 28 24 / 0.42);
   --accent: #2e5d4b;
   --accent-2: #24493b;
   --accent-wash: rgb(46 93 75 / 0.1);
   --ok: #3b6e3b;
+  --ok-wash: rgb(59 110 59 / 0.1);
   --warn: #8a5a12;
+  --warn-wash: rgb(138 90 18 / 0.1);
   --error: #9b3a2f;
   --error-wash: rgb(155 58 47 / 0.09);
   --highlight: rgb(216 180 80 / 0.35);
+  /* What a source is: plum for books, slate blue for repositories, olive for websites. */
+  --kind-book: #7a4466;
+  --kind-book-wash: rgb(122 68 102 / 0.1);
+  --kind-repo: #3a5f8a;
+  --kind-repo-wash: rgb(58 95 138 / 0.1);
+  --kind-site: #5f5f1e;
+  --kind-site-wash: rgb(95 95 30 / 0.1);
+  /* Chart marks: a brighter step of the accent green and an ink grey. */
+  --series-1: #1f8060;
+  --series-2: #4d4842;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -79,14 +121,26 @@
     --ink-3: #9a9285;
     --rule: rgb(236 231 220 / 0.1);
     --rule-2: rgb(236 231 220 / 0.3);
+    --edge: #6e685d;
+    --overlay: rgb(0 0 0 / 0.6);
     --accent: #7fb59c;
     --accent-2: #9ccbb5;
     --accent-wash: rgb(127 181 156 / 0.14);
     --ok: #7fb57f;
+    --ok-wash: rgb(127 181 127 / 0.13);
     --warn: #d2a24c;
+    --warn-wash: rgb(210 162 76 / 0.13);
     --error: #d9786b;
     --error-wash: rgb(217 120 107 / 0.12);
     --highlight: rgb(216 180 80 / 0.28);
+    --kind-book: #c598b4;
+    --kind-book-wash: rgb(197 152 180 / 0.14);
+    --kind-repo: #8fb0d8;
+    --kind-repo-wash: rgb(143 176 216 / 0.14);
+    --kind-site: #bdb764;
+    --kind-site-wash: rgb(189 183 100 / 0.14);
+    --series-1: #46b28a;
+    --series-2: #767064;
   }
 }
 
@@ -102,14 +156,26 @@
   --ink-3: #9a9285;
   --rule: rgb(236 231 220 / 0.1);
   --rule-2: rgb(236 231 220 / 0.3);
+  --edge: #6e685d;
+  --overlay: rgb(0 0 0 / 0.6);
   --accent: #7fb59c;
   --accent-2: #9ccbb5;
   --accent-wash: rgb(127 181 156 / 0.14);
   --ok: #7fb57f;
+  --ok-wash: rgb(127 181 127 / 0.13);
   --warn: #d2a24c;
+  --warn-wash: rgb(210 162 76 / 0.13);
   --error: #d9786b;
   --error-wash: rgb(217 120 107 / 0.12);
   --highlight: rgb(216 180 80 / 0.28);
+  --kind-book: #c598b4;
+  --kind-book-wash: rgb(197 152 180 / 0.14);
+  --kind-repo: #8fb0d8;
+  --kind-repo-wash: rgb(143 176 216 / 0.14);
+  --kind-site: #bdb764;
+  --kind-site-wash: rgb(189 183 100 / 0.14);
+  --series-1: #46b28a;
+  --series-2: #767064;
 }
 
 /* The only two motions the primitives use. Reduced motion turns them off in base.css. */

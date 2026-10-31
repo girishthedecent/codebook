@@ -5,7 +5,11 @@ import prismaClient from '../src/config/db.config.js';
 import type { MessageRole, MessageStatus } from '../src/generated/prisma/client.js';
 import { textRoutes } from '../src/llm/models.js';
 import { afterTurn } from '../src/modules/chat/afterTurn.function.js';
-import { cleanTitle, conversationHistory } from '../src/modules/chat/conversation.service.js';
+import {
+  cleanTitle,
+  conversationHistory,
+  provisionalTitle,
+} from '../src/modules/chat/conversation.service.js';
 import { countTokens } from '../src/utils/tokens.js';
 import { signedInUser } from './helpers/auth.js';
 import { resetDb } from './helpers/db.js';
@@ -208,6 +212,89 @@ describe('conversations API', () => {
     );
   });
 
+  describe('what an answer cost', () => {
+    const FIELDS = [
+      'model',
+      'latencyMs',
+      'firstTokenMs',
+      'tokensIn',
+      'tokensOut',
+      'tokensCached',
+      'costUsd',
+      'weakRetrieval',
+    ];
+
+    async function conversationWithAnswer(owner: User, reader: User) {
+      const { id } = await startConversation(reader);
+      const [question, answer] = await addMessages(id, exchange(2));
+      await prismaClient.message.update({
+        where: { id: answer!.id },
+        data: {
+          model: 'google/gemini-3.6-flash',
+          latencyMs: 5_400,
+          firstTokenMs: 900,
+          tokensIn: 3_200,
+          tokensOut: 410,
+          tokensCached: 1_000,
+          costUsd: '0.0123',
+          weakRetrieval: true,
+        },
+      });
+      return { id, question: question!, answer: answer!, owner };
+    }
+
+    const messagesOf = async (user: User, id: string) =>
+      (
+        (await user.agent.get(`/api/v1/conversations/${id}`)).body as {
+          data: { messages: Page<Record<string, unknown>> };
+        }
+      ).data.messages.items;
+
+    it('gives the owner of the workspace what the turn used, on answers only', async () => {
+      const { id } = await conversationWithAnswer(alice, alice);
+
+      const [question, answer] = await messagesOf(alice, id);
+
+      expect(answer).toMatchObject({
+        model: 'google/gemini-3.6-flash',
+        latencyMs: 5_400,
+        firstTokenMs: 900,
+        tokensIn: 3_200,
+        tokensOut: 410,
+        tokensCached: 1_000,
+        costUsd: '0.0123',
+        weakRetrieval: true,
+      });
+      for (const field of FIELDS) expect(question, field).not.toHaveProperty(field);
+    });
+
+    it('keeps it from visitors of the demo, who read answers in the owner’s workspace', async () => {
+      await prismaClient.workspace.update({ where: { id: workspaceId }, data: { isDemo: true } });
+      const { id, answer } = await conversationWithAnswer(alice, bob);
+
+      const [, shown] = await messagesOf(bob, id);
+
+      expect(shown).toMatchObject({ id: answer.id, content: answer.content, status: 'COMPLETE' });
+      for (const field of FIELDS) expect(shown, field).not.toHaveProperty(field);
+    });
+
+    it('applies to the answer a rating returns too', async () => {
+      const { answer } = await conversationWithAnswer(alice, alice);
+      const rated = await alice.agent
+        .post(`/api/v1/messages/${answer.id}/feedback`)
+        .send({ value: 'UP' });
+      expect((rated.body as { data: object }).data).toMatchObject({ costUsd: '0.0123' });
+
+      await prismaClient.workspace.update({ where: { id: workspaceId }, data: { isDemo: true } });
+      const visitor = await conversationWithAnswer(alice, bob);
+      const visited = await bob.agent
+        .post(`/api/v1/messages/${visitor.answer.id}/feedback`)
+        .send({ value: 'DOWN' });
+      expect(visited.status).toBe(200);
+      expect((visited.body as { data: object }).data).not.toHaveProperty('costUsd');
+    });
+  });
+
   it('returns 404 for a missing conversation and 400 for a bad id', async () => {
     expect((await alice.agent.get(`/api/v1/conversations/${MISSING_ID}`)).status).toBe(404);
     expect((await alice.agent.get('/api/v1/conversations/not-an-id')).status).toBe(400);
@@ -288,6 +375,63 @@ describe('after-turn function', () => {
     const { result } = await runAfterTurn(failed.id);
     expect(result).toMatchObject({ named: false });
     expect((await loadConversation(failed.id)).title).toBe('New conversation');
+  });
+
+  it('replaces the name the question gave the conversation, but not one typed over it', async () => {
+    const question = 'Why do password hashes need a salt?';
+    const messages = [
+      { role: 'USER' as const, content: question },
+      { role: 'ASSISTANT' as const, content: 'A salt makes equal passwords hash differently.' },
+    ];
+    useModels({ [CHEAP_MODEL]: promptModel(() => 'Salting password hashes') });
+
+    const named = await startConversation(alice, { title: provisionalTitle(question)! });
+    await addMessages(named.id, messages);
+    expect(provisionalTitle(question)).toBe(question);
+    expect(await runAfterTurn(named.id)).toMatchObject({ result: { named: true } });
+    expect((await loadConversation(named.id)).title).toBe('Salting password hashes');
+
+    const typed = await startConversation(alice, { title: 'Salt notes' });
+    await addMessages(typed.id, messages);
+    expect(await runAfterTurn(typed.id)).toMatchObject({ result: { named: false } });
+    expect((await loadConversation(typed.id)).title).toBe('Salt notes');
+  });
+
+  it('knows the name of a long question as it was cut', async () => {
+    const question = `${'Why do password hashes need a salt, '.repeat(3)}really?`;
+    const provisional = provisionalTitle(question)!;
+    expect(provisional.endsWith('…')).toBe(true);
+    useModels({ [CHEAP_MODEL]: promptModel(() => 'Salting password hashes') });
+    const { id } = await startConversation(alice, { title: provisional });
+    await addMessages(id, [
+      { role: 'USER', content: question },
+      { role: 'ASSISTANT', content: 'A salt makes equal passwords hash differently.' },
+    ]);
+
+    await runAfterTurn(id);
+
+    expect((await loadConversation(id)).title).toBe('Salting password hashes');
+  });
+
+  it('lets a rename made while the title was being written win', async () => {
+    const { id } = await startConversation(alice, { title: 'Hello?' });
+    await addMessages(id, [
+      { role: 'USER', content: 'Hello?' },
+      { role: 'ASSISTANT', content: 'Hi there.' },
+    ]);
+    const model = promptModel(() => 'Generated title');
+    const generate = model.doGenerate.bind(model);
+    model.doGenerate = async (options) => {
+      const reply = await generate(options);
+      await prismaClient.conversation.update({ where: { id }, data: { title: 'Typed meanwhile' } });
+      return reply;
+    };
+    useModels({ [CHEAP_MODEL]: model });
+
+    const { result } = await runAfterTurn(id);
+
+    expect(result).toMatchObject({ named: false });
+    expect((await loadConversation(id)).title).toBe('Typed meanwhile');
   });
 
   it('cleans the model reply into a short title', () => {

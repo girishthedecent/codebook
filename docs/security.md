@@ -134,8 +134,10 @@ Every route needs a session except health, auth, the demo, Inngest and the API d
     production), so the per-IP limits see the address the nearest proxy saw.
   - The API serves the built web app (`web.ts`): static files with no directory listing and
     no dotfiles, and an index page whose policy allows scripts from the same origin and
-    exactly its two inline scripts, by hash. API and docs paths that match nothing stay JSON
-    404s. `web.test.ts` covers each.
+    exactly its two inline scripts, by hash, and images from the same origin, inline
+    `data:` URLs and GitHub's avatar host (the profile picture of a user who signed in
+    with GitHub). API and docs paths that match nothing stay JSON 404s. `web.test.ts`
+    covers each.
 - **Test:** `app.test.ts` (CORS), `auth.test.ts` (HttpOnly, SameSite), and
   `security.test.ts` in production mode (Secure cookie, HSTS, nosniff, CSP, no
   `x-powered-by`).

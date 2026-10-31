@@ -182,7 +182,7 @@ function IconButton({
         aria-keyshortcuts={shortcut}
         disabled={!onClick}
         onClick={onClick}
-        className="flex size-9 items-center justify-center rounded-sm text-ink-3 hover:bg-paper-2 hover:text-ink disabled:opacity-40 max-[719px]:size-11"
+        className="flex size-9 items-center justify-center rounded-sm text-ink-3 hover:bg-paper-2 hover:text-ink disabled:opacity-40 max-sm:size-11"
       >
         {children}
       </button>

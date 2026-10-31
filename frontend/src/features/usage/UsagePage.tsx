@@ -43,8 +43,8 @@ function Totals({ usage }: { usage: Usage }) {
           <TR>
             <TH>{s.cols.period}</TH>
             <TH className="text-right">{s.cols.messages}</TH>
-            <TH className="text-right max-[719px]:hidden">{s.cols.tokensIn}</TH>
-            <TH className="text-right max-[719px]:hidden">{s.cols.tokensOut}</TH>
+            <TH className="text-right max-sm:hidden">{s.cols.tokensIn}</TH>
+            <TH className="text-right max-sm:hidden">{s.cols.tokensOut}</TH>
             <TH className="text-right">{s.cols.cost}</TH>
           </TR>
         </THead>
@@ -53,10 +53,10 @@ function Totals({ usage }: { usage: Usage }) {
             <TR key={p}>
               <TD>{s.periods[p]}</TD>
               <TD numeric>{formatCount(usage[p].messages)}</TD>
-              <TD numeric className="max-[719px]:hidden">
+              <TD numeric className="max-sm:hidden">
                 {formatCount(usage[p].tokensIn)}
               </TD>
-              <TD numeric className="max-[719px]:hidden">
+              <TD numeric className="max-sm:hidden">
                 {formatCount(usage[p].tokensOut)}
               </TD>
               <TD numeric>{formatCost(usage[p].costUsd)}</TD>

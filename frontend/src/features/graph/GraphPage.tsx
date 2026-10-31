@@ -102,7 +102,7 @@ export function GraphPage() {
               id="graph-repo"
               value={repo.id}
               onChange={(e) => pickRepo(e.target.value)}
-              className={cn(controlClass, 'h-10 w-auto max-w-64 pr-8 md:h-9')}
+              className={cn(controlClass, 'h-10 w-auto max-w-64 pr-8 sm:h-9')}
             >
               {repos.map((r) => (
                 <option key={r.id} value={r.id}>
@@ -124,7 +124,7 @@ function Frame({ children }: { children: React.ReactNode }) {
   const phone = useBreakpoint() === 'phone';
   const { workspaceId } = useParams({ strict: false }) as { workspaceId: string };
   return (
-    <div className="mx-auto flex w-full max-w-[1400px] flex-col gap-4 px-4 py-5 md:px-6">
+    <div className="mx-auto flex w-full max-w-[1400px] flex-col gap-4 px-4 py-5 sm:px-6">
       {/* On phones the graph lives under More, so that is the way up. */}
       {phone && (
         <BackLink to="/w/$workspaceId/more" params={{ workspaceId }} className="-mb-2">

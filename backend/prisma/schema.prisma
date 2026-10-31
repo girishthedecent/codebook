@@ -669,7 +669,10 @@ model StudyArtifact {
   // Typed per type by study.schemas.ts; citations resolved from `sources`.
   data          Json?
   sources       Json      @default("[]")
+  // A failed set: what the user is told, and a code for why (see study.errors.ts). Null on
+  // sets that failed before codes existed.
   error         String?
+  errorCode     String?
   model         String?
   promptVersion String?
   createdAt     DateTime  @default(now())

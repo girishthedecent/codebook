@@ -1,12 +1,25 @@
+import { appConfig } from '../../config/app.config.js';
+import { breakerStates } from '../../llm/circuitBreaker.js';
+import { embeddingRoute, modelLabel, modelsFor, TASKS, type TextTask } from '../../llm/models.js';
 import { paginate } from '../../utils/helpers/pagination.helpers.js';
 import { logEvent } from '../../utils/helpers/log.helpers.js';
-import type { FailedQueriesQuery, FailureReason, StatsQuery } from './monitoring.dto.js';
+import type {
+  FailedQueriesQuery,
+  FailureReason,
+  IngestionFailuresQuery,
+  RangeQuery,
+  StatsQuery,
+} from './monitoring.dto.js';
 import {
   answerStats,
   findFailedAnswers,
+  findIngestionFailures,
   ingestionStats,
   providerStats,
   questionsFor,
+  rateLimitUse,
+  usageByModel,
+  usageByTask,
   usagePerDay,
 } from './monitoring.repository.js';
 
@@ -18,13 +31,13 @@ const rate = (part: number, whole: number) =>
 
 const ms = (value: number | null) => (value === null ? null : Math.round(value));
 
-export async function statsService({ from, to }: StatsQuery) {
+export async function statsService({ from, to, includeSystem }: StatsQuery) {
   const started = performance.now();
   const [answers, days, providers, ingestion] = await Promise.all([
-    answerStats(from, to),
-    usagePerDay(from, to),
-    providerStats(from, to),
-    ingestionStats(from, to),
+    answerStats(from, to, includeSystem),
+    usagePerDay(from, to, includeSystem),
+    providerStats(from, to, includeSystem),
+    ingestionStats(from, to, includeSystem),
   ]);
 
   const calls = providers.reduce((sum, row) => sum + row.calls, 0);
@@ -101,4 +114,66 @@ export async function failedQueriesService(query: FailedQueriesQuery) {
     })),
     nextCursor: page.nextCursor,
   };
+}
+
+/** Model calls in the range by model and key, and by task. */
+export async function modelUsageService({ from, to, includeSystem }: StatsQuery) {
+  const [models, tasks] = await Promise.all([
+    usageByModel(from, to, includeSystem),
+    usageByTask(from, to, includeSystem),
+  ]);
+  return { from: from.toISOString(), to: to.toISOString(), models, tasks };
+}
+
+/** The sources whose last ingest failed, latest first, with what the user would have seen. */
+export async function ingestionFailuresService({ limit, includeSystem }: IngestionFailuresQuery) {
+  const sources = await findIngestionFailures(limit, includeSystem);
+  return sources.map((source) => ({
+    sourceId: source.id,
+    workspaceId: source.workspaceId,
+    userId: source.workspace.userId,
+    title: source.title,
+    type: source.type,
+    // Where in the pipeline it stopped.
+    stage: source.stage,
+    error: source.error,
+    failedAt: source.updatedAt,
+  }));
+}
+
+/** Every limit with what it counted and turned away in the range. */
+export async function rateLimitsService({ from, to }: RangeQuery) {
+  const counted = new Map((await rateLimitUse(from, to)).map((row) => [row.name, row]));
+  const limits = Object.entries(appConfig.limits.windows).map(([name, window]) => ({
+    name,
+    points: window.points,
+    // Null for a calendar month.
+    windowSec: 'windowSec' in window ? window.windowSec : null,
+    requests: counted.get(name)?.requests ?? 0,
+    blocked: counted.get(name)?.blocked ?? 0,
+    clientsBlocked: counted.get(name)?.clientsBlocked ?? 0,
+  }));
+  return { from: from.toISOString(), to: to.toISOString(), limits };
+}
+
+// Every model a task can be sent to, the backup-key copies included, and the embedding model.
+function configuredModels() {
+  const tasks = TASKS.filter((task): task is TextTask => task !== 'embed');
+  const labels = tasks.flatMap((task) => modelsFor(task).map(modelLabel));
+  return new Set([...labels, modelLabel(embeddingRoute.model)]);
+}
+
+/**
+ * Which models are being skipped after repeated quota errors. The state lives in this server
+ * process (it is not shared between instances and starts empty on a restart).
+ */
+export function circuitBreakerService(now = Date.now()) {
+  const seen = new Map(breakerStates(now).map((state) => [state.model, state]));
+  const models = [...new Set([...configuredModels(), ...seen.keys()])].sort().map((model) => ({
+    model,
+    open: seen.get(model)?.open ?? false,
+    openUntil: seen.get(model)?.openUntil ?? null,
+    recentQuotaErrors: seen.get(model)?.recentQuotaErrors ?? 0,
+  }));
+  return { ...appConfig.circuitBreaker, models };
 }

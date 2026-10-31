@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import prismaClient from '../src/config/db.config.js';
 import { textRoutes } from '../src/llm/models.js';
 import { deletePrefix } from '../src/utils/storage.js';
@@ -69,6 +69,68 @@ afterAll(async () => {
 });
 
 const dataOf = <T>(res: { body: unknown }) => (res.body as { data: T }).data;
+
+describe('GET /sources/:id/file', () => {
+  const pdf = (agent: User['agent'], range?: string) => {
+    const req = agent
+      .get(`/api/v1/sources/${sourceId}/file`)
+      .buffer(true)
+      .parse((res, done) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (chunk: Buffer) => chunks.push(chunk));
+        res.on('end', () => done(null, Buffer.concat(chunks)));
+      });
+    return range ? req.set('Range', range) : req;
+  };
+
+  async function renameFile(fileName: string) {
+    const source = await prismaClient.source.findUniqueOrThrow({ where: { id: sourceId } });
+    await prismaClient.source.update({
+      where: { id: sourceId },
+      data: { origin: { ...(source.origin as object), fileName } },
+    });
+  }
+
+  afterEach(() => renameFile('fixture.pdf'));
+
+  it('serves the file with its name in the header', async () => {
+    const res = await pdf(alice.agent);
+
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toBe('application/pdf');
+    expect(res.headers['content-disposition']).toBe(
+      `inline; filename="fixture.pdf"; filename*=UTF-8''fixture.pdf`,
+    );
+    expect((res.body as Buffer).subarray(0, 5).toString()).toBe('%PDF-');
+  });
+
+  it.each([
+    ['Cyrillic', 'Глубокое обучение.pdf'],
+    ['CJK', '深度学习小书.pdf'],
+    ['an emoji', 'notes 📚 (v2).pdf'],
+  ])('names a file with %s in its name in UTF-8, with an ASCII fallback', async (_, name) => {
+    await renameFile(name);
+
+    const whole = await pdf(alice.agent);
+    const part = await pdf(alice.agent, 'bytes=0-9');
+
+    for (const res of [whole, part]) {
+      const header = res.headers['content-disposition']!;
+      expect(header).toMatch(/^[\x20-\x7e]+$/);
+      expect(header).toContain(
+        `filename*=UTF-8''${encodeURIComponent(name).replace(/[()]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`)}`,
+      );
+      expect(header).toMatch(/^inline; filename="[\x20-\x7e]+"; /);
+    }
+    expect(whole.status).toBe(200);
+    expect(part.status).toBe(206);
+    expect(part.body).toEqual((whole.body as Buffer).subarray(0, 10));
+  });
+
+  it('stays a 404 for anyone but the owner', async () => {
+    expect((await pdf(bob.agent)).status).toBe(404);
+  });
+});
 
 describe('GET /sources/:id/toc', () => {
   it('returns the table of contents as a tree', async () => {

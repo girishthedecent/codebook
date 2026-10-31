@@ -37,7 +37,7 @@ export function Dialog({
   return (
     <RadixDialog.Root open={open} onOpenChange={onOpenChange}>
       <RadixDialog.Portal>
-        <RadixDialog.Overlay className="fixed inset-0 z-40 bg-black/40 data-[state=open]:animate-[fade-in_150ms_ease-out]" />
+        <RadixDialog.Overlay className="fixed inset-0 z-40 bg-overlay data-[state=open]:animate-[fade-in_150ms_ease-out]" />
         <RadixDialog.Content
           onCloseAutoFocus={onCloseAutoFocus}
           className={cn(
@@ -49,9 +49,7 @@ export function Dialog({
         >
           <div className="flex items-start justify-between gap-4 px-5 pt-4">
             <div>
-              <RadixDialog.Title className="text-base font-semibold text-ink">
-                {title}
-              </RadixDialog.Title>
+              <RadixDialog.Title className="heading-minor text-ink">{title}</RadixDialog.Title>
               {description &&
                 (hideDescription ? (
                   <VisuallyHidden>
@@ -65,7 +63,7 @@ export function Dialog({
             </div>
             <RadixDialog.Close
               aria-label="Close"
-              className="-mr-2 -mt-1 flex size-8 max-[719px]:size-10 items-center justify-center rounded-sm text-ink-3 hover:bg-paper-2 hover:text-ink"
+              className="-mr-2 -mt-1 flex size-8 max-sm:size-11 items-center justify-center rounded-sm text-ink-3 hover:bg-paper-2 hover:text-ink"
             >
               <X size={16} />
             </RadixDialog.Close>

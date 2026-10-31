@@ -5,6 +5,7 @@ import { z } from 'zod';
 import prismaClient from '../src/config/db.config.js';
 import type { SourceStatus, SourceType } from '../src/generated/prisma/enums.js';
 import { ensureDemoOwner, ensureDemoWorkspace } from '../src/modules/demo/demo.service.js';
+import { starterQuestionsSchema } from '../src/modules/demo/starterQuestions.js';
 import { resyncSourceService } from '../src/modules/sources/source.service.js';
 import {
   assertNoModelCalls,
@@ -21,6 +22,7 @@ import {
   type CorpusSource,
   type SourceKey,
 } from '../evals/corpusWorkspace.js';
+import { seedStudySets, warmStarterAnswers } from './demoExtras.js';
 
 // pnpm db:seed -- --demo [--allow-model-calls] [--remote] [--resync]
 //
@@ -34,15 +36,21 @@ import {
 // missing and resyncs failed sources; --resync indexes every source again (after a change to
 // how sources are read), which costs model calls only for text that changed. A source
 // marked `optional` is left out when nothing indexed it before.
+//
+// With --allow-model-calls the seed also makes one study set of each type for the demo owner
+// and asks the demo's starter questions as a visitor would, so their answers are cached; both
+// only add what is missing.
 
 // The sources are validated like the eval corpus's (same shape); `optional` is the demo's own.
 const demoFileSchema = z.object({
   description: z.string().trim().min(1).max(2_000),
+  starterQuestions: starterQuestionsSchema,
   sources: z.array(z.looseObject({ optional: z.boolean().default(false) })).min(1),
 });
 
 export type DemoSpec = {
   description: string;
+  starterQuestions: string[];
   sources: { entry: CorpusSource; optional: boolean }[];
 };
 
@@ -52,6 +60,7 @@ export function loadDemoSpec(): DemoSpec {
   const { sources } = corpusSpecSchema.parse({ dataset: 'demo', sources: raw.sources });
   return {
     description: raw.description,
+    starterQuestions: raw.starterQuestions,
     sources: sources.map((entry, i) => ({ entry, optional: raw.sources[i]!.optional })),
   };
 }
@@ -150,7 +159,21 @@ async function seedDemo(allowModelCalls: boolean, remote: boolean, resyncAll: bo
     if (source.status !== 'READY') ok = false;
     console.log(`${key}: ${source.status}${source.error ? ` ${source.error}` : ''}`);
   }
-  if (!ok) process.exitCode = 1;
+  if (!ok) {
+    process.exitCode = 1;
+    return;
+  }
+
+  if (!allowModelCalls) {
+    console.log(
+      'Study sets and starter answers call models, so they were not made: ' +
+        'run again with --allow-model-calls',
+    );
+    return;
+  }
+  const studied = await seedStudySets(owner.id, workspace.id, sourceIds);
+  const warmed = await warmStarterAnswers(workspace, demo.starterQuestions);
+  if (!studied || !warmed) process.exitCode = 1;
 }
 
 async function main() {

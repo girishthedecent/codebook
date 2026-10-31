@@ -11,9 +11,10 @@ import {
   findCachedAnswer,
   normalizeQuestion,
 } from '../src/modules/demo/answerCache.js';
+import { warmStarterAnswers } from '../prisma/demoExtras.js';
 import { signedInUser } from './helpers/auth.js';
 import { resetDb } from './helpers/db.js';
-import { streamingModel, useModels, type StreamTurn } from './helpers/llm-mock.js';
+import { apiError, streamingModel, useModels, type StreamTurn } from './helpers/llm-mock.js';
 import { seedSource, vectorOf } from './helpers/retrieval.js';
 
 vi.mock('../src/llm/providers.js', () => import('./helpers/llm-mock.js'));
@@ -99,10 +100,20 @@ async function newConversation(user: User, workspaceId = demoId, title = 'Demo q
   return conversation.id;
 }
 
-async function ask(user: User, conversationId: string, content: string, useMemory?: boolean) {
+async function ask(
+  user: User,
+  conversationId: string,
+  content: string,
+  useMemory?: boolean,
+  retry?: boolean,
+) {
   const res = await user.agent
     .post(`/api/v1/conversations/${conversationId}/messages`)
-    .send(useMemory === undefined ? { content } : { content, useMemory })
+    .send({
+      content,
+      ...(useMemory === undefined ? {} : { useMemory }),
+      ...(retry === undefined ? {} : { retry }),
+    })
     .buffer(true);
   return { res, events: res.status === 200 ? parseSse(res.text) : [] };
 }
@@ -145,9 +156,65 @@ describe('demo answer cache', () => {
       memoryOff: true,
     });
     expect(saved.citations).toEqual(live);
-    expect(events[2]!.data).toMatchObject({ messageId: saved.id, usage: { tokensIn: 0 } });
+    expect(events[2]!.data).toMatchObject({
+      messageId: saved.id,
+      usage: { tokensIn: 0 },
+      cached: true,
+    });
+    // A live answer says it was not.
+    expect(firstAsk.events.at(-1)!.data.cached).toBe(false);
     // No title or summary work for an answer that was already there.
     expect(turnCompleted()).toHaveLength(1);
+  });
+
+  it.each([
+    ['asked again', false, 4],
+    ['retried', true, 2],
+  ])(
+    'serves a first question that failed once from the cache when it is %s',
+    async (_name, retry, messageCount) => {
+      const visitor = await guest('visitor@example.com');
+      const conversationId = await newConversation(visitor);
+      useModels({
+        [PRIMARY]: streamingModel([apiError(400)]),
+        [FALLBACK]: streamingModel([apiError(400)]),
+      });
+      const failed = await ask(visitor, conversationId, 'What is a salt?');
+      expect(failed.events.at(-1)!.event).toBe('error');
+      expect(await prismaClient.answerCache.count()).toBe(0);
+
+      // Another visitor's answer to the same question is cached meanwhile.
+      play();
+      const other = await guest('other@example.com');
+      await ask(other, await newConversation(other), 'What is a salt?');
+      expect(await prismaClient.answerCache.count()).toBe(1);
+
+      // The failed attempt isn't an earlier answer, so this is still a first question.
+      const models = play();
+      const again = await ask(visitor, conversationId, 'What is a salt?', undefined, retry);
+
+      expect(models[PRIMARY]!.doStreamCalls).toHaveLength(0);
+      expect(again.events.map((e) => e.event)).toEqual(['token', 'citations', 'done']);
+      expect(again.events.at(-1)!.data).toMatchObject({ cached: true });
+      const messages = await prismaClient.message.findMany({
+        where: { conversationId },
+        orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      });
+      expect(messages.map((m) => m.status)).toEqual(
+        retry ? ['COMPLETE', 'COMPLETE'] : ['COMPLETE', 'ERROR', 'COMPLETE', 'COMPLETE'],
+      );
+      expect(messages).toHaveLength(messageCount);
+    },
+  );
+
+  it('does not use the cache for the demo’s owner, who reads more than a visitor', async () => {
+    const owner = await signedInUser('owner@example.com');
+    await prismaClient.workspace.update({ where: { id: demoId }, data: { userId: owner.userId } });
+    play();
+
+    await ask(owner, await newConversation(owner), 'What is a salt?', false);
+
+    expect(await prismaClient.answerCache.count()).toBe(0);
   });
 
   it('asks the model again for a follow-up, even when its text was cached', async () => {
@@ -343,5 +410,85 @@ describe('guest message limit', () => {
     expect((await ask(reader, await newConversation(reader), 'What is a salt?')).res.status).toBe(
       200,
     );
+  });
+});
+
+describe('warming the answers to the starter questions', () => {
+  const QUESTIONS = ['What is a salt?', 'Why hash passwords?'];
+
+  async function warm(questions = QUESTIONS) {
+    const workspace = await prismaClient.workspace.findUniqueOrThrow({ where: { id: demoId } });
+    return warmStarterAnswers(workspace, questions);
+  }
+
+  beforeEach(() => {
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+  });
+
+  it('asks as a visitor would, caches each answer and leaves nothing behind', async () => {
+    play([...searchThenAnswer(), ...searchThenAnswer()]);
+
+    expect(await warm()).toBe(true);
+
+    expect(await prismaClient.answerCache.count()).toBe(2);
+    const visitor = await prismaClient.user.findUniqueOrThrow({
+      where: { email: appConfig.demo.visitorEmail },
+    });
+    expect(visitor).toMatchObject({ isSystem: true, isGuest: false });
+    // The throwaway conversations are gone; the calls it made are the system user's.
+    expect(await prismaClient.conversation.count()).toBe(0);
+    const spent = await prismaClient.usageEvent.findMany({ where: { type: 'LLM' } });
+    expect(spent.length).toBeGreaterThan(0);
+    expect(spent.every((event) => event.userId === visitor.id)).toBe(true);
+    expect(turnCompleted()).toHaveLength(0);
+
+    // The first guest to click one is answered from the cache.
+    const models = play();
+    const guestUser = await guest('visitor@example.com');
+    const { events } = await ask(guestUser, await newConversation(guestUser), QUESTIONS[1]!);
+    expect(models[PRIMARY]!.doStreamCalls).toHaveLength(0);
+    expect(events.at(-1)!.data).toMatchObject({ cached: true });
+  });
+
+  it('only asks the questions that are not cached yet', async () => {
+    play(searchThenAnswer());
+    expect(await warm([QUESTIONS[0]!])).toBe(true);
+
+    const models = play(searchThenAnswer());
+    expect(await warm()).toBe(true);
+
+    // One question was there, so the agent ran for the other one only: a search, then the answer.
+    expect(models[PRIMARY]!.doStreamCalls).toHaveLength(2);
+    expect(await prismaClient.answerCache.count()).toBe(2);
+
+    const quiet = play();
+    expect(await warm()).toBe(true);
+    expect(quiet[PRIMARY]!.doStreamCalls).toHaveLength(0);
+  });
+
+  it('says so when an answer could not be kept', async () => {
+    const logged: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((line: string) => void logged.push(line));
+    play([{ text: 'A salt is random data.' }]);
+
+    expect(await warm([QUESTIONS[0]!])).toBe(false);
+
+    expect(await prismaClient.answerCache.count()).toBe(0);
+    expect(logged.join('\n')).toContain('answered, but not kept');
+    expect(await prismaClient.conversation.count()).toBe(0);
+  });
+
+  it('says so when the models fail', async () => {
+    const logged: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((line: string) => void logged.push(line));
+    useModels({
+      [PRIMARY]: streamingModel([apiError(400)]),
+      [FALLBACK]: streamingModel([apiError(400)]),
+    });
+
+    expect(await warm([QUESTIONS[0]!])).toBe(false);
+
+    expect(logged.join('\n')).toContain('ERROR');
+    expect(await prismaClient.conversation.count()).toBe(0);
   });
 });

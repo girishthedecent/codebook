@@ -56,7 +56,7 @@ export function Toaster() {
     <div
       aria-live="polite"
       aria-atomic="false"
-      className="pointer-events-none fixed bottom-4 left-4 z-[60] max-[719px]:bottom-[calc(4.5rem+env(safe-area-inset-bottom))] flex w-[min(360px,calc(100vw-2rem))] flex-col gap-2"
+      className="pointer-events-none fixed bottom-4 left-4 z-[60] max-sm:bottom-[calc(4.5rem+env(safe-area-inset-bottom))] flex w-[min(360px,calc(100vw-2rem))] flex-col gap-2"
     >
       {list.map((t) => (
         <ToastCard key={t.id} item={t} />

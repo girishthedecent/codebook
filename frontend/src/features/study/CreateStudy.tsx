@@ -163,7 +163,7 @@ function CreateStudyForm({ workspaceId, onDone }: { workspaceId: string; onDone:
           ready.length > 1 && (
             <button
               type="button"
-              className="min-h-11 text-xs text-accent underline underline-offset-2 md:min-h-6"
+              className="min-h-11 text-xs text-accent underline underline-offset-2 sm:min-h-6"
               onClick={() => setPicked(sourceIds.length === ready.length ? new Set() : undefined)}
             >
               {sourceIds.length === ready.length ? s.create.selectNone : s.create.selectAll}

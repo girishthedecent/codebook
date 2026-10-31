@@ -108,6 +108,11 @@ describe('daily token budget', () => {
     await usage(1, 0, new Date(Date.UTC(2026, 9, 24, 1, 0, 0)));
     const error = await assertTokenBudget(alice.userId, now).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(TooManyRequestsError);
-    expect((error as TooManyRequestsError).details).toEqual({ retryAfterSeconds: 6 * 60 * 60 });
+    expect(error).toMatchObject({
+      statusCode: 429,
+      code: 'TOKEN_BUDGET',
+      message: "You've used up today's model budget. It resets at midnight UTC.",
+      retryAfterSec: 6 * 60 * 60,
+    });
   });
 });

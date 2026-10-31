@@ -59,7 +59,7 @@ export function StudyList({
           {s.title}
         </h1>
         {!readOnly && (
-          <Button size="sm" variant="secondary" className="h-10! md:h-7!" onClick={onCreate}>
+          <Button size="sm" variant="secondary" className="h-10! sm:h-7!" onClick={onCreate}>
             {s.newSet}
           </Button>
         )}
@@ -70,7 +70,7 @@ export function StudyList({
         {filters.map((f) => (
           <ChipButton
             key={f ?? 'all'}
-            className="h-10! px-3! md:h-6! md:px-2!"
+            className="h-10! px-3! sm:h-6! sm:px-2!"
             pressed={type === f}
             onClick={() => onKind(f)}
           >
@@ -118,7 +118,7 @@ export function StudyList({
           <Button
             size="sm"
             variant="ghost"
-            className="h-10! md:h-7!"
+            className="h-10! sm:h-7!"
             loading={query.isFetchingNextPage}
             onClick={() => void query.fetchNextPage()}
           >

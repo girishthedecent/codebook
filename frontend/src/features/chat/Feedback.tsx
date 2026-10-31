@@ -41,7 +41,7 @@ export function Feedback({
       aria-pressed={current === v}
       onClick={() => pick(v)}
       className={cn(
-        'text-xs text-ink-3 hover:text-ink max-[719px]:min-h-11',
+        'text-xs text-ink-3 hover:text-ink max-sm:min-h-11',
         current === v && 'font-medium text-accent hover:text-accent',
       )}
     >
@@ -85,7 +85,7 @@ export function CopyAnswer({ text }: { text: string }) {
       <button
         type="button"
         onClick={copy}
-        className="text-xs text-ink-3 hover:text-ink max-[719px]:min-h-11"
+        className="text-xs text-ink-3 hover:text-ink max-sm:min-h-11"
       >
         {label}
       </button>

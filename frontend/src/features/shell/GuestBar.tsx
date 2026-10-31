@@ -11,7 +11,7 @@ export function GuestBar() {
   const href = useLocation({ select: (l) => l.href });
   if (!isGuest) return null;
   return (
-    <div className="flex min-h-9 items-center justify-between gap-x-4 border-b border-rule bg-paper-2 px-4 py-1.5 text-xs max-[719px]:min-h-11 text-ink-2">
+    <div className="flex min-h-9 items-center justify-between gap-x-4 border-b border-rule bg-paper-2 px-4 py-1.5 text-xs max-sm:min-h-11 text-ink-2">
       <span>{en.auth.guestBar}</span>
       <Link
         to="/sign-in"

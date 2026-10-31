@@ -1,5 +1,4 @@
 import { linear } from './scale';
-import './chart.css';
 
 /**
  * A small trend line with no axes: the history in the de-emphasis ink, the latest point as

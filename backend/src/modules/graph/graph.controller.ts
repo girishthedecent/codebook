@@ -6,6 +6,7 @@ import type { DependenciesQuery, PathQuery, SymbolsQuery, WalkQuery } from './gr
 import {
   callersService,
   dependenciesService,
+  overviewService,
   pathService,
   searchSymbolsService,
 } from './graph.service.js';
@@ -36,4 +37,10 @@ export async function pathHandler(_req: Request, res: Response) {
   const { sourceId } = res.locals.params as SourceParams;
   const query = res.locals.query as PathQuery;
   res.json(successResponse('Path', await pathService(user.id, sourceId, query)));
+}
+
+export async function overviewHandler(_req: Request, res: Response) {
+  const user = getAuthUser(res);
+  const { sourceId } = res.locals.params as SourceParams;
+  res.json(successResponse('Overview', await overviewService(user.id, sourceId)));
 }

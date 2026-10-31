@@ -99,6 +99,10 @@ const baseSchema = z.object({
   INNGEST_SIGNING_KEY: optional,
   // The eval worker (pnpm evals:worker): its own small Inngest app, next to the API.
   EVALS_WORKER_PORT: z.coerce.number().int().min(1).max(65535).default(4001),
+  // Whether a worker is connected to this deployment's Inngest, so runs queued by the API are
+  // picked up. Unset: on in dev mode, where the worker shares the local Inngest server, and
+  // off otherwise (the worker is not part of the deployed app).
+  EVALS_WORKER_ENABLED: z.stringbool().optional(),
 
   GROQ_API_KEY: optional,
   GEMINI_API_KEY: optional,

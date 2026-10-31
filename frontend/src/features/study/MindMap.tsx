@@ -362,7 +362,7 @@ function MapCanvas({ root, folded, toggle, index }: TreeProps) {
           >
             +
           </Button>
-          <Button size="sm" variant="ghost" className="h-10! md:h-7!" onClick={fitView}>
+          <Button size="sm" variant="ghost" className="h-10! sm:h-7!" onClick={fitView}>
             {s.map.fit}
           </Button>
         </div>

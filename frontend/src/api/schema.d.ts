@@ -116,7 +116,7 @@ export interface paths {
                         "application/json": components["schemas"]["Error"];
                     };
                 };
-                /** @description Rate limit or quota reached (see Retry-After) */
+                /** @description Rate limit or quota reached: `code` says which, `retryAfterSec` and Retry-After when it ends */
                 429: {
                     headers: {
                         [name: string]: unknown;
@@ -192,7 +192,7 @@ export interface paths {
                         "application/json": components["schemas"]["Error"];
                     };
                 };
-                /** @description Rate limit or quota reached (see Retry-After) */
+                /** @description Rate limit or quota reached: `code` says which, `retryAfterSec` and Retry-After when it ends */
                 429: {
                     headers: {
                         [name: string]: unknown;
@@ -387,7 +387,7 @@ export interface paths {
                         "application/json": components["schemas"]["Error"];
                     };
                 };
-                /** @description Rate limit or quota reached (see Retry-After) */
+                /** @description Rate limit or quota reached: `code` says which, `retryAfterSec` and Retry-After when it ends */
                 429: {
                     headers: {
                         [name: string]: unknown;
@@ -595,7 +595,7 @@ export interface paths {
         put?: never;
         /**
          * Ask a question; the answer streams back as Server-Sent Events
-         * @description The agent picks its tools (search, code search, the code graph, reading sources, web search) step by step, then answers with [n] citations. Errors before the stream opens (access, limits, the daily token budget) are ordinary JSON errors; once it is open, a failure is an `error` event.
+         * @description The agent picks its tools (search, code search, the code graph, reading sources, web search) step by step, then answers with [n] citations. Errors before the stream opens (access, limits, the daily token budget) are ordinary JSON errors, a 429 with the limit in `code`; once it is open, a failure is an `error` event. With `retry`, the failed attempt of the same question is replaced. A guest whose answer fails because the models are out of quota keeps their question.
          */
         post: {
             parameters: {
@@ -610,6 +610,11 @@ export interface paths {
                 content: {
                     "application/json": {
                         content: string;
+                        /**
+                         * @description Asking again after a failed or cut-off answer: that attempt (the question and its failed reply) is replaced instead of staying in the conversation. With no failed attempt of this same question to replace, it is an ordinary question.
+                         * @default false
+                         */
+                        retry?: boolean;
                         /** @default true */
                         useMemory?: boolean;
                     };
@@ -652,7 +657,7 @@ export interface paths {
                         "application/json": components["schemas"]["Error"];
                     };
                 };
-                /** @description Rate limit or quota reached (see Retry-After) */
+                /** @description Rate limit or quota reached: `code` says which, `retryAfterSec` and Retry-After when it ends */
                 429: {
                     headers: {
                         [name: string]: unknown;
@@ -677,7 +682,7 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * The public demo workspace and its sources
+         * The public demo workspace, its sources and some questions to start with
          * @description No sign-in needed. Sign in as a guest (POST /api/auth/sign-in/anonymous) to ask it questions: guests can only open conversations in this workspace.
          */
         get: {
@@ -900,7 +905,9 @@ export interface paths {
         put?: never;
         /**
          * Queue an eval run on the eval worker
-         * @description Admins only (ADMIN_USER_IDS). Anyone else gets a 404, as if the route did not exist.
+         * @description A deployment without an eval worker answers 503; see GET /evals/status.
+         *
+         *     Admins only (ADMIN_USER_IDS). Anyone else gets a 404, as if the route did not exist.
          */
         post: {
             parameters: {
@@ -963,6 +970,15 @@ export interface paths {
                 };
                 /** @description Conflicts with the current state */
                 409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Not ready, or not available on this deployment */
+                503: {
                     headers: {
                         [name: string]: unknown;
                     };
@@ -1109,6 +1125,59 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/evals/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Whether eval runs can be started on this deployment
+         * @description Admins only (ADMIN_USER_IDS). Anyone else gets a 404, as if the route did not exist.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Status */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: components["schemas"]["EvalsStatus"];
+                            message: string;
+                            /** @enum {boolean} */
+                            success: true;
+                        };
+                    };
+                };
+                /** @description Not found, or not yours */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/health/live": {
         parameters: {
             query?: never;
@@ -1188,11 +1257,18 @@ export interface paths {
                     };
                     content: {
                         "application/json": {
+                            /** @description VALIDATION_ERROR, UNAUTHENTICATED, FORBIDDEN, NOT_FOUND, CONFLICT, PAYLOAD_TOO_LARGE, UPSTREAM_ERROR, SERVICE_UNAVAILABLE, INTERNAL, or on a 429 the limit that was hit: GUEST_LIMIT (the demo allowance), HOURLY_LIMIT, DAILY_LIMIT (questions), TOKEN_BUDGET (the day's model budget) or RATE_LIMITED (any other limit). */
                             code: string;
                             correlationId?: string;
                             data: components["schemas"]["Readiness"];
-                            details?: unknown;
+                            details?: {
+                                message: string;
+                                path: string;
+                            }[] | {
+                                candidates: components["schemas"]["GraphSymbol"][];
+                            };
                             message: string;
+                            retryAfterSec?: number;
                             /** @enum {boolean} */
                             success: false;
                         };
@@ -1396,7 +1472,7 @@ export interface paths {
                         "application/json": components["schemas"]["Error"];
                     };
                 };
-                /** @description Rate limit or quota reached (see Retry-After) */
+                /** @description Rate limit or quota reached: `code` says which, `retryAfterSec` and Retry-After when it ends */
                 429: {
                     headers: {
                         [name: string]: unknown;
@@ -1605,7 +1681,7 @@ export interface paths {
                         "application/json": components["schemas"]["Error"];
                     };
                 };
-                /** @description Rate limit or quota reached (see Retry-After) */
+                /** @description Rate limit or quota reached: `code` says which, `retryAfterSec` and Retry-After when it ends */
                 429: {
                     headers: {
                         [name: string]: unknown;
@@ -1784,6 +1860,59 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/monitoring/circuit-breaker": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Which models are being skipped after repeated quota errors
+         * @description Admins only (ADMIN_USER_IDS). Anyone else gets a 404, as if the route did not exist.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description The breaker */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: components["schemas"]["CircuitBreaker"];
+                            message: string;
+                            /** @enum {boolean} */
+                            success: true;
+                        };
+                    };
+                };
+                /** @description Not found, or not yours */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/monitoring/failed-queries": {
         parameters: {
             query?: never;
@@ -1852,6 +1981,202 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/monitoring/ingestion-failures": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Sources whose last ingest failed, the latest first
+         * @description Admins only (ADMIN_USER_IDS). Anyone else gets a 404, as if the route did not exist.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    includeSystem?: string;
+                    limit?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Failed sources */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: components["schemas"]["IngestionFailure"][];
+                            message: string;
+                            /** @enum {boolean} */
+                            success: true;
+                        };
+                    };
+                };
+                /** @description Invalid request (the details list each issue) */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Not found, or not yours */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/monitoring/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Model calls over a time range, by model and key and by task
+         * @description Admins only (ADMIN_USER_IDS). Anyone else gets a 404, as if the route did not exist.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    from?: string;
+                    includeSystem?: string;
+                    to?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Usage */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: components["schemas"]["ModelUsage"];
+                            message: string;
+                            /** @enum {boolean} */
+                            success: true;
+                        };
+                    };
+                };
+                /** @description Invalid request (the details list each issue) */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Not found, or not yours */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/monitoring/rate-limits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * What each rate limit counted and turned away over a time range
+         * @description Admins only (ADMIN_USER_IDS). Anyone else gets a 404, as if the route did not exist.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    from?: string;
+                    to?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Rate limits */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: components["schemas"]["RateLimitUse"];
+                            message: string;
+                            /** @enum {boolean} */
+                            success: true;
+                        };
+                    };
+                };
+                /** @description Invalid request (the details list each issue) */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Not found, or not yours */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/monitoring/stats": {
         parameters: {
             query?: never;
@@ -1861,12 +2186,15 @@ export interface paths {
         };
         /**
          * Answer quality, latency, provider and ingestion stats over a time range
-         * @description Admins only (ADMIN_USER_IDS). Anyone else gets a 404, as if the route did not exist.
+         * @description Without `includeSystem`, the eval runner and the demo owner are left out of every number.
+         *
+         *     Admins only (ADMIN_USER_IDS). Anyone else gets a 404, as if the route did not exist.
          */
         get: {
             parameters: {
                 query?: {
                     from?: string;
+                    includeSystem?: string;
                     to?: string;
                 };
                 header?: never;
@@ -2109,7 +2437,7 @@ export interface paths {
                         "application/json": components["schemas"]["Error"];
                     };
                 };
-                /** @description Rate limit or quota reached (see Retry-After) */
+                /** @description Rate limit or quota reached: `code` says which, `retryAfterSec` and Retry-After when it ends */
                 429: {
                     headers: {
                         [name: string]: unknown;
@@ -2183,7 +2511,7 @@ export interface paths {
                         "application/json": components["schemas"]["Error"];
                     };
                 };
-                /** @description Rate limit or quota reached (see Retry-After) */
+                /** @description Rate limit or quota reached: `code` says which, `retryAfterSec` and Retry-After when it ends */
                 429: {
                     headers: {
                         [name: string]: unknown;
@@ -2229,6 +2557,8 @@ export interface paths {
                 /** @description The whole file */
                 200: {
                     headers: {
+                        /** @description `inline`, with the file's name as `filename*=UTF-8''…` (percent-encoded, any language) and an ASCII `filename="…"` for clients that do not read it. */
+                        "Content-Disposition": string;
                         [name: string]: unknown;
                     };
                     content: {
@@ -2238,6 +2568,8 @@ export interface paths {
                 /** @description The requested part of the file */
                 206: {
                     headers: {
+                        /** @description `inline`, with the file's name as `filename*=UTF-8''…` (percent-encoded, any language) and an ASCII `filename="…"` for clients that do not read it. */
+                        "Content-Disposition": string;
                         [name: string]: unknown;
                     };
                     content: {
@@ -2356,7 +2688,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Who calls a symbol, up to `depth` hops back */
+        /**
+         * Who calls a symbol, up to `depth` hops back
+         * @description A class and its constructor stand for each other: asking for either lists the callers of both, since `Block(config)` is recorded as a call of the class.
+         */
         get: {
             parameters: {
                 query: {
@@ -2429,7 +2764,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** What a symbol calls or imports, up to `depth` hops */
+        /**
+         * What a symbol calls or imports, up to `depth` hops
+         * @description For a class, what its methods call or import (depth 1 is what they use directly).
+         */
         get: {
             parameters: {
                 query: {
@@ -2452,6 +2790,76 @@ export interface paths {
                     content: {
                         "application/json": {
                             data: components["schemas"]["GraphDependencies"];
+                            message: string;
+                            /** @enum {boolean} */
+                            success: true;
+                        };
+                    };
+                };
+                /** @description Invalid request (the details list each issue) */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Not signed in */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Not found, or not yours */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sources/{sourceId}/graph/overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Where to start in a repository: its busiest symbols, files and packages */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    sourceId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description The overview */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: components["schemas"]["GraphOverview"];
                             message: string;
                             /** @enum {boolean} */
                             success: true;
@@ -2722,7 +3130,7 @@ export interface paths {
                         "application/json": components["schemas"]["Error"];
                     };
                 };
-                /** @description Rate limit or quota reached (see Retry-After) */
+                /** @description Rate limit or quota reached: `code` says which, `retryAfterSec` and Retry-After when it ends */
                 429: {
                     headers: {
                         [name: string]: unknown;
@@ -2937,7 +3345,7 @@ export interface paths {
         put?: never;
         /**
          * Stop a study set that is still generating
-         * @description Marks it FAILED with the error "Cancelled."; 409 once it has finished.
+         * @description Marks it FAILED with the error "Cancelled." and `errorCode` CANCELLED; 409 once it has finished.
          */
         post: {
             parameters: {
@@ -3097,7 +3505,7 @@ export interface paths {
                         "application/json": components["schemas"]["Error"];
                     };
                 };
-                /** @description Rate limit or quota reached (see Retry-After) */
+                /** @description Rate limit or quota reached: `code` says which, `retryAfterSec` and Retry-After when it ends */
                 429: {
                     headers: {
                         [name: string]: unknown;
@@ -3121,7 +3529,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Today's, this week's and this month's usage, and what is left of each limit */
+        /**
+         * Today's, this week's and this month's usage, and what is left of each limit
+         * @description For a guest, `guest` is the demo allowance that applies to them (counted per IP address); the hourly and daily limits are not what they run into first.
+         */
         get: {
             parameters: {
                 query?: never;
@@ -3309,7 +3720,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** A workspace, with source and conversation counts */
+        /**
+         * A workspace, with source and conversation counts
+         * @description Your own workspaces, and the demo workspace for anyone signed in (guests too). The conversation count is always your own.
+         */
         get: {
             parameters: {
                 query?: never;
@@ -3738,7 +4152,7 @@ export interface paths {
                         "application/json": components["schemas"]["Error"];
                     };
                 };
-                /** @description Rate limit or quota reached (see Retry-After) */
+                /** @description Rate limit or quota reached: `code` says which, `retryAfterSec` and Retry-After when it ends */
                 429: {
                     headers: {
                         [name: string]: unknown;
@@ -3954,7 +4368,7 @@ export interface paths {
                         "application/json": components["schemas"]["Error"];
                     };
                 };
-                /** @description Rate limit or quota reached (see Retry-After) */
+                /** @description Rate limit or quota reached: `code` says which, `retryAfterSec` and Retry-After when it ends */
                 429: {
                     headers: {
                         [name: string]: unknown;
@@ -4124,7 +4538,7 @@ export interface paths {
                         "application/json": components["schemas"]["Error"];
                     };
                 };
-                /** @description Rate limit or quota reached (see Retry-After) */
+                /** @description Rate limit or quota reached: `code` says which, `retryAfterSec` and Retry-After when it ends */
                 429: {
                     headers: {
                         [name: string]: unknown;
@@ -4174,6 +4588,18 @@ export interface components {
             /** Format: date-time */
             updatedAt: string;
         };
+        CircuitBreaker: {
+            coolOffMs: number;
+            models: {
+                model: string;
+                open: boolean;
+                /** Format: date-time */
+                openUntil: string | null;
+                recentQuotaErrors: number;
+            }[];
+            quotaErrors: number;
+            windowMs: number;
+        };
         Citation: {
             chunkId?: string;
             heading?: string;
@@ -4218,13 +4644,21 @@ export interface components {
         };
         Demo: {
             sources: components["schemas"]["Source"][];
+            starterQuestions: string[];
             workspace: components["schemas"]["Workspace"];
         };
         Error: {
+            /** @description VALIDATION_ERROR, UNAUTHENTICATED, FORBIDDEN, NOT_FOUND, CONFLICT, PAYLOAD_TOO_LARGE, UPSTREAM_ERROR, SERVICE_UNAVAILABLE, INTERNAL, or on a 429 the limit that was hit: GUEST_LIMIT (the demo allowance), HOURLY_LIMIT, DAILY_LIMIT (questions), TOKEN_BUDGET (the day's model budget) or RATE_LIMITED (any other limit). */
             code: string;
             correlationId?: string;
-            details?: unknown;
+            details?: {
+                message: string;
+                path: string;
+            }[] | {
+                candidates: components["schemas"]["GraphSymbol"][];
+            };
             message: string;
+            retryAfterSec?: number;
             /** @enum {boolean} */
             success: false;
         };
@@ -4356,6 +4790,10 @@ export interface components {
             suite: string;
             tags?: string[];
         };
+        EvalsStatus: {
+            canStartRuns: boolean;
+            reason: string | null;
+        };
         FailedQuery: {
             answerExcerpt: string;
             conversationId: string;
@@ -4396,6 +4834,30 @@ export interface components {
             }[];
             truncated: boolean;
         };
+        GraphOverview: {
+            files: {
+                path: string;
+                symbols: number;
+            }[];
+            packages: {
+                calls: number;
+                name: string;
+            }[];
+            topSymbols: {
+                callers: number;
+                calls: number;
+                chunkId: string | null;
+                exported: boolean;
+                filePath: string;
+                id: string;
+                kind: string;
+                lineEnd: number;
+                lineStart: number;
+                name: string;
+                qualifiedName: string;
+                signature: string | null;
+            }[];
+        };
         GraphPath: {
             from: components["schemas"]["GraphSymbol"];
             path: components["schemas"]["GraphSymbol"][] | null;
@@ -4432,6 +4894,19 @@ export interface components {
             }[];
             truncated: boolean;
         };
+        IngestionFailure: {
+            error: string | null;
+            /** Format: date-time */
+            failedAt: string;
+            sourceId: string;
+            /** @enum {string} */
+            stage: "QUEUED" | "FETCHING" | "FILTERING" | "PARSING" | "STRUCTURING" | "CHUNKING" | "CONTEXTUALIZING" | "EMBEDDING" | "INDEXING" | "DONE";
+            title: string;
+            /** @enum {string} */
+            type: "PDF" | "GITHUB_REPO" | "WEBSITE";
+            userId: string;
+            workspaceId: string;
+        };
         Liveness: {
             /** @enum {string} */
             status: "ok";
@@ -4467,18 +4942,54 @@ export interface components {
         Message: {
             citations: components["schemas"]["Citation"][];
             content: string;
+            costUsd?: string;
             /** Format: date-time */
             createdAt: string;
             error: string | null;
             /** @enum {string|null} */
             feedback: "UP" | "DOWN" | null;
             feedbackNote: string | null;
+            firstTokenMs?: number | null;
             id: string;
+            latencyMs?: number | null;
+            model?: string | null;
             /** @enum {string} */
             role: "USER" | "ASSISTANT";
             /** @enum {string} */
             status: "COMPLETE" | "ERROR" | "ABORTED";
+            tokensCached?: number;
+            tokensIn?: number;
+            tokensOut?: number;
             toolCalls: components["schemas"]["ToolCall"][];
+            weakRetrieval?: boolean;
+        };
+        ModelUsage: {
+            /** Format: date-time */
+            from: string;
+            models: {
+                calls: number;
+                costUsd: string;
+                errors: number;
+                fallbacks: number;
+                key: string | null;
+                model: string;
+                provider: string;
+                tokensIn: number;
+                tokensOut: number;
+                /** @enum {string} */
+                type: "LLM" | "EMBEDDING" | "RERANK" | "WEB_SEARCH" | "INGEST";
+            }[];
+            tasks: {
+                calls: number;
+                costUsd: string;
+                errors: number;
+                fallbacks: number;
+                task: string;
+                tokensIn: number;
+                tokensOut: number;
+            }[];
+            /** Format: date-time */
+            to: string;
         };
         MonitoringStats: {
             answers: {
@@ -4522,8 +5033,27 @@ export interface components {
             /** Format: date-time */
             to: string;
             usagePerDay: {
-                [key: string]: unknown;
+                calls: number;
+                costUsd: string;
+                day: string;
+                tokensIn: number;
+                tokensOut: number;
             }[];
+        };
+        /** @description Counters are deleted a couple of days after their window ends, so older ranges are empty. */
+        RateLimitUse: {
+            /** Format: date-time */
+            from: string;
+            limits: {
+                blocked: number;
+                clientsBlocked: number;
+                name: string;
+                points: number;
+                requests: number;
+                windowSec: number | null;
+            }[];
+            /** Format: date-time */
+            to: string;
         };
         Readiness: {
             /** @enum {string} */
@@ -4686,9 +5216,17 @@ export interface components {
             /** Format: date-time */
             createdAt: string;
             error: string | null;
+            /** @enum {string|null} */
+            errorCode: "CANCELLED" | "VALIDATION_FAILED" | "MODEL_UNAVAILABLE" | "TIMEOUT" | "NO_MATERIAL" | "QUEUE_FAILED" | "GENERATION_FAILED" | null;
             id: string;
             input: {
-                [key: string]: unknown;
+                count?: number;
+                /** @enum {string} */
+                difficulty: "easy" | "medium" | "hard";
+                pathPrefix?: string;
+                sourceIds: string[];
+                tocNodeId?: string;
+                topic?: string;
             };
             model: string | null;
             promptVersion: string | null;
@@ -4706,9 +5244,17 @@ export interface components {
             createdAt: string;
             data?: unknown;
             error: string | null;
+            /** @enum {string|null} */
+            errorCode: "CANCELLED" | "VALIDATION_FAILED" | "MODEL_UNAVAILABLE" | "TIMEOUT" | "NO_MATERIAL" | "QUEUE_FAILED" | "GENERATION_FAILED" | null;
             id: string;
             input: {
-                [key: string]: unknown;
+                count?: number;
+                /** @enum {string} */
+                difficulty: "easy" | "medium" | "hard";
+                pathPrefix?: string;
+                sourceIds: string[];
+                tocNodeId?: string;
+                topic?: string;
             };
             model: string | null;
             promptVersion: string | null;
@@ -4750,6 +5296,7 @@ export interface components {
         };
         ToolCall: {
             args?: unknown;
+            id?: string;
             ms: number;
             ok: boolean;
             resultTokens: number;
@@ -4757,12 +5304,20 @@ export interface components {
             summary: string;
             tool: string;
         };
-        /** @description Server-Sent Events, one per block: `event: <event>` and `data: <JSON of data>`. Order: step and token events as the agent works, then citations and done, or error. */
+        /** @description Server-Sent Events, one per block: `event: <event>` and `data: <JSON of data>`. Order: title (when the question named the conversation), step and token events as the agent works, then citations and done, or error. */
         TurnEvents: {
             data: {
+                title: string;
+            };
+            /** @enum {string} */
+            event: "title";
+        } | {
+            data: {
                 args?: unknown;
+                id: string;
                 index: number;
                 ms?: number;
+                ok?: boolean;
                 /** @enum {string} */
                 status: "start" | "end";
                 summary?: string;
@@ -4784,6 +5339,7 @@ export interface components {
             event: "citations";
         } | {
             data: {
+                cached: boolean;
                 latencyMs: number;
                 messageId: string;
                 usage: {
@@ -4804,6 +5360,12 @@ export interface components {
             event: "error";
         };
         Usage: {
+            guest: {
+                limit: number;
+                /** Format: date-time */
+                resetsAt: string;
+                used: number;
+            } | null;
             last7Days: {
                 costUsd: string;
                 messages: number;

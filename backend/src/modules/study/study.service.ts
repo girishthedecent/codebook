@@ -20,10 +20,8 @@ import {
   updateActiveArtifact,
   updateArtifactIfExists,
 } from './study.repository.js';
+import { STUDY_ERROR_MESSAGES, type StudyErrorCode } from './study.errors.js';
 import type { StudyData } from './study.schemas.js';
-
-// Shown on a set the owner stopped; the generation function leaves such a set alone.
-export const CANCELLED_MESSAGE = 'Cancelled.';
 
 // Stored citations keep this much of each passage: enough for the snippet and a preview.
 const STORED_TEXT_CHARS = 1_500;
@@ -86,10 +84,12 @@ export async function regenerateStudyService(userId: string, artifactId: string)
 export async function cancelStudyService(userId: string, artifactId: string) {
   const artifact = await findArtifactForUser(userId, artifactId);
   if (!artifact) throw new NotFoundError('Study set not found');
-  // Conditional, so a run that finishes at the same moment isn't turned into a failure.
+  // Conditional, so a run that finishes at the same moment isn't turned into a failure. The
+  // generation function leaves a cancelled set alone.
   const cancelled = await updateActiveArtifact(artifactId, {
     status: 'FAILED',
-    error: CANCELLED_MESSAGE,
+    error: STUDY_ERROR_MESSAGES.CANCELLED,
+    errorCode: 'CANCELLED',
   });
   if (!cancelled) throw new ConflictError('This study set is not being generated');
   return cancelled;
@@ -101,7 +101,8 @@ async function queueGeneration(artifact: StudyArtifact) {
   } catch (error) {
     await updateArtifactIfExists(artifact.id, {
       status: 'FAILED',
-      error: "Couldn't start generating. Try again in a moment.",
+      error: STUDY_ERROR_MESSAGES.QUEUE_FAILED,
+      errorCode: 'QUEUE_FAILED',
     });
     throw error;
   }
@@ -118,7 +119,11 @@ export async function deleteStudyService(userId: string, artifactId: string) {
 
 /** Marks the run as started; null when the artifact was deleted or cancelled meanwhile. */
 export async function startStudy(artifactId: string) {
-  const artifact = await updateActiveArtifact(artifactId, { status: 'RUNNING', error: null });
+  const artifact = await updateActiveArtifact(artifactId, {
+    status: 'RUNNING',
+    error: null,
+    errorCode: null,
+  });
   if (!artifact) return null;
   return {
     type: artifact.type,
@@ -143,6 +148,7 @@ export async function saveStudy(
   await updateActiveArtifact(artifactId, {
     status: 'DONE',
     error: null,
+    errorCode: null,
     title: data.title.slice(0, 200) || undefined,
     data: data as unknown as Prisma.InputJsonValue,
     sources: sources as unknown as Prisma.InputJsonValue,
@@ -158,8 +164,12 @@ export async function isStudyActive(artifactId: string) {
 }
 
 /** `error` is shown to the user, so it never carries provider details. */
-export async function failStudy(artifactId: string, error: string) {
-  await updateActiveArtifact(artifactId, { status: 'FAILED', error });
+export async function failStudy(artifactId: string, code: StudyErrorCode, error?: string) {
+  await updateActiveArtifact(artifactId, {
+    status: 'FAILED',
+    error: error ?? STUDY_ERROR_MESSAGES[code],
+    errorCode: code,
+  });
 }
 
 const capitalize = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);

@@ -7,6 +7,7 @@ import {
 } from '../../middlewares/validator.middleware.js';
 import {
   compareRunsHandler,
+  evalsStatusHandler,
   getRunHandler,
   listDatasetsHandler,
   listResultsHandler,
@@ -28,6 +29,7 @@ export const evalsRouter = express.Router();
 // Before validation, so a non-admin gets the plain 404 even for a bad request.
 evalsRouter.use(requireAdmin);
 
+evalsRouter.get('/status', evalsStatusHandler);
 evalsRouter.get('/datasets', listDatasetsHandler);
 evalsRouter.get('/runs', validateQueryParams(listRunsQuerySchema), listRunsHandler);
 evalsRouter.post('/runs', validateRequestBody(createRunSchema), requestRunHandler);

@@ -21,7 +21,7 @@ export function ErrorLine({ error, onRetry }: { error: Error; onRetry?: () => vo
     <div role="alert" className="text-sm">
       <p className="text-error">{text}</p>
       {retryable && (
-        <Button size="sm" variant="secondary" className="mt-2 h-10! md:h-7!" onClick={onRetry}>
+        <Button size="sm" variant="secondary" className="mt-2 h-10! sm:h-7!" onClick={onRetry}>
           {s.retry}
         </Button>
       )}

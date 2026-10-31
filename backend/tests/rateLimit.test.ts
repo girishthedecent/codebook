@@ -194,7 +194,8 @@ describe('429s thrown from services', () => {
 
     expect(res.status).toBe(429);
     expect(res.get('Retry-After')).toBe('42');
-    expect(res.body).toMatchObject({ code: 'RATE_LIMITED', details: { retryAfterSeconds: 42 } });
+    expect(res.body).toMatchObject({ code: 'RATE_LIMITED', retryAfterSec: 42 });
+    expect(res.body).not.toHaveProperty('details');
   });
 });
 

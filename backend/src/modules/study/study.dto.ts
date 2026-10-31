@@ -1,6 +1,7 @@
 import type { z } from 'zod';
 import type { StudyArtifact } from '../../generated/prisma/client.js';
 import type { CitationRef } from '../citations/citations.types.js';
+import { errorCodeOf, type StudyErrorCode } from './study.errors.js';
 import type {
   createStudySchema,
   listStudyQuerySchema,
@@ -23,7 +24,9 @@ export type StudyResponse = {
   title: string;
   status: StudyArtifact['status'];
   input: StudyInput;
+  // A failed set: the reason in words, and as a code (a cancelled set has `CANCELLED`).
   error: string | null;
+  errorCode: StudyErrorCode | null;
   model: string | null;
   promptVersion: string | null;
   createdAt: Date;
@@ -44,6 +47,7 @@ export function toStudyResponse(artifact: StudyArtifact, { full = false } = {}):
     status: artifact.status,
     input: artifact.input as StudyInput,
     error: artifact.error,
+    errorCode: errorCodeOf(artifact),
     model: artifact.model,
     promptVersion: artifact.promptVersion,
     createdAt: artifact.createdAt,

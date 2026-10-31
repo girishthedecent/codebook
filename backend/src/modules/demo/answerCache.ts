@@ -19,11 +19,10 @@ export type CachedAnswer = {
 };
 
 type CacheableTurn = {
-  workspace: { id: string; isDemo: boolean };
+  userId: string;
+  workspace: { id: string; isDemo: boolean; userId: string };
   conversation: { id: string };
-  questionId: string;
   question: string;
-  isSystem: boolean;
 };
 
 /** Case, spacing and the closing "?" don't change what is asked. */
@@ -37,31 +36,33 @@ export function normalizeQuestion(question: string) {
 
 /**
  * The cache key for this turn's answer, or null when the answer can't be shared: outside
- * the demo, with memory on, for the eval user, or after the first question of a
- * conversation (a follow-up depends on the turns before it).
+ * the demo, with memory on, for the demo's owner (who reads whole pages and quotes freely,
+ * unlike its visitors), or after an answered question of the conversation (a follow-up
+ * depends on the turns before it). Questions whose answer failed or was cut off aren't part
+ * of what the model reads, so they don't count.
  */
 export async function answerCacheKey(turn: CacheableTurn, useMemory: boolean) {
-  if (!turn.workspace.isDemo || turn.isSystem || useMemory) return null;
-  const earlier = await prismaClient.message.count({
-    where: { conversationId: turn.conversation.id, id: { not: turn.questionId } },
+  const { workspace } = turn;
+  if (!workspace.isDemo || workspace.userId === turn.userId || useMemory) return null;
+  const answered = await prismaClient.message.count({
+    where: { conversationId: turn.conversation.id, role: 'ASSISTANT', status: 'COMPLETE' },
   });
-  if (earlier > 0) return null;
+  if (answered > 0) return null;
+  return cacheKeyFor(workspace.id, turn.question);
+}
 
+/** The key of the first question asked in a workspace, as its sources are now. */
+export async function cacheKeyFor(workspaceId: string, question: string) {
   // A source added, removed or ingested again changes what the answer would cite.
   const sources = await prismaClient.source.findMany({
-    where: { workspaceId: turn.workspace.id },
+    where: { workspaceId },
     select: { id: true, lastIngestedAt: true },
     orderBy: { id: 'asc' },
   });
   const contentVersion = sources
     .map((source) => `${source.id}@${source.lastIngestedAt?.toISOString() ?? '-'}`)
     .join(',');
-  return sha256(
-    turn.workspace.id,
-    normalizeQuestion(turn.question),
-    DEFAULT_AGENT_PROMPT,
-    contentVersion,
-  );
+  return sha256(workspaceId, normalizeQuestion(question), DEFAULT_AGENT_PROMPT, contentVersion);
 }
 
 const ttlCutoff = (now = Date.now()) => new Date(now - appConfig.demo.answerCacheTtlSec * 1000);

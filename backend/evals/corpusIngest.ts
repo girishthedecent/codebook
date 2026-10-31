@@ -63,10 +63,13 @@ export async function createCorpusSource(userId: string, workspaceId: string, en
         );
       }
       case 'GITHUB_REPO':
-        return await createSourceService(userId, workspaceId, {
-          type: entry.type,
-          ...entry.location,
-        });
+        // The spec's title, not the service's: the caches were filled under it.
+        return await createSourceService(
+          userId,
+          workspaceId,
+          { type: entry.type, ...entry.location },
+          { title: entry.title },
+        );
       case 'WEBSITE':
         return await createSourceService(userId, workspaceId, {
           type: entry.type,

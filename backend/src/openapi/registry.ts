@@ -36,6 +36,8 @@ import {
 } from '../modules/memory/memory.validator.js';
 import {
   failedQueriesQuerySchema,
+  ingestionFailuresQuerySchema,
+  rangeQuerySchema,
   statsQuerySchema,
 } from '../modules/monitoring/monitoring.validator.js';
 import { searchBodySchema } from '../modules/retrieval/retrieval.validator.js';
@@ -82,13 +84,21 @@ const ERROR_DESCRIPTIONS: Record<number, string> = {
   409: 'Conflicts with the current state',
   413: 'Too large',
   415: 'Unsupported file type',
-  429: 'Rate limit or quota reached (see Retry-After)',
+  429: 'Rate limit or quota reached: `code` says which, `retryAfterSec` and Retry-After when it ends',
   502: 'An upstream provider failed',
-  503: 'Not ready',
+  503: 'Not ready, or not available on this deployment',
 };
 
 const json = (schema: z.ZodType) => ({ 'application/json': { schema } });
 const pdfBinary = z.string().meta({ format: 'binary', description: 'PDF bytes' });
+const fileHeaders = z.object({
+  'Content-Disposition': z
+    .string()
+    .describe(
+      "`inline`, with the file's name as `filename*=UTF-8''…` (percent-encoded, any language) " +
+        'and an ASCII `filename="…"` for clients that do not read it.',
+    ),
+});
 
 export const API = '/api/v1';
 export const AUTH = '/api/auth';
@@ -178,6 +188,9 @@ function apiRoutes(): Route[] {
       path: `${API}/usage/me`,
       tags: ['account'],
       summary: "Today's, this week's and this month's usage, and what is left of each limit",
+      description:
+        'For a guest, `guest` is the demo allowance that applies to them (counted per IP ' +
+        'address); the hourly and daily limits are not what they run into first.',
       access: 'user',
       responses: { 200: ok('Usage', s.usageSchema) },
     },
@@ -187,7 +200,7 @@ function apiRoutes(): Route[] {
       method: 'get',
       path: `${API}/demo`,
       tags: ['demo'],
-      summary: 'The public demo workspace and its sources',
+      summary: 'The public demo workspace, its sources and some questions to start with',
       description:
         'No sign-in needed. Sign in as a guest (POST /api/auth/sign-in/anonymous) to ask it ' +
         'questions: guests can only open conversations in this workspace.',
@@ -223,6 +236,9 @@ function apiRoutes(): Route[] {
       path: workspace,
       tags: ['workspaces'],
       summary: 'A workspace, with source and conversation counts',
+      description:
+        'Your own workspaces, and the demo workspace for anyone signed in (guests too). ' +
+        'The conversation count is always your own.',
       access: 'user',
       request: workspaceParams,
       responses: { 200: ok('The workspace', s.workspaceDetailSchema) },
@@ -381,10 +397,12 @@ function apiRoutes(): Route[] {
       responses: {
         200: {
           description: 'The whole file',
+          headers: fileHeaders,
           content: { 'application/pdf': { schema: pdfBinary } },
         },
         206: {
           description: 'The requested part of the file',
+          headers: fileHeaders,
           content: { 'application/pdf': { schema: pdfBinary } },
         },
       },
@@ -392,6 +410,16 @@ function apiRoutes(): Route[] {
     },
 
     // Code graph
+    {
+      method: 'get',
+      path: `${graph}/overview`,
+      tags: ['graph'],
+      summary: 'Where to start in a repository: its busiest symbols, files and packages',
+      access: 'user',
+      request: sourceParams,
+      responses: { 200: ok('The overview', s.graphOverviewSchema) },
+      errors: [400, 404],
+    },
     {
       method: 'get',
       path: `${graph}/symbols`,
@@ -407,6 +435,9 @@ function apiRoutes(): Route[] {
       path: `${graph}/callers`,
       tags: ['graph'],
       summary: 'Who calls a symbol, up to `depth` hops back',
+      description:
+        'A class and its constructor stand for each other: asking for either lists the ' +
+        'callers of both, since `Block(config)` is recorded as a call of the class.',
       access: 'user',
       request: { ...sourceParams, query: walkQuerySchema },
       responses: { 200: ok('Callers', s.graphWalkSchema) },
@@ -417,6 +448,8 @@ function apiRoutes(): Route[] {
       path: `${graph}/dependencies`,
       tags: ['graph'],
       summary: 'What a symbol calls or imports, up to `depth` hops',
+      description:
+        'For a class, what its methods call or import (depth 1 is what they use directly).',
       access: 'user',
       request: { ...sourceParams, query: dependenciesQuerySchema },
       responses: { 200: ok('Dependencies', s.graphDependenciesSchema) },
@@ -496,8 +529,10 @@ function apiRoutes(): Route[] {
       description:
         'The agent picks its tools (search, code search, the code graph, reading sources, ' +
         'web search) step by step, then answers with [n] citations. Errors before the stream ' +
-        'opens (access, limits, the daily token budget) are ordinary JSON errors; once it is ' +
-        'open, a failure is an `error` event.',
+        'opens (access, limits, the daily token budget) are ordinary JSON errors, a 429 with ' +
+        'the limit in `code`; once it is open, a failure is an `error` event. With `retry`, ' +
+        'the failed attempt of the same question is replaced. A guest whose answer fails ' +
+        'because the models are out of quota keeps their question.',
       access: 'user',
       request: {
         params: conversationParamsSchema,
@@ -636,7 +671,9 @@ function apiRoutes(): Route[] {
       path: `${API}/study/{studyId}/cancel`,
       tags: ['study'],
       summary: 'Stop a study set that is still generating',
-      description: 'Marks it FAILED with the error "Cancelled."; 409 once it has finished.',
+      description:
+        'Marks it FAILED with the error "Cancelled." and `errorCode` CANCELLED; 409 once it ' +
+        'has finished.',
       access: 'user',
       request: { params: studyParamsSchema },
       responses: { 200: ok('Cancelled', s.studySchema) },
@@ -649,6 +686,8 @@ function apiRoutes(): Route[] {
       path: `${API}/monitoring/stats`,
       tags: ['monitoring'],
       summary: 'Answer quality, latency, provider and ingestion stats over a time range',
+      description:
+        'Without `includeSystem`, the eval runner and the demo owner are left out of every number.',
       access: 'admin',
       // The validator turns the strings into dates and checks the range, so describe its input.
       request: { query: statsQuerySchema.in },
@@ -666,7 +705,54 @@ function apiRoutes(): Route[] {
       errors: [400],
     },
 
+    {
+      method: 'get',
+      path: `${API}/monitoring/models`,
+      tags: ['monitoring'],
+      summary: 'Model calls over a time range, by model and key and by task',
+      access: 'admin',
+      request: { query: statsQuerySchema.in },
+      responses: { 200: ok('Usage', s.modelUsageSchema) },
+      errors: [400],
+    },
+    {
+      method: 'get',
+      path: `${API}/monitoring/ingestion-failures`,
+      tags: ['monitoring'],
+      summary: 'Sources whose last ingest failed, the latest first',
+      access: 'admin',
+      request: { query: ingestionFailuresQuerySchema },
+      responses: { 200: ok('Failed sources', z.array(s.ingestionFailureSchema)) },
+      errors: [400],
+    },
+    {
+      method: 'get',
+      path: `${API}/monitoring/rate-limits`,
+      tags: ['monitoring'],
+      summary: 'What each rate limit counted and turned away over a time range',
+      access: 'admin',
+      request: { query: rangeQuerySchema.in },
+      responses: { 200: ok('Rate limits', s.rateLimitUseSchema) },
+      errors: [400],
+    },
+    {
+      method: 'get',
+      path: `${API}/monitoring/circuit-breaker`,
+      tags: ['monitoring'],
+      summary: 'Which models are being skipped after repeated quota errors',
+      access: 'admin',
+      responses: { 200: ok('The breaker', s.circuitBreakerSchema) },
+    },
+
     // Evals (admin)
+    {
+      method: 'get',
+      path: `${API}/evals/status`,
+      tags: ['evals'],
+      summary: 'Whether eval runs can be started on this deployment',
+      access: 'admin',
+      responses: { 200: ok('Status', s.evalsStatusSchema) },
+    },
     {
       method: 'get',
       path: `${API}/evals/datasets`,
@@ -690,10 +776,11 @@ function apiRoutes(): Route[] {
       path: `${API}/evals/runs`,
       tags: ['evals'],
       summary: 'Queue an eval run on the eval worker',
+      description: 'A deployment without an eval worker answers 503; see GET /evals/status.',
       access: 'admin',
       request: { body: { content: json(createRunSchema) } },
       responses: { 202: ok('Queued', s.evalRunQueuedSchema) },
-      errors: [400, 409],
+      errors: [400, 409, 503],
     },
     {
       method: 'get',

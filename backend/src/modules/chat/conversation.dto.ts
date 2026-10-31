@@ -26,8 +26,11 @@ export function toConversationResponse(conversation: Conversation) {
   };
 }
 
-export function toMessageResponse(message: Message) {
-  return {
+// Answers also carry what the turn cost, for the owner of the workspace they were asked in.
+// Visitors of the demo read answers in someone else's workspace and get the same message
+// without those fields.
+export function toMessageResponse(message: Message, { ownsWorkspace = false } = {}) {
+  const response = {
     id: message.id,
     role: message.role,
     content: message.content,
@@ -38,5 +41,17 @@ export function toMessageResponse(message: Message) {
     feedback: message.feedback,
     feedbackNote: message.feedbackNote,
     createdAt: message.createdAt,
+  };
+  if (!ownsWorkspace || message.role !== 'ASSISTANT') return response;
+  return {
+    ...response,
+    model: message.model,
+    latencyMs: message.latencyMs,
+    firstTokenMs: message.firstTokenMs,
+    tokensIn: message.tokensIn,
+    tokensOut: message.tokensOut,
+    tokensCached: message.tokensCached,
+    costUsd: message.costUsd.toString(),
+    weakRetrieval: message.weakRetrieval,
   };
 }

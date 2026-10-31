@@ -9,6 +9,7 @@ import { CitationRegistry } from '../src/modules/citations/citationRegistry.js';
 import { ensureDemoOwner, ensureDemoWorkspace } from '../src/modules/demo/demo.service.js';
 import { excerptOf } from '../src/modules/demo/excerpt.js';
 import { consume } from '../src/utils/rateLimit.js';
+import { DEMO_STUDY_SETS, planStudySets, planWarmups } from '../prisma/demoExtras.js';
 import { loadDemoSpec, planDemoSources } from '../prisma/seed.js';
 import { loadCorpusSpec } from '../evals/corpusWorkspace.js';
 import { authAgent, ORIGIN, signedInUser, signUp } from './helpers/auth.js';
@@ -123,6 +124,17 @@ describe('GET /api/v1/demo', () => {
     expect(data.sources.map((source) => source.id)).toEqual([sourceId]);
   });
 
+  it('suggests the starter questions of demo.json, in order', async () => {
+    await seedDemo();
+    const res = await authAgent().get('/api/v1/demo');
+
+    const { starterQuestions } = (res.body as Body<{ starterQuestions: string[] }>).data;
+    expect(starterQuestions).toEqual(loadDemoSpec().starterQuestions);
+    expect(starterQuestions.length).toBeGreaterThanOrEqual(3);
+    expect(starterQuestions.length).toBeLessThanOrEqual(4);
+    expect(starterQuestions[0]).toMatch(/causal self-attention/);
+  });
+
   it("ignores a workspace marked as demo that the demo owner doesn't own", async () => {
     const { userId } = await signedInUser();
     await prismaClient.workspace.create({ data: { userId, name: 'Fake demo', isDemo: true } });
@@ -143,6 +155,27 @@ describe('what guests can do', () => {
     expect(demo.status).toBe(201);
     const elsewhere = await agent.post(`/api/v1/workspaces/${theirs.id}/conversations`).send({});
     expect(elsewhere.status).toBe(404);
+  });
+
+  it('reads the demo workspace, with its source count and no conversations of its own', async () => {
+    const { workspace } = await seedDemo();
+    const { agent } = await signInGuest();
+
+    const res = await agent.get(`/api/v1/workspaces/${workspace.id}`);
+
+    expect(res.status).toBe(200);
+    expect((res.body as Body<unknown>).data).toMatchObject({
+      id: workspace.id,
+      isDemo: true,
+      name: appConfig.demo.workspaceName,
+      counts: { sources: { READY: 1 }, conversations: 0 },
+    });
+    expect((res.body as Body<{ userId?: string }>).data).not.toHaveProperty('userId');
+    const other = await signedInUser('owner@example.com');
+    const theirs = await prismaClient.workspace.create({
+      data: { userId: other.userId, name: 'Private' },
+    });
+    expect((await agent.get(`/api/v1/workspaces/${theirs.id}`)).status).toBe(404);
   });
 
   it('reads the demo sources', async () => {
@@ -557,6 +590,85 @@ describe('seeding the demo', () => {
     expect(again.map((p) => p.action)).toEqual(['create', 'resync', 'create']);
   });
 
+  it('finds the live repository source whichever form of the commit its title has', () => {
+    const repo = loadDemoSpec().sources[1]!.entry;
+    const ref = repo.type === 'GITHUB_REPO' ? repo.location.ref : '';
+    const row = (title: string) => ({
+      id: 'r1',
+      type: repo.type,
+      title,
+      origin: { owner: 'karpathy', repo: 'nanoGPT', ref, defaultBranch: 'master' },
+      dedupeKey: 'repo',
+      status: 'READY' as const,
+    });
+    const entries = [{ entry: repo, optional: false }];
+    const found = { pdfKeys: {}, cached: new Set<never>() };
+
+    // The live source keeps the 40-character title it was indexed under; a source added now
+    // has the short one. Neither is made again, and neither is indexed again.
+    for (const title of [`karpathy/nanoGPT@${ref}`, `karpathy/nanoGPT@${ref.slice(0, 7)}`]) {
+      const [plan] = planDemoSources(entries, [row(title)], found, false);
+      expect(plan, title).toMatchObject({ action: 'keep', sourceId: 'r1' });
+    }
+    const [resync] = planDemoSources(entries, [row(`karpathy/nanoGPT@${ref}`)], found, false, true);
+    expect(resync).toMatchObject({ action: 'resync', sourceId: 'r1' });
+    // Another commit of the same repository is another source.
+    const other = {
+      ...row('karpathy/nanoGPT@abcdef0'),
+      origin: { owner: 'karpathy', repo: 'nanoGPT', ref: 'abcdef0' },
+    };
+    expect(planDemoSources(entries, [other], found, false)[0]).toMatchObject({ action: 'create' });
+  });
+
+  it('plans one study set of each type, keeping what is there and retrying what failed', () => {
+    expect(DEMO_STUDY_SETS.map((set) => set.type)).toEqual([
+      'QUIZ',
+      'FLASHCARDS',
+      'MINDMAP',
+      'SUMMARY',
+    ]);
+    const sources = new Set(loadDemoSpec().sources.map(({ entry }) => entry.sourceKey));
+    for (const set of DEMO_STUDY_SETS) {
+      expect(set.sources.length).toBeGreaterThan(0);
+      for (const key of set.sources)
+        expect(sources.has(key), `${set.type} reads ${key}`).toBe(true);
+    }
+
+    expect(planStudySets(DEMO_STUDY_SETS, []).map((p) => p.action)).toEqual([
+      'create',
+      'create',
+      'create',
+      'create',
+    ]);
+    const plan = planStudySets(DEMO_STUDY_SETS, [
+      { id: 'q', type: 'QUIZ', status: 'DONE' },
+      { id: 'f', type: 'FLASHCARDS', status: 'RUNNING' },
+      { id: 'm', type: 'MINDMAP', status: 'FAILED' },
+      // A failed set next to a good one is left alone.
+      { id: 's-bad', type: 'SUMMARY', status: 'FAILED' },
+      { id: 's-good', type: 'SUMMARY', status: 'DONE' },
+    ]);
+    expect(plan.map((p) => [p.spec.type, p.action, p.artifactId])).toEqual([
+      ['QUIZ', 'keep', 'q'],
+      ['FLASHCARDS', 'keep', 'f'],
+      ['MINDMAP', 'retry', 'm'],
+      ['SUMMARY', 'keep', 's-good'],
+    ]);
+  });
+
+  it('plans to ask only the starter questions that have no cached answer', () => {
+    const questions = loadDemoSpec().starterQuestions;
+
+    expect(planWarmups(questions, new Set()).map((p) => p.action)).toEqual(
+      questions.map(() => 'warm'),
+    );
+    const plan = planWarmups(questions, new Set([questions[0]!, questions[2]!]));
+    expect(plan.map((p) => p.action)).toEqual(
+      questions.map((_, i) => (i === 0 || i === 2 ? 'keep' : 'warm')),
+    );
+    expect(plan.map((p) => p.question)).toEqual(questions);
+  });
+
   it('reads the demo sources from demo.json: a book, a repository at a commit and a page', () => {
     const demo = loadDemoSpec();
     expect(demo.description.length).toBeGreaterThan(0);
@@ -569,5 +681,11 @@ describe('seeding the demo', () => {
     expect(repo.type === 'GITHUB_REPO' && repo.location.ref).toMatch(/^[0-9a-f]{40}$/);
     // None needs the eval corpus's caches, so every source is required.
     expect(demo.sources.every(({ optional }) => !optional)).toBe(true);
+    // The title of the live repository source, with the whole commit, is what the caches know.
+    expect(repo.title).toBe(
+      `karpathy/nanoGPT@${repo.type === 'GITHUB_REPO' ? repo.location.ref : ''}`,
+    );
+    expect(demo.starterQuestions.length).toBeGreaterThanOrEqual(3);
+    expect(demo.starterQuestions.every((question) => question.length <= 200)).toBe(true);
   });
 });

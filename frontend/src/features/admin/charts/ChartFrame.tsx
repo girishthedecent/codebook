@@ -1,5 +1,4 @@
 import type { ReactNode } from 'react';
-import './chart.css';
 
 export type Series = {
   key: string;

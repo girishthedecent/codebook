@@ -12,7 +12,7 @@ const Anchor = forwardRef<HTMLAnchorElement, ComponentPropsWithoutRef<'a'>>(func
       ref={ref}
       {...rest}
       className={cn(
-        '-ml-1.5 inline-flex min-h-9 items-center gap-1.5 rounded-sm px-1.5 text-sm text-ink-2 hover:text-ink max-[719px]:min-h-11',
+        '-ml-1.5 inline-flex min-h-9 items-center gap-1.5 rounded-sm px-1.5 text-sm text-ink-2 hover:text-ink max-sm:min-h-11',
         className,
       )}
     >
