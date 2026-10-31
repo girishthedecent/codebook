@@ -400,7 +400,7 @@ After a change that should move the numbers: `pnpm evals:baseline` and
 ## Deploying
 
 `render.yaml` is a [Render](https://render.com) blueprint with two services: the API
-(`codebook-api`, a Node web service) and the web app (`decent-codebook`, a static site). The
+(`decent-codebook-api`, a Node web service) and the web app (`decent-codebook`, a static site). The
 static site forwards `/api/*` to the API, so the browser talks to one origin and the session
 cookie stays first-party. The API applies pending migrations each time it starts.
 
@@ -415,10 +415,15 @@ All variables are listed in [`backend/.env.production.example`](backend/.env.pro
 
 1. Push the repository and create a Blueprint on Render from it. Render asks for the values
    marked `sync: false` in `render.yaml`.
-2. Set `BETTER_AUTH_URL` and `TRUSTED_ORIGINS` to the web app's public URL, not the API's:
-   browsers reach the API through the site. If the API's address is not
-   `https://codebook-api.onrender.com`, update the rewrite in `render.yaml` to match. A GitHub
-   OAuth callback, if used, is `https://<site>/api/auth/callback/github`.
+2. Check the two services' real addresses in the dashboard. Render adds a suffix to a service
+   name that is already taken, and `render.yaml` assumes there is none:
+   - `BETTER_AUTH_URL` and `TRUSTED_ORIGINS` are the web app's public URL, not the API's, because
+     browsers reach the API through the site.
+   - The rewrite under `routes` must point at the API's real address, or the site would forward
+     requests to someone else's service.
+
+   Change them in `render.yaml` if they differ. A GitHub OAuth callback, if used, is
+   `https://<site>/api/auth/callback/github`.
 3. Sync the app in Inngest Cloud at `https://<site>/api/inngest` after each deploy that adds or
    changes a function.
 4. Open the site, sign in, add a small source and ask a question.

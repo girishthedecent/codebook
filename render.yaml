@@ -4,9 +4,13 @@
 # The web app calls `/api/...` on its own address and the static site forwards those requests to
 # the API (the rewrite below), so the browser only ever talks to one origin and the session
 # cookie stays first-party. That is why BETTER_AUTH_URL and TRUSTED_ORIGINS are the site's URL.
+#
+# Two addresses below depend on the service names: the site's own URL (BETTER_AUTH_URL,
+# TRUSTED_ORIGINS) and the API's URL (the rewrite). Render adds a suffix to a name that is
+# already taken, so after creating the services check both addresses in the dashboard.
 services:
   - type: web
-    name: codebook-api
+    name: decent-codebook-api
     runtime: node
     region: frankfurt
     plan: free
@@ -24,9 +28,9 @@ services:
       - key: TRUST_PROXY
         value: 1
       - key: BETTER_AUTH_URL
-        sync: false
+        value: https://decent-codebook.onrender.com
       - key: TRUSTED_ORIGINS
-        sync: false
+        value: https://decent-codebook.onrender.com
       - key: BETTER_AUTH_SECRET
         generateValue: true
       - key: DATABASE_URL
@@ -73,7 +77,7 @@ services:
       # First match wins: the API goes before the catch-all that serves the app's pages.
       - type: rewrite
         source: /api/*
-        destination: https://codebook-api.onrender.com/api/*
+        destination: https://decent-codebook-api.onrender.com/api/*
       - type: rewrite
         source: /*
         destination: /index.html
