@@ -400,7 +400,7 @@ After a change that should move the numbers: `pnpm evals:baseline` and
 ## Deploying
 
 `render.yaml` is a [Render](https://render.com) blueprint with two services: the API
-(`codebook-api`, a Node web service) and the web app (`codebook-web`, a static site). The
+(`codebook-api`, a Node web service) and the web app (`codebook`, a static site). The
 static site forwards `/api/*` to the API, so the browser talks to one origin and the session
 cookie stays first-party. The API applies pending migrations each time it starts.
 
