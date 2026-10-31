@@ -37,17 +37,22 @@ export function normalizeQuestion(question: string) {
 /**
  * The cache key for this turn's answer, or null when the answer can't be shared: outside
  * the demo, with memory on, for the demo's owner (who reads whole pages and quotes freely,
- * unlike its visitors), or after an answered question of the conversation (a follow-up
- * depends on the turns before it). Questions whose answer failed or was cut off aren't part
- * of what the model reads, so they don't count.
+ * unlike its visitors), or once the conversation holds anything else the model reads: an
+ * answer, or another question (one whose answer failed is still read back). Earlier copies of
+ * this same question are dropped from what the model reads, so they don't count.
  */
 export async function answerCacheKey(turn: CacheableTurn, useMemory: boolean) {
   const { workspace } = turn;
   if (!workspace.isDemo || workspace.userId === turn.userId || useMemory) return null;
-  const answered = await prismaClient.message.count({
-    where: { conversationId: turn.conversation.id, role: 'ASSISTANT', status: 'COMPLETE' },
+  const earlier = await prismaClient.message.findMany({
+    where: {
+      conversationId: turn.conversation.id,
+      OR: [{ role: 'USER' }, { role: 'ASSISTANT', status: 'COMPLETE' }],
+    },
+    select: { role: true, content: true },
   });
-  if (answered > 0) return null;
+  const question = turn.question.trim();
+  if (earlier.some((m) => m.role === 'ASSISTANT' || m.content.trim() !== question)) return null;
   return cacheKeyFor(workspace.id, turn.question);
 }
 

@@ -84,13 +84,14 @@ export async function dependenciesService(
   await repoSource(userId, sourceId);
   const symbol = await symbolFor(sourceId, query.symbol);
   const types: EdgeType[] = ['CALLS', 'IMPORTS'];
-  // Calls are made by a class's methods, not by the class: what it uses is what they use.
-  const starts = symbol.kind === 'CLASS' ? await methodsOf(symbol.id) : [symbol.id];
+  // A class uses what its methods call, plus what its body calls (attributes, field
+  // initialisers), which is recorded on the class itself.
+  const starts =
+    symbol.kind === 'CLASS' ? [symbol.id, ...(await methodsOf(symbol.id))] : [symbol.id];
   const rows = await walk(sourceId, starts, types, 'forward', query.depth);
-  const result = await reached([symbol.id, ...starts], rows);
+  const result = await reached(starts, rows);
   const inner = new Set([
     ...starts,
-    symbol.id,
     ...result.symbols.filter((s) => s.depth < query.depth).map((s) => s.id),
   ]);
   // The calls a class makes are its constructor's.

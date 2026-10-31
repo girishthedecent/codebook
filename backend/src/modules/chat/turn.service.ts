@@ -116,9 +116,10 @@ function newMessageId() {
   return `c${Date.now().toString(36)}${randomBytes(8).toString('hex')}`;
 }
 
-// A question with no saved answer may still be answering; one older than any turn can run
-// is taken as abandoned (the server stopped before it saved a failure).
-const ABANDONED_AFTER_MS = appConfig.chat.maxAgentSteps * appConfig.chat.stepTimeoutMs;
+// A question with no saved answer may still be answering. Each model call gives up within a
+// minute, but a turn runs several steps and can fall back between models, so only a question
+// well past any real turn is taken as abandoned (the server stopped before it saved a failure).
+const ABANDONED_AFTER_MS = 15 * 60_000;
 
 /**
  * The messages a retry of `question` replaces: the last exchange when it ended without an

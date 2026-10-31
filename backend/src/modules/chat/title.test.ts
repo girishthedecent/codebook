@@ -89,7 +89,8 @@ describe('retriedMessages', () => {
     ];
 
     expect(retriedMessages(lone(30), 'What is a salt?', NOW)).toEqual([]);
-    expect(retriedMessages(lone(6 * 60), 'What is a salt?', NOW)).toEqual(['q1']);
-    expect(retriedMessages(lone(6 * 60), 'Something else', NOW)).toEqual([]);
+    expect(retriedMessages(lone(6 * 60), 'What is a salt?', NOW)).toEqual([]);
+    expect(retriedMessages(lone(16 * 60), 'What is a salt?', NOW)).toEqual(['q1']);
+    expect(retriedMessages(lone(16 * 60), 'Something else', NOW)).toEqual([]);
   });
 });

@@ -207,6 +207,29 @@ describe('demo answer cache', () => {
     },
   );
 
+  it('asks the model when an earlier question of the conversation failed', async () => {
+    const visitor = await guest('visitor@example.com');
+    const conversationId = await newConversation(visitor);
+    useModels({
+      [PRIMARY]: streamingModel([apiError(400)]),
+      [FALLBACK]: streamingModel([apiError(400)]),
+    });
+    await ask(visitor, conversationId, 'And what is a pepper?');
+
+    play();
+    const other = await guest('other@example.com');
+    await ask(other, await newConversation(other), 'What is a salt?');
+    expect(await prismaClient.answerCache.count()).toBe(1);
+
+    // The model still reads the failed question, so another visitor's opener doesn't fit.
+    const models = play();
+    const next = await ask(visitor, conversationId, 'What is a salt?');
+
+    expect(models[PRIMARY]!.doStreamCalls.length).toBeGreaterThan(0);
+    expect(next.events.at(-1)!.data).toMatchObject({ cached: false });
+    expect(await prismaClient.answerCache.count()).toBe(1);
+  });
+
   it('does not use the cache for the demo’s owner, who reads more than a visitor', async () => {
     const owner = await signedInUser('owner@example.com');
     await prismaClient.workspace.update({ where: { id: demoId }, data: { userId: owner.userId } });
