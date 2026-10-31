@@ -11,7 +11,9 @@ services:
     region: frankfurt
     plan: free
     rootDir: backend
-    buildCommand: corepack enable && pnpm install --frozen-lockfile --prod=false && pnpm build
+    # Generated client: gitignored, and a build that reuses cached node_modules skips the
+    # install step that normally generates it, so it is generated explicitly.
+    buildCommand: corepack enable && pnpm install --frozen-lockfile --prod=false && pnpm prisma generate && pnpm build
     # Migrations run first; Prisma takes an advisory lock, so a restart never applies them twice.
     startCommand: pnpm db:deploy && pnpm start
     healthCheckPath: /api/v1/health/ready
