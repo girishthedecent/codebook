@@ -33,8 +33,9 @@ it (Vite and React, laid out for phones as well as desktops).
 
 <img src="docs/screenshots/chat-phone.png" alt="The same answer on a phone" width="300">
 
-The screenshots are the public demo workspace: the book shows a short excerpt of the cited
-page, never the PDF.
+The screenshots come from a demo workspace of this app. A copyrighted book in a demo shows only
+a short excerpt of the cited page, never the PDF; the current demo's book is free to share, so
+it shows the PDF.
 
 ## Tech stack
 
@@ -291,7 +292,7 @@ never commit it.
 | `GROQ_API_KEY` | console.groq.com | chat fallback, cheap tasks |
 | `GITHUB_TOKEN` | GitHub fine-grained token, public repositories, read-only | repository sources |
 | `TAVILY_API_KEY` | tavily.com | the `web_search` tool |
-| `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | GitHub OAuth app, callback `http://localhost:4000/api/auth/callback/github` | optional GitHub login (both or neither) |
+| `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | GitHub OAuth app, callback `http://localhost:4000/api/auth/callback/github` (a deployed address needs an app of its own, with the callback `https://<address>/api/auth/callback/github`) | optional GitHub login (both or neither) |
 | `ADMIN_USER_IDS` | comma-separated user ids | `/api/v1/monitoring` and `/api/v1/evals` |
 
 The rest of `.env.example` (ports, database URLs, storage settings, `INNGEST_DEV`,

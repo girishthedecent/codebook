@@ -1,5 +1,5 @@
 {
-  "description": "The Little Book of Deep Learning, Karpathy's nanoGPT and Hugging Face's text generation guide. Sign in as a guest and ask how a GPT works.",
+  "description": "The Little Book of Deep Learning by François Fleuret (CC BY-NC-SA 4.0), Andrej Karpathy's nanoGPT and Hugging Face's text generation guide. Sign in as a guest and ask how a GPT works.",
   "sources": [
     {
       "sourceKey": "book",

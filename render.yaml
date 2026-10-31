@@ -60,6 +60,12 @@ services:
         sync: false
       - key: GITHUB_TOKEN
         sync: false
+      # Optional GitHub sign-in: an OAuth app whose callback is
+      # https://<address>/api/auth/callback/github. Set both or neither.
+      - key: GITHUB_CLIENT_ID
+        sync: false
+      - key: GITHUB_CLIENT_SECRET
+        sync: false
       - key: ADMIN_USER_IDS
         sync: false
       # The demo's books are openly licensed, so its visitors read them in full, as the owner does.
