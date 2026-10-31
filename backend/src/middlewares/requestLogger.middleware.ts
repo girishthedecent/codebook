@@ -5,10 +5,11 @@ import logger from '../config/logger.config.js';
 // Load balancers poll these every few seconds.
 const QUIET_PATHS = new Set(['/api/v1/health/live', '/api/v1/health/ready']);
 
-// Inngest registers the app with a PUT, which its dev server repeats every few seconds:
-// below debug, as dev runs at debug. Its POSTs run job steps and stay at info.
-const isInngestSync = (method: string, path: string | undefined) =>
-  method === 'PUT' && path === '/api/inngest';
+// Inngest registers the app with a PUT, which its dev server repeats every few seconds, and
+// one page load of the web app fetches dozens of files: below debug, as dev runs at debug.
+// Inngest's POSTs run job steps and stay at info.
+const isRoutine = (method: string, path: string | undefined) =>
+  (method === 'PUT' && path === '/api/inngest') || path?.startsWith('/assets/') === true;
 
 /** One log line per request once the response is sent. Query strings are left out on purpose. */
 export function requestLoggerMiddleware(req: Request, res: Response, next: NextFunction) {
@@ -37,7 +38,7 @@ export function requestLoggerMiddleware(req: Request, res: Response, next: NextF
           ? 'error'
           : res.statusCode >= 400
             ? 'warn'
-            : isInngestSync(req.method, path)
+            : isRoutine(req.method, path)
               ? 'silly'
               : 'info';
       logger.log(level, `${req.method} ${path} ${res.statusCode}`, { durationMs });

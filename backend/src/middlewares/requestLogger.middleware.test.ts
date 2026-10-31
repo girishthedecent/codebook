@@ -128,6 +128,18 @@ describe('requestLoggerMiddleware', () => {
     expect(log).toHaveBeenCalledWith('info', 'POST /api/inngest 200', expect.any(Object));
   });
 
+  it("logs the web app's files below info, so a page load stays one quiet burst", async () => {
+    const log = vi.spyOn(logger, 'log');
+    const app = express();
+    app.use(requestLoggerMiddleware);
+    app.get('/assets/app-1a2b3c.js', (_req, res) => {
+      res.type('js').send('1');
+    });
+
+    await request(app).get('/assets/app-1a2b3c.js');
+    expect(log).toHaveBeenCalledWith('silly', 'GET /assets/app-1a2b3c.js 200', expect.any(Object));
+  });
+
   it('skips health checks', async () => {
     const log = vi.spyOn(logger, 'log');
     const app = express();

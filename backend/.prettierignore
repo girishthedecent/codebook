@@ -1,4 +1,5 @@
 dist
+web
 coverage
 src/generated
 pnpm-lock.yaml

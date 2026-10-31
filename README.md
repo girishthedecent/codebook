@@ -271,7 +271,7 @@ frontend/
     routes/       file-based routes
     api/          typed API client
 docs/             security review, performance notes, screenshots
-render.yaml       Render blueprint: the API and the web app
+render.yaml       Render blueprint: the API, which also serves the web app
 ```
 
 ## Local setup
@@ -331,6 +331,9 @@ pnpm install
 pnpm dev                          # http://localhost:3000, proxies /api to the API on :4000
 ```
 
+To run the built app the way a deploy does, `pnpm build:web` in `backend/` builds the frontend and
+copies it to `backend/web/`; the API then serves it on its own port, next to `/api`.
+
 With the API started as `LLM_MOCK=1 pnpm dev`, scripted models stand in for Groq and Gemini, so
 the whole app can be clicked through with no keys and no quota (the mock is refused when
 `NODE_ENV=production`). Scripts, budgets and folders are in [`frontend/README.md`](frontend/README.md).
@@ -365,7 +368,9 @@ ingestion runs there through Inngest Cloud.
 
 Guests get a session from `POST /api/auth/sign-in/anonymous`, can read the demo workspace's
 sources and ask questions in it (10 messages a day per IP), and can't create workspaces or
-sources, use study tools or memory. Guest accounts and their conversations are deleted after 7
+sources, use study tools or memory. By default they read a book there as short excerpts, so a
+copyrighted book is never handed out; with `DEMO_FULL_BOOKS=true`, for a demo whose books are
+free to share (as this one is), they get whole pages and the PDF itself, as the owner does. Guest accounts and their conversations are deleted after 7
 days. New guest sessions are limited to 5 a day per IP. Repeat first questions to the demo
 within 24 hours are answered from a cache, without model calls.
 
@@ -410,10 +415,10 @@ After a change that should move the numbers: `pnpm evals:baseline` and
 
 ## Deploying
 
-`render.yaml` is a [Render](https://render.com) blueprint with two services: the API
-(`decent-codebook-api`, a Node web service) and the web app (`decent-codebook`, a static site). The
-static site forwards `/api/*` to the API, so the browser talks to one origin and the session
-cookie stays first-party. The API applies pending migrations each time it starts.
+`render.yaml` is a [Render](https://render.com) blueprint with one web service,
+`decent-codebook-api`. The API also serves the web app (the build runs `pnpm build:web`), so the
+browser talks to one origin: the session cookie stays first-party and chat answers stream as they
+are written. The API applies pending migrations each time it starts.
 
 | Piece | What it needs |
 |---|---|
@@ -426,18 +431,14 @@ All variables are listed in [`backend/.env.production.example`](backend/.env.pro
 
 1. Push the repository and create a Blueprint on Render from it. Render asks for the values
    marked `sync: false` in `render.yaml`.
-2. Check the two services' real addresses in the dashboard. Render adds a suffix to a service
-   name that is already taken, and `render.yaml` assumes there is none:
-   - `BETTER_AUTH_URL` and `TRUSTED_ORIGINS` are the web app's public URL, not the API's, because
-     browsers reach the API through the site.
-   - The rewrite under `routes` must point at the API's real address, or the site would forward
-     requests to someone else's service.
-
-   Change them in `render.yaml` if they differ. A GitHub OAuth callback, if used, is
-   `https://<site>/api/auth/callback/github`.
-3. Sync the app in Inngest Cloud at `https://<site>/api/inngest` after each deploy that adds or
+2. Check the service's real address in the dashboard. Render adds a suffix to a service name
+   that is already taken, and `render.yaml` assumes there is none. `BETTER_AUTH_URL` and
+   `TRUSTED_ORIGINS` are the address people open: the service's own, or your domain once you add
+   one under the service's Custom Domains. Change both in `render.yaml` if they differ. A GitHub
+   OAuth callback, if used, is `https://<address>/api/auth/callback/github`.
+3. Sync the app in Inngest Cloud at `https://<address>/api/inngest` after each deploy that adds or
    changes a function.
-4. Open the site, sign in, add a small source and ask a question.
+4. Open the address, sign in, add a small source and ask a question.
 
 Run a single API instance: rate limits and the model circuit breaker live in its memory.
 `TRUST_PROXY` is the number of proxies in front of the API (1 on Render); too low and every

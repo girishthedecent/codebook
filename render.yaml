@@ -1,13 +1,11 @@
-# Render blueprint: the API and the web app. Values marked `sync: false` are asked for when the
-# blueprint is created and never stored in the repository.
+# Render blueprint: one web service, the API, which also serves the web app (`pnpm build:web`
+# copies the built app next to it). One origin, so the session cookie stays first-party and
+# event streams reach the browser as they are written. Values marked `sync: false` are asked
+# for when the blueprint is created and never stored in the repository.
 #
-# The web app calls `/api/...` on its own address and the static site forwards those requests to
-# the API (the rewrite below), so the browser only ever talks to one origin and the session
-# cookie stays first-party. That is why BETTER_AUTH_URL and TRUSTED_ORIGINS are the site's URL.
-#
-# Two addresses below depend on the service names: the site's own URL (BETTER_AUTH_URL,
-# TRUSTED_ORIGINS) and the API's URL (the rewrite). Render adds a suffix to a name that is
-# already taken, so after creating the services check both addresses in the dashboard.
+# BETTER_AUTH_URL and TRUSTED_ORIGINS are the address people open, which is this service's own
+# address (or your own domain once one points at it). Render adds a suffix to a service name
+# that is already taken, so check the address in the dashboard after creating the service.
 services:
   - type: web
     name: decent-codebook-api
@@ -17,20 +15,20 @@ services:
     rootDir: backend
     # Generated client: gitignored, and a build that reuses cached node_modules skips the
     # install step that normally generates it, so it is generated explicitly.
-    buildCommand: corepack enable && pnpm install --frozen-lockfile --prod=false && pnpm prisma generate && pnpm build
+    buildCommand: corepack enable && pnpm install --frozen-lockfile --prod=false && pnpm prisma generate && pnpm build && pnpm build:web
     # Migrations run first; Prisma takes an advisory lock, so a restart never applies them twice.
     startCommand: pnpm db:deploy && pnpm start
     healthCheckPath: /api/v1/health/ready
     envVars:
       - key: NODE_VERSION
         value: 22
-      # The static site's proxy is one hop in front of Render's own.
+      # Render's load balancer is the one proxy in front of the API.
       - key: TRUST_PROXY
         value: 1
       - key: BETTER_AUTH_URL
-        value: https://decent-codebook.onrender.com
+        value: https://decent-codebook-api.onrender.com
       - key: TRUSTED_ORIGINS
-        value: https://decent-codebook.onrender.com
+        value: https://decent-codebook-api.onrender.com
       - key: BETTER_AUTH_SECRET
         generateValue: true
       - key: DATABASE_URL
@@ -63,21 +61,6 @@ services:
         sync: false
       - key: ADMIN_USER_IDS
         sync: false
-
-  - type: web
-    name: decent-codebook
-    runtime: static
-    rootDir: frontend
-    buildCommand: corepack enable && pnpm install --frozen-lockfile --prod=false && pnpm build
-    staticPublishPath: dist
-    envVars:
-      - key: NODE_VERSION
-        value: 22
-    routes:
-      # First match wins: the API goes before the catch-all that serves the app's pages.
-      - type: rewrite
-        source: /api/*
-        destination: https://decent-codebook-api.onrender.com/api/*
-      - type: rewrite
-        source: /*
-        destination: /index.html
+      # The demo's books are openly licensed, so its visitors read them in full, as the owner does.
+      - key: DEMO_FULL_BOOKS
+        value: true

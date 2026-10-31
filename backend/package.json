@@ -11,6 +11,7 @@
     "postinstall": "prisma generate",
     "dev": "tsx watch src/server.ts",
     "build": "tsc -p tsconfig.build.json",
+    "build:web": "pnpm --dir ../frontend install --frozen-lockfile --prod=false && pnpm --dir ../frontend build && node -e \"fs.rmSync('web',{recursive:true,force:true});fs.cpSync('../frontend/dist','web',{recursive:true})\"",
     "start": "NODE_ENV=production node --enable-source-maps dist/server.js",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",

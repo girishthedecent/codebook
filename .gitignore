@@ -1,5 +1,7 @@
 node_modules/
 dist/
+# the built web app, copied next to the API by `pnpm build:web`
+backend/web/
 coverage/
 .cache/
 *.log

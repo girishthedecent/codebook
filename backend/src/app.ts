@@ -15,6 +15,7 @@ import { limit, perIp } from './middlewares/rateLimit.middleware.js';
 import { requestLoggerMiddleware } from './middlewares/requestLogger.middleware.js';
 import { docsRouter } from './openapi/docs.router.js';
 import v1Router from './routers/v1/index.router.js';
+import { webRouter } from './web.js';
 
 export function createApp() {
   const app = express();
@@ -50,6 +51,9 @@ export function createApp() {
   app.use(express.json({ limit: appConfig.http.jsonLimit }));
   app.use('/api/v1', requireTrustedOrigin, v1Router);
   app.use(docsRouter);
+  // Not under test: a built web app next to the code would turn every 404 into a page.
+  const web = serverConfig.NODE_ENV === 'test' ? null : webRouter();
+  if (web) app.use(web);
 
   app.use(notFoundHandler);
   app.use(genericErrorHandler);

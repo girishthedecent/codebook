@@ -48,6 +48,9 @@ Every route needs a session except health, auth, the demo, Inngest and the API d
   tools, retrieval, graph, study and memory suites.
 - **Note:** `findArtifact` in `study.repository.ts` takes a bare id; its only caller is
   the study job checking whether its own run was cancelled (`isStudyActive`).
+- **Demo workspace:** its visitors may read its sources and chat in it, nothing else. A
+  book reaches them as excerpts and its PDF is refused, unless `DEMO_FULL_BOOKS` is on, which
+  is for a demo whose books are free to share; `demo.test.ts` covers both settings.
 
 ### 3. Signed Inngest requests
 
@@ -129,6 +132,10 @@ Every route needs a session except health, auth, the demo, Inngest and the API d
   - Deployed behind a proxy: `BETTER_AUTH_URL` and `TRUSTED_ORIGINS` are the public URL
     browsers use, and `TRUST_PROXY` is a hop count, never `true` (the config refuses it in
     production), so the per-IP limits see the address the nearest proxy saw.
+  - The API serves the built web app (`web.ts`): static files with no directory listing and
+    no dotfiles, and an index page whose policy allows scripts from the same origin and
+    exactly its two inline scripts, by hash. API and docs paths that match nothing stay JSON
+    404s. `web.test.ts` covers each.
 - **Test:** `app.test.ts` (CORS), `auth.test.ts` (HttpOnly, SameSite), and
   `security.test.ts` in production mode (Secure cookie, HSTS, nosniff, CSP, no
   `x-powered-by`).
