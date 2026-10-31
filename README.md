@@ -337,20 +337,31 @@ the whole app can be clicked through with no keys and no quota (the mock is refu
 
 ### Demo workspace
 
+The demo asks how a GPT works. Its sources are listed in `backend/prisma/demo.json`:
+
+| Source | What |
+|---|---|
+| Book | [*The Little Book of Deep Learning*](https://fleuret.org/public/lbdl.pdf) by François Fleuret (CC BY-NC-SA 4.0), as `backend/evals/corpus/lbdl.pdf` |
+| Repository | [`karpathy/nanoGPT`](https://github.com/karpathy/nanoGPT) at a pinned commit |
+| Docs page | Hugging Face's [text generation guide](https://huggingface.co/docs/transformers/en/llm_tutorial) |
+
 ```bash
-pnpm evals:cache -- import       # fresh clone: load the committed cache file first
-pnpm db:seed -- --demo            # with pnpm dev and the Inngest dev server running
+cd backend
+mkdir -p evals/corpus
+curl -L -o evals/corpus/lbdl.pdf https://fleuret.org/public/lbdl.pdf
+pnpm db:seed -- --demo --allow-model-calls   # with pnpm dev and the Inngest dev server running
 ```
 
 The seed creates the demo owner (a system user that never signs in) and the public demo
-workspace, then adds the corpus sources through the normal ingestion pipeline. Every context
-and embedding has to come from the caches: the seed stops with an error as soon as the ingest
-calls a model, unless you pass `--allow-model-calls`. `pnpm evals:cache -- import` loads the
-cache for the repository and the docs page. The book is optional and is added only when an
-indexed copy with the same title already exists: put your own DDIA PDF at
-`backend/evals/corpus/ddia.pdf` and index it once with `pnpm evals:corpus`. Otherwise the seed
-skips it with a message, and the demo has the express repository and the routing docs page.
-Running the seed again only adds what is missing and resyncs failed sources.
+workspace, then adds the three sources through the normal ingestion pipeline. Nothing is
+cached for them, so their contexts and embeddings come from real model calls (about 210
+chunks, a small share of a day's free quota); without `--allow-model-calls` the seed stops as
+soon as an ingest calls a model. Running the seed again only adds what is missing and resyncs
+failed sources.
+
+To seed a deployed instance, add `--remote`, load the production variables and set `APP_URL` to
+the API's public address: the seed then checks that API instead of the local dev servers, and
+ingestion runs there through Inngest Cloud.
 
 Guests get a session from `POST /api/auth/sign-in/anonymous`, can read the demo workspace's
 sources and ask questions in it (10 messages a day per IP), and can't create workspaces or

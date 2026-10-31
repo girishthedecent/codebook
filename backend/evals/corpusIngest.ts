@@ -19,12 +19,20 @@ import { bookPath, isSpecSource, type CorpusSource } from './corpusWorkspace.js'
 const POLL_MS = 5_000;
 const TIMEOUT_MS = 60 * 60 * 1000;
 
-/** Both servers must be up: the API runs the ingest steps Inngest calls. */
-export async function checkServices(script: string) {
+/**
+ * Both servers must be up: the API runs the ingest steps Inngest calls. `remote` is a deployed
+ * API with Inngest Cloud: APP_URL is its public address, and only the API is checked.
+ */
+export async function checkServices(script: string, options: { remote?: boolean } = {}) {
+  const api = new URL('/api/v1/health/ready', serverConfig.APP_URL).href;
+  if (options.remote) {
+    if (serverConfig.INNGEST_DEV) fail(`${script} --remote needs INNGEST_DEV off (Inngest Cloud)`);
+    if (!(await reachable(api))) fail(`The API isn't answering at ${api}: set APP_URL to it`);
+    return;
+  }
   if (!serverConfig.INNGEST_DEV) {
     fail(`${script} runs against the local dev setup (INNGEST_DEV=1)`);
   }
-  const api = new URL('/api/v1/health/ready', serverConfig.APP_URL).href;
   const inngest = serverConfig.INNGEST_BASE_URL ?? 'http://localhost:8288';
   if (!(await reachable(api))) fail(`The dev server isn't answering at ${api}: run pnpm dev`);
   if (!(await reachable(inngest))) {

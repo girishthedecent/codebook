@@ -16,41 +16,43 @@ import {
 import {
   findTwin,
   isSpecSource,
-  loadCorpusSpec,
+  corpusSpecSchema,
   localPdfKey,
   type CorpusSource,
   type SourceKey,
 } from '../evals/corpusWorkspace.js';
 
-// pnpm db:seed -- --demo [--allow-model-calls]
+// pnpm db:seed -- --demo [--allow-model-calls] [--remote]
 //
-// Builds the public demo workspace: a system user owns it, and its sources are entries of the
-// eval corpus (evals/datasets/corpus.json), picked by prisma/demo.json. They go through the
-// real pipeline, so the API and the Inngest dev server must be running. Their titles are the
-// corpus titles, so every context and embedding comes from the caches the eval corpus filled
-// (or the committed gate cache, loaded with pnpm evals:cache): the seed stops as soon as the
-// ingest calls a model, unless --allow-model-calls is given. A rerun only adds what is
-// missing and resyncs failed sources. The book is optional: without an indexed copy to take
-// its caches from, the demo starts with the repository and the docs page.
+// Builds the public demo workspace: a system user owns it, and prisma/demo.json lists its
+// sources (a book as a PDF in evals/corpus/, a repository at a commit, a docs page). They go
+// through the real pipeline, so the API and Inngest must be up: the dev server and
+// `pnpm dev` locally, or with --remote a deployed API (APP_URL its public address) and
+// Inngest Cloud. A source that has an indexed copy elsewhere under the same title takes its
+// contexts and embeddings from the caches; any other needs model calls, and the seed stops as
+// soon as an ingest makes one unless --allow-model-calls is given. A rerun only adds what is
+// missing and resyncs failed sources. A source marked `optional` is left out when nothing
+// indexed it before.
 
-const demoSpecSchema = z.object({
-  dataset: z.string(),
+// The sources are validated like the eval corpus's (same shape); `optional` is the demo's own.
+const demoFileSchema = z.object({
   description: z.string().trim().min(1).max(2_000),
-  sources: z
-    .array(
-      z.object({
-        sourceKey: z.enum(['book', 'repo', 'docs']),
-        optional: z.boolean().default(false),
-      }),
-    )
-    .min(1),
+  sources: z.array(z.looseObject({ optional: z.boolean().default(false) })).min(1),
 });
 
-export type DemoSpec = z.infer<typeof demoSpecSchema>;
+export type DemoSpec = {
+  description: string;
+  sources: { entry: CorpusSource; optional: boolean }[];
+};
 
 export function loadDemoSpec(): DemoSpec {
   const file = new URL('./demo.json', import.meta.url);
-  return demoSpecSchema.parse(JSON.parse(readFileSync(file, 'utf8')));
+  const raw = demoFileSchema.parse(JSON.parse(readFileSync(file, 'utf8')));
+  const { sources } = corpusSpecSchema.parse({ dataset: 'demo', sources: raw.sources });
+  return {
+    description: raw.description,
+    sources: sources.map((entry, i) => ({ entry, optional: raw.sources[i]!.optional })),
+  };
 }
 
 type ExistingSource = {
@@ -91,15 +93,10 @@ export function planDemoSources(
   });
 }
 
-async function seedDemo(allowModelCalls: boolean) {
+async function seedDemo(allowModelCalls: boolean, remote: boolean) {
   const demo = loadDemoSpec();
-  const corpus = loadCorpusSpec(demo.dataset);
-  const entries = demo.sources.map(({ sourceKey, optional }) => {
-    const entry = corpus.sources.find((source) => source.sourceKey === sourceKey);
-    if (!entry) throw new CorpusError(`demo.json names "${sourceKey}", not in the corpus spec`);
-    return { entry, optional };
-  });
-  await checkServices('db:seed');
+  const entries = demo.sources;
+  await checkServices('db:seed', { remote });
 
   const owner = await ensureDemoOwner();
   const workspace = await ensureDemoWorkspace(owner.id, demo.description);
@@ -155,12 +152,13 @@ async function main() {
     options: {
       demo: { type: 'boolean', default: false },
       'allow-model-calls': { type: 'boolean', default: false },
+      remote: { type: 'boolean', default: false },
     },
   });
   if (!values.demo) {
     throw new CorpusError('Nothing to seed: pass --demo to build the demo workspace');
   }
-  await seedDemo(values['allow-model-calls']);
+  await seedDemo(values['allow-model-calls'], values.remote);
 }
 
 // Run as a script; the tests import planDemoSources.

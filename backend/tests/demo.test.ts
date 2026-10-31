@@ -8,7 +8,7 @@ import { CitationRegistry } from '../src/modules/citations/citationRegistry.js';
 import { ensureDemoOwner, ensureDemoWorkspace } from '../src/modules/demo/demo.service.js';
 import { excerptOf } from '../src/modules/demo/excerpt.js';
 import { consume } from '../src/utils/rateLimit.js';
-import { planDemoSources } from '../prisma/seed.js';
+import { loadDemoSpec, planDemoSources } from '../prisma/seed.js';
 import { loadCorpusSpec } from '../evals/corpusWorkspace.js';
 import { authAgent, ORIGIN, signedInUser, signUp } from './helpers/auth.js';
 import { resetDb } from './helpers/db.js';
@@ -447,5 +447,19 @@ describe('seeding the demo', () => {
     expect(withCache.map((p) => p.action)).toEqual(['create', 'keep', 'create']);
     const allowed = planDemoSources(entries, [], { pdfKeys: {}, cached: new Set() }, true);
     expect(allowed[0]!.action).toBe('create');
+  });
+
+  it('reads the demo sources from demo.json: a book, a repository at a commit and a page', () => {
+    const demo = loadDemoSpec();
+    expect(demo.description.length).toBeGreaterThan(0);
+    expect(demo.sources.map(({ entry }) => [entry.sourceKey, entry.type])).toEqual([
+      ['book', 'PDF'],
+      ['repo', 'GITHUB_REPO'],
+      ['docs', 'WEBSITE'],
+    ]);
+    const repo = demo.sources[1]!.entry;
+    expect(repo.type === 'GITHUB_REPO' && repo.location.ref).toMatch(/^[0-9a-f]{40}$/);
+    // None needs the eval corpus's caches, so every source is required.
+    expect(demo.sources.every(({ optional }) => !optional)).toBe(true);
   });
 });

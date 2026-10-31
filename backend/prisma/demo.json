@@ -1,9 +1,30 @@
 {
-  "dataset": "core",
-  "description": "Designing Data-Intensive Applications, the Express.js repository and its routing guide. Sign in as a guest and ask a question.",
+  "description": "The Little Book of Deep Learning, Karpathy's nanoGPT and Hugging Face's text generation guide. Sign in as a guest and ask how a GPT works.",
   "sources": [
-    { "sourceKey": "book", "optional": true },
-    { "sourceKey": "repo" },
-    { "sourceKey": "docs" }
+    {
+      "sourceKey": "book",
+      "type": "PDF",
+      "title": "The Little Book of Deep Learning",
+      "location": { "file": "lbdl.pdf" }
+    },
+    {
+      "sourceKey": "repo",
+      "type": "GITHUB_REPO",
+      "title": "karpathy/nanoGPT@3adf61e154c3fe3fca428ad6bc3818b27a3b8291",
+      "location": {
+        "url": "https://github.com/karpathy/nanoGPT",
+        "ref": "3adf61e154c3fe3fca428ad6bc3818b27a3b8291"
+      }
+    },
+    {
+      "sourceKey": "docs",
+      "type": "WEBSITE",
+      "title": "Text generation · Hugging Face",
+      "location": {
+        "url": "https://huggingface.co/docs/transformers/en/llm_tutorial",
+        "maxDepth": 0,
+        "maxPages": 1
+      }
+    }
   ]
 }
