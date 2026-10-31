@@ -1,13 +1,12 @@
 import { lazy, Suspense, useCallback, useState } from 'react';
 import { useSourceContent } from '@/api/queries';
-import { useMe } from '@/auth';
 import { ProgressRule } from '@/ui';
 import { PageBar } from './PageBar';
 import { Highlighted } from './Highlighted';
 import { ViewError } from './ViewError';
 import { s } from './strings';
 
-// pdf.js is the heaviest thing in the app; only owners opening a book page download it.
+// pdf.js is the heaviest thing in the app, so it loads only when a book page is opened.
 const PdfBook = lazy(() => import('./PdfBook'));
 
 export type BookViewProps = {
@@ -18,18 +17,17 @@ export type BookViewProps = {
 };
 
 /**
- * A book page. Owners see the real page from the PDF; guests, and anyone the file is
- * refused to, read the page's text (an excerpt in the demo).
+ * A book page: the real page from the PDF. Whoever the file is refused to (the demo's
+ * visitors, when its book isn't free to share) reads the page's text instead.
  */
 export function BookView(props: BookViewProps) {
-  const { isGuest } = useMe();
   const [noPdf, setNoPdf] = useState<string>();
   const { sourceId, page, onPage } = props;
   const go = (next: number) => next !== page && onPage(Math.max(1, next));
   // Stable, because the PDF page redraws whenever its callbacks change.
   const unavailable = useCallback(() => setNoPdf(sourceId), [sourceId]);
 
-  if (!isGuest && noPdf !== sourceId) {
+  if (noPdf !== sourceId) {
     return (
       <Suspense fallback={<Frame page={page} onGo={go} loading />}>
         <PdfBook {...props} onUnavailable={unavailable} />

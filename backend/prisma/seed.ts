@@ -22,7 +22,7 @@ import {
   type SourceKey,
 } from '../evals/corpusWorkspace.js';
 
-// pnpm db:seed -- --demo [--allow-model-calls] [--remote]
+// pnpm db:seed -- --demo [--allow-model-calls] [--remote] [--resync]
 //
 // Builds the public demo workspace: a system user owns it, and prisma/demo.json lists its
 // sources (a book as a PDF in evals/corpus/, a repository at a commit, a docs page). They go
@@ -31,8 +31,9 @@ import {
 // Inngest Cloud. A source that has an indexed copy elsewhere under the same title takes its
 // contexts and embeddings from the caches; any other needs model calls, and the seed stops as
 // soon as an ingest makes one unless --allow-model-calls is given. A rerun only adds what is
-// missing and resyncs failed sources. A source marked `optional` is left out when nothing
-// indexed it before.
+// missing and resyncs failed sources; --resync indexes every source again (after a change to
+// how sources are read), which costs model calls only for text that changed. A source
+// marked `optional` is left out when nothing indexed it before.
 
 // The sources are validated like the eval corpus's (same shape); `optional` is the demo's own.
 const demoFileSchema = z.object({
@@ -80,12 +81,17 @@ export function planDemoSources(
   existing: ExistingSource[],
   found: { pdfKeys: Partial<Record<SourceKey, string>>; cached: Set<SourceKey> },
   allowModelCalls: boolean,
+  resyncAll = false,
 ): PlannedSource[] {
   return entries.map(({ entry, optional }) => {
     const pdfKey = found.pdfKeys[entry.sourceKey];
     const row = existing.find((candidate) => isSpecSource(entry, candidate, pdfKey));
     if (row)
-      return { entry, action: row.status === 'FAILED' ? 'resync' : 'keep', sourceId: row.id };
+      return {
+        entry,
+        action: resyncAll || row.status === 'FAILED' ? 'resync' : 'keep',
+        sourceId: row.id,
+      };
     if (optional && !allowModelCalls && !found.cached.has(entry.sourceKey)) {
       return { entry, action: 'skip' };
     }
@@ -93,7 +99,7 @@ export function planDemoSources(
   });
 }
 
-async function seedDemo(allowModelCalls: boolean, remote: boolean) {
+async function seedDemo(allowModelCalls: boolean, remote: boolean, resyncAll: boolean) {
   const demo = loadDemoSpec();
   const entries = demo.sources;
   await checkServices('db:seed', { remote });
@@ -110,7 +116,7 @@ async function seedDemo(allowModelCalls: boolean, remote: boolean) {
     if ((await findTwin(entry, owner.id))?.title === entry.title) cached.add(entry.sourceKey);
   }
   const existing = await prismaClient.source.findMany({ where: { workspaceId: workspace.id } });
-  const plan = planDemoSources(entries, existing, { pdfKeys, cached }, allowModelCalls);
+  const plan = planDemoSources(entries, existing, { pdfKeys, cached }, allowModelCalls, resyncAll);
 
   const started = new Date();
   const sourceIds: Record<string, string> = {};
@@ -127,7 +133,9 @@ async function seedDemo(allowModelCalls: boolean, remote: boolean) {
     } else {
       if (action === 'resync') {
         await resyncSourceService(owner.id, sourceId!);
-        console.log(`${entry.sourceKey}: failed before, resyncing`);
+        console.log(
+          `${entry.sourceKey}: ${resyncAll ? 'indexing again' : 'failed before, resyncing'}`,
+        );
       }
       sourceIds[entry.sourceKey] = sourceId!;
     }
@@ -153,12 +161,13 @@ async function main() {
       demo: { type: 'boolean', default: false },
       'allow-model-calls': { type: 'boolean', default: false },
       remote: { type: 'boolean', default: false },
+      resync: { type: 'boolean', default: false },
     },
   });
   if (!values.demo) {
     throw new CorpusError('Nothing to seed: pass --demo to build the demo workspace');
   }
-  await seedDemo(values['allow-model-calls'], values.remote);
+  await seedDemo(values['allow-model-calls'], values.remote, values.resync);
 }
 
 // Run as a script; the tests import planDemoSources.

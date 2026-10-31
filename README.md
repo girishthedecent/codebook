@@ -360,7 +360,8 @@ workspace, then adds the three sources through the normal ingestion pipeline. No
 cached for them, so their contexts and embeddings come from real model calls (about 210
 chunks, a small share of a day's free quota); without `--allow-model-calls` the seed stops as
 soon as an ingest calls a model. Running the seed again only adds what is missing and resyncs
-failed sources.
+failed sources; `--resync` indexes every source again, for when the way sources are read has
+changed (only text that changed costs model calls).
 
 To seed a deployed instance, add `--remote`, load the production variables and set `APP_URL` to
 the API's public address: the seed then checks that API instead of the local dev servers, and

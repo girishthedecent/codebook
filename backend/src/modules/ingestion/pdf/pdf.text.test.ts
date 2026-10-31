@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cleanPages, hasTextLayer } from './pdf.text.js';
+import { cleanPages, collapseOverprint, hasTextLayer } from './pdf.text.js';
 
 // Builds pages whose body lines differ, so only the given header/footer lines repeat.
 function book(pageCount: number, header: (n: number) => string, footer: (n: number) => string) {
@@ -11,6 +11,40 @@ function book(pageCount: number, header: (n: number) => string, footer: (n: numb
     ].join('\n'),
   );
 }
+
+describe('collapseOverprint', () => {
+  it('restores words drawn as many overlapping copies', () => {
+    // As the text layer of a real book's chapter openings reads.
+    const garbled =
+      'DeepDeepDeepDeepDeepDeepDeepDeepDeepDeepDeep ' +
+      'learnlearnlearnlearnlearnlearnlearnlearnlearnlearnlearninginginginginginginginginginging ' +
+      'belongs to statistical mamamamamamamamamamamachinechinechinechinechinechinechinechinechinechinechine ' +
+      'learnlearnlearnlearninginginginging';
+    expect(collapseOverprint(garbled)).toBe(
+      'Deep learning belongs to statistical machine learning',
+    );
+  });
+
+  it('leaves ordinary text, numbers and separators alone', () => {
+    const text =
+      'Mississippi bookkeeper tomorrow banana cannonball hahaha 1000000 ha ha ha ha ------ == ===';
+    expect(collapseOverprint(text)).toBe(text);
+  });
+
+  it('takes no time on a line of letters nobody repeats', () => {
+    const line = 'abcdefghijklmnopqrstuvwxyz'.repeat(40_000);
+    const started = performance.now();
+    expect(collapseOverprint(line)).toBe(line);
+    expect(performance.now() - started).toBeLessThan(2_000);
+  });
+
+  it('runs on every page of a book', () => {
+    expect(cleanPages(['DeepDeepDeepDeep learning', 'plain page'])).toEqual([
+      'Deep learning',
+      'plain page',
+    ]);
+  });
+});
 
 describe('cleanPages', () => {
   it('drops running heads that only change their page number', () => {

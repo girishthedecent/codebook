@@ -13,7 +13,7 @@ export class NoPdfError extends Error {
 
 /**
  * The original PDF, streamed with Range requests so opening page 400 doesn't download the
- * whole book. Only owners get the file; everyone else gets a 404 and reads the text instead.
+ * whole book. Whoever isn't allowed the file gets a 404 and reads the text instead.
  */
 export const pdfDocumentOptions = (sourceId: string) =>
   queryOptions({

@@ -15,6 +15,16 @@ const MAX_HEAD_LENGTH = 100;
 // Chapter openers repeat that way too ("CHAPTER 1", "CHAPTER 2", ...) but must stay.
 const CHAPTER_LINE = /^chapter\s+\d+$/i;
 
+// Some PDFs draw a word as many overlapping copies (a fade, or fake bold), and the text layer
+// then holds every copy, cut into pieces: "DeepDeepDeep learnlearninginginging". A piece of
+// two or more letters repeated four times or more in a row is one copy of it. The piece is
+// capped, so no line can make the pattern backtrack for long.
+const OVERPRINT = /(\p{L}{2,12}?)\1{3,}/gu;
+
+export function collapseOverprint(line: string) {
+  return line.replace(OVERPRINT, '$1');
+}
+
 // Outline titles by page, so a heading line at the top of a page is never taken for a
 // running head.
 export type PageHeading = { page: number; title: string };
@@ -32,7 +42,7 @@ export function cleanPages(pages: string[], headings: PageHeading[] = []) {
       .replace(/[\0\f]/g, '')
       .split('\n')
       // A hyphen inside a line is a plain hyphen, whichever character the PDF used.
-      .map((line) => line.trimEnd().replace(/\u2010(?=.)/g, '-')),
+      .map((line) => collapseOverprint(line.trimEnd().replace(/\u2010(?=.)/g, '-'))),
   );
   const cleaned = removeRunningHeads(lines, headings).map((pageLines) =>
     pageLines.join('\n').trim(),

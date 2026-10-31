@@ -545,6 +545,16 @@ describe('seeding the demo', () => {
     expect(withCache.map((p) => p.action)).toEqual(['create', 'keep', 'create']);
     const allowed = planDemoSources(entries, [], { pdfKeys: {}, cached: new Set() }, true);
     expect(allowed[0]!.action).toBe('create');
+
+    // --resync indexes what is there again, ready or not.
+    const again = planDemoSources(
+      entries,
+      [{ ...repoRow, status: 'READY' }],
+      { pdfKeys: {}, cached: new Set(['book']) },
+      false,
+      true,
+    );
+    expect(again.map((p) => p.action)).toEqual(['create', 'resync', 'create']);
   });
 
   it('reads the demo sources from demo.json: a book, a repository at a commit and a page', () => {
