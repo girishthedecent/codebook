@@ -59,7 +59,7 @@ services:
         sync: false
 
   - type: web
-    name: codebook
+    name: decent-codebook
     runtime: static
     rootDir: frontend
     buildCommand: corepack enable && pnpm install --frozen-lockfile --prod=false && pnpm build
