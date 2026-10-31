@@ -67,6 +67,7 @@ export type StudyDetail = Schemas['StudyDetail'];
 export type StudyType = Study['type'];
 export type Usage = Schemas['Usage'];
 export type Demo = Schemas['Demo'];
+export type GraphOverview = Schemas['GraphOverview'];
 export type EvalDataset = Schemas['EvalDataset'];
 export type EvalRun = Schemas['EvalRun'];
 export type EvalRunDetail = Schemas['EvalRunDetail'];
@@ -74,6 +75,11 @@ export type EvalResult = Schemas['EvalResult'];
 export type EvalComparison = Schemas['EvalComparison'];
 export type EvalRunQueued = Schemas['EvalRunQueued'];
 export type MonitoringStats = Schemas['MonitoringStats'];
+export type ModelUsage = Schemas['ModelUsage'];
+export type IngestionFailure = Schemas['IngestionFailure'];
+export type RateLimitUse = Schemas['RateLimitUse'];
+export type CircuitBreaker = Schemas['CircuitBreaker'];
+export type EvalsStatus = Schemas['EvalsStatus'];
 export type FailedQuery = Schemas['FailedQuery'];
 
 // Server-sent events, discriminated on `event`.
