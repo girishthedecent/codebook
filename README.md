@@ -271,6 +271,7 @@ frontend/
     routes/       file-based routes
     api/          typed API client
 docs/             security review, performance notes, screenshots
+render.yaml       Render blueprint: the API and the web app
 ```
 
 ## Local setup
@@ -297,7 +298,7 @@ The rest of `.env.example` (ports, database URLs, storage settings, `INNGEST_DEV
 `INNGEST_BASE_URL`, `EVALS_WORKER_PORT`, reranker model and cache dir, `LOG_LEVEL`,
 `LOG_TO_FILE`, `TRUST_PROXY`, `TRUSTED_ORIGINS`) works as is for local development. In
 production `INNGEST_EVENT_KEY` and `INNGEST_SIGNING_KEY` are required and `INNGEST_DEV` must
-not be set.
+not be set; see [Deploying](#deploying).
 
 ### Run it
 
@@ -395,6 +396,36 @@ pnpm evals:gate
 
 After a change that should move the numbers: `pnpm evals:baseline` and
 `pnpm evals:cache -- export`, and commit both files.
+
+## Deploying
+
+`render.yaml` is a [Render](https://render.com) blueprint with two services: the API
+(`codebook-api`, a Node web service) and the web app (`codebook-web`, a static site). The
+static site forwards `/api/*` to the API, so the browser talks to one origin and the session
+cookie stays first-party. The API applies pending migrations each time it starts.
+
+| Piece | What it needs |
+|---|---|
+| Postgres | The `vector` extension (`CREATE EXTENSION IF NOT EXISTS vector;`) and a session-mode connection string for `DATABASE_URL`. Supabase and Neon both work. |
+| File storage | Any S3-compatible service with a private bucket (Supabase Storage, Cloudflare R2, S3), set through the `S3_*` variables. |
+| Background jobs | An [Inngest Cloud](https://www.inngest.com) app: its event and signing keys, with `INNGEST_DEV` unset. |
+| Models and tools | The Gemini, Groq, Tavily and GitHub keys from [Accounts and keys](#accounts-and-keys). |
+
+All variables are listed in [`backend/.env.production.example`](backend/.env.production.example).
+
+1. Push the repository and create a Blueprint on Render from it. Render asks for the values
+   marked `sync: false` in `render.yaml`.
+2. Set `BETTER_AUTH_URL` and `TRUSTED_ORIGINS` to the web app's public URL, not the API's:
+   browsers reach the API through the site. If the API's address is not
+   `https://codebook-api.onrender.com`, update the rewrite in `render.yaml` to match. A GitHub
+   OAuth callback, if used, is `https://<site>/api/auth/callback/github`.
+3. Sync the app in Inngest Cloud at `https://<site>/api/inngest` after each deploy that adds or
+   changes a function.
+4. Open the site, sign in, add a small source and ask a question.
+
+Run a single API instance: rate limits and the model circuit breaker live in its memory.
+`TRUST_PROXY` is the number of proxies in front of the API (1 on Render); too low and every
+visitor shares one rate-limit bucket, too high and a client could choose its own address.
 
 ## API overview
 

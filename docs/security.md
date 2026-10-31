@@ -126,6 +126,9 @@ Every route needs a session except health, auth, the demo, Inngest and the API d
   - Writes from a browser need a trusted Origin (`requireTrustedOrigin`): the frontend's
     `TRUSTED_ORIGINS`, plus the API's own origin (`BETTER_AUTH_URL`) so that "Try it out"
     in the Swagger UI works. That origin serves only the app's own pages (`/docs`).
+  - Deployed behind a proxy: `BETTER_AUTH_URL` and `TRUSTED_ORIGINS` are the public URL
+    browsers use, and `TRUST_PROXY` is a hop count, never `true` (the config refuses it in
+    production), so the per-IP limits see the address the nearest proxy saw.
 - **Test:** `app.test.ts` (CORS), `auth.test.ts` (HttpOnly, SameSite), and
   `security.test.ts` in production mode (Secure cookie, HSTS, nosniff, CSP, no
   `x-powered-by`).

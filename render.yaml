@@ -1,0 +1,77 @@
+# Render blueprint: the API and the web app. Values marked `sync: false` are asked for when the
+# blueprint is created and never stored in the repository.
+#
+# The web app calls `/api/...` on its own address and the static site forwards those requests to
+# the API (the rewrite below), so the browser only ever talks to one origin and the session
+# cookie stays first-party. That is why BETTER_AUTH_URL and TRUSTED_ORIGINS are the site's URL.
+services:
+  - type: web
+    name: codebook-api
+    runtime: node
+    region: frankfurt
+    plan: free
+    rootDir: backend
+    buildCommand: corepack enable && pnpm install --frozen-lockfile --prod=false && pnpm build
+    # Migrations run first; Prisma takes an advisory lock, so a restart never applies them twice.
+    startCommand: pnpm db:deploy && pnpm start
+    healthCheckPath: /api/v1/health/ready
+    envVars:
+      - key: NODE_VERSION
+        value: 22
+      # The static site's proxy is one hop in front of Render's own.
+      - key: TRUST_PROXY
+        value: 1
+      - key: BETTER_AUTH_URL
+        sync: false
+      - key: TRUSTED_ORIGINS
+        sync: false
+      - key: BETTER_AUTH_SECRET
+        generateValue: true
+      - key: DATABASE_URL
+        sync: false
+      - key: S3_ENDPOINT
+        sync: false
+      - key: S3_REGION
+        sync: false
+      - key: S3_BUCKET
+        value: codebook
+      - key: S3_ACCESS_KEY
+        sync: false
+      - key: S3_SECRET_KEY
+        sync: false
+      - key: S3_FORCE_PATH_STYLE
+        value: true
+      - key: INNGEST_EVENT_KEY
+        sync: false
+      - key: INNGEST_SIGNING_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY_2
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: TAVILY_API_KEY
+        sync: false
+      - key: GITHUB_TOKEN
+        sync: false
+      - key: ADMIN_USER_IDS
+        sync: false
+
+  - type: web
+    name: codebook-web
+    runtime: static
+    rootDir: frontend
+    buildCommand: corepack enable && pnpm install --frozen-lockfile --prod=false && pnpm build
+    staticPublishPath: dist
+    envVars:
+      - key: NODE_VERSION
+        value: 22
+    routes:
+      # First match wins: the API goes before the catch-all that serves the app's pages.
+      - type: rewrite
+        source: /api/*
+        destination: https://codebook-api.onrender.com/api/*
+      - type: rewrite
+        source: /*
+        destination: /index.html
