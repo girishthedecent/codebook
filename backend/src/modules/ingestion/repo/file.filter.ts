@@ -104,7 +104,14 @@ function fileReason(name: string, includeTests: boolean): SkipReason | null {
 
   if (LOCKFILES.has(name)) return 'lockfile';
   if (BINARY_EXTENSIONS.has(extension)) return 'binary';
-  if (lower.endsWith('.min.js') || lower.endsWith('.min.css') || extension === 'map') {
+  // A notebook is JSON, mostly cell outputs (tables, base64 images); as text it would drown
+  // the repository's code in noise.
+  if (
+    lower.endsWith('.min.js') ||
+    lower.endsWith('.min.css') ||
+    extension === 'map' ||
+    extension === 'ipynb'
+  ) {
     return 'generated';
   }
   if (isSecretFile(lower, extension)) return 'secret file';

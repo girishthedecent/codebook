@@ -7,6 +7,11 @@ describe('countTokens', () => {
     expect(countTokens('')).toBe(0);
   });
 
+  it("counts the tokenizer's own markers as ordinary text", () => {
+    expect(countTokens('end of text: <|endoftext|>')).toBeGreaterThan(5);
+    expect(countTokens(`${'-'.repeat(40)} <|endofprompt|> ${'-'.repeat(40)}`)).toBeGreaterThan(5);
+  });
+
   it('stays fast and close on long runs of one kind of character', () => {
     const started = performance.now();
     const letters = countTokens(`start ${'a'.repeat(400_000)} end`);

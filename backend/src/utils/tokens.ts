@@ -15,18 +15,24 @@ let encoder: Tiktoken | undefined;
 const LONG_RUN = /[\p{L}\p{M}]{32,}|[^\s\p{L}\p{N}]{32,}|\s{32,}/gu;
 const SAMPLE = 32;
 
-export function countTokens(text: string) {
+// Text from sources can contain the tokenizer's own markers (`<|endoftext|>` appears all over
+// GPT code and docs). By default the encoder throws on them; here they are plain text.
+function encode(text: string) {
   encoder ??= new Tiktoken(o200kBase);
+  return encoder.encode(text, [], []);
+}
+
+export function countTokens(text: string) {
   let estimated = 0;
   let rest = '';
   let last = 0;
   for (const match of text.matchAll(LONG_RUN)) {
     rest += `${text.slice(last, match.index)} `;
     const run = match[0];
-    const sampled = encoder.encode(run.slice(0, SAMPLE)).length;
+    const sampled = encode(run.slice(0, SAMPLE)).length;
     estimated += Math.ceil((sampled * run.length) / SAMPLE);
     last = match.index + run.length;
   }
-  if (last === 0) return encoder.encode(text).length;
-  return estimated + encoder.encode(rest + text.slice(last)).length;
+  if (last === 0) return encode(text).length;
+  return estimated + encode(rest + text.slice(last)).length;
 }

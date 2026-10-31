@@ -70,7 +70,7 @@ describe('pathSkipReason', () => {
   });
 
   it('skips generated files', () => {
-    for (const path of ['a.min.js', 'a.min.css', 'bundle.js.map']) {
+    for (const path of ['a.min.js', 'a.min.css', 'bundle.js.map', 'notebooks/scaling_laws.ipynb']) {
       expect(reasonOf(path)).toBe('generated');
     }
     expect(reasonOf('admin.js')).toBeNull();
