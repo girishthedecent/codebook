@@ -1,6 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { appConfig } from '../src/config/app.config.js';
 import prismaClient from '../src/config/db.config.js';
+import { serverConfig } from '../src/config/index.js';
 import { buildAgentContext } from '../src/modules/chat/context.js';
 import { readSource } from '../src/modules/chat/tools/readSource.js';
 import { searchSources } from '../src/modules/chat/tools/searchSources.js';
@@ -376,6 +377,103 @@ describe('the agent on the demo', () => {
 
     expect(await contextFor(userId)).toMatch(/quote at most two short lines/);
     expect(await contextFor(owner.id)).not.toMatch(/quote at most two short lines/);
+  });
+});
+
+describe('a demo whose books are free to share (DEMO_FULL_BOOKS)', () => {
+  beforeEach(() => {
+    serverConfig.DEMO_FULL_BOOKS = true;
+  });
+  afterEach(() => {
+    serverConfig.DEMO_FULL_BOOKS = false;
+  });
+
+  it('gives visitors whole pages and sections, uncounted', async () => {
+    const { sourceId } = await seedDemo();
+    const { agent } = await signInGuest();
+
+    const res = await agent.get(`/api/v1/sources/${sourceId}/content?page=1`);
+    expect(res.status).toBe(200);
+    expect((res.body as Body<{ text: string; excerpt?: boolean }>).data).toEqual({
+      page: 1,
+      text: PAGE_ONE,
+    });
+    expect(
+      await prismaClient.rateLimitHit.count({ where: { key: { startsWith: 'demoContent:' } } }),
+    ).toBe(0);
+  });
+
+  it('lets visitors fetch the PDF like its owner', async () => {
+    const { sourceId } = await seedDemo();
+    const { agent } = await signInGuest();
+
+    // The seeded book has no stored file: past the access check, the answer is about the file.
+    const res = await agent.get(`/api/v1/sources/${sourceId}/file`);
+    expect(res.status).toBe(404);
+    expect((res.body as Body<unknown>).message).toBe('File not found');
+
+    serverConfig.DEMO_FULL_BOOKS = false;
+    const refused = await agent.get(`/api/v1/sources/${sourceId}/file`);
+    expect((refused.body as Body<unknown>).message).toBe('Source not found');
+  });
+
+  it('gives the agent whole pages and passages, and no limit on quoting', async () => {
+    const { workspace, sourceId } = await seedDemo();
+    const { userId } = await signedInUser();
+    const section = `replication ${'section text '.repeat(100)}BOOK_TAIL`;
+    await seedSource(workspace.id, {
+      title: 'Long book',
+      parents: { p: { content: section, tokenCount: 300 } },
+      chunks: { c: { content: `replication ${'child text '.repeat(100)}`, parent: 'p' } },
+    });
+    const ctx = {
+      userId,
+      workspaceId: workspace.id,
+      isOwner: false,
+      isGuest: false,
+      registry: new CitationRegistry(),
+    };
+
+    const read = await readSource.execute({ sourceId, page: 1, pageEnd: 2 }, ctx);
+    expect(read.text).toContain('END1');
+    expect(read.text).toContain('END2');
+    expect(read.text).not.toMatch(/short excerpts/);
+
+    await searchSources.execute({ query: 'replication' }, ctx);
+    const book = ctx.registry.all().find((ref) => ref.sourceTitle === 'Long book')!;
+    expect(book.text).toBe(section);
+
+    const conversation = await prismaClient.conversation.create({
+      data: { workspaceId: workspace.id, userId, title: 't' },
+    });
+    const { system } = await buildAgentContext({
+      workspace,
+      conversationId: conversation.id,
+      questionId: 'none',
+      question: 'What is replication?',
+      userId,
+      isGuest: false,
+      useMemory: false,
+    });
+    expect(system).not.toMatch(/quote at most two short lines/);
+  });
+
+  it('gives the search endpoint whole hits to visitors, but still no query modes', async () => {
+    const { workspace } = await seedDemo();
+    const long = `replication ${'detail '.repeat(100)}TAIL`;
+    await seedSource(workspace.id, { chunks: { c: { content: long } } });
+    const { agent } = await signInGuest();
+
+    const res = await agent
+      .post(`/api/v1/workspaces/${workspace.id}/search`)
+      .send({ query: 'replication', mode: 'keyword' });
+    expect(res.status).toBe(200);
+    expect(JSON.stringify((res.body as Body<unknown>).data)).toContain('TAIL');
+
+    const rewritten = await agent
+      .post(`/api/v1/workspaces/${workspace.id}/search`)
+      .send({ query: 'replication', queryMode: 'hyde' });
+    expect(rewritten.status).toBe(400);
   });
 });
 

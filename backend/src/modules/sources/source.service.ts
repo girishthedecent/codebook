@@ -38,6 +38,7 @@ import {
   requeueSource,
   updateSourceIfExists,
 } from './source.repository.js';
+import { demoBooksInFull } from '../demo/excerpt.js';
 import { pdfStorageKey, queueStorageCleanup, sourcePrefix } from './source.storage.js';
 
 type NewSource = Omit<Prisma.SourceUncheckedCreateInput, 'workspaceId'>;
@@ -58,12 +59,13 @@ export async function getSourceService(userId: string, sourceId: string) {
 }
 
 /**
- * The stored PDF of a book, for the owner's viewer. Anyone else, demo visitors included,
- * gets the same 404 as for a source that isn't theirs: the book's text stays excerpt-only.
+ * The stored PDF of a book, for the owner's viewer. Anyone else gets the same 404 as for a
+ * source that isn't theirs, so a copyrighted demo book stays excerpt-only. Demo visitors read
+ * the demo's books like the owner when DEMO_FULL_BOOKS is on.
  * A `bytes=` range is passed through to storage so a viewer can fetch page by page.
  */
 export async function getPdfFileService(userId: string, sourceId: string, range?: string) {
-  const source = await findSourceForUser(userId, sourceId);
+  const source = await findSourceForUser(userId, sourceId, { includeDemo: demoBooksInFull() });
   if (!source || source.type !== 'PDF') throw new NotFoundError('Source not found');
   const origin = source.origin as PdfOrigin;
   if (!origin.storageKey) throw new NotFoundError('File not found');

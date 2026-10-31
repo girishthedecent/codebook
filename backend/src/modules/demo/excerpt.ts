@@ -1,9 +1,15 @@
 import { appConfig } from '../../config/app.config.js';
+import { serverConfig } from '../../config/index.js';
+
+/** Whether the demo's visitors read its books as its owner does (DEMO_FULL_BOOKS). */
+export function demoBooksInFull() {
+  return serverConfig.DEMO_FULL_BOOKS;
+}
 
 /**
- * The start of a passage, cut at a word boundary. Visitors of the demo (everyone but its
- * owner) read books this way: the demo's book is copyrighted, so nothing hands out whole
- * pages of it.
+ * The start of a passage, cut at a word boundary. Unless the demo shows its books in full,
+ * its visitors (everyone but its owner) read them this way: a copyrighted book must not be
+ * handed out in whole pages.
  */
 export function excerptOf(text: string, maxChars: number = appConfig.demo.excerptChars) {
   const trimmed = text.trim();

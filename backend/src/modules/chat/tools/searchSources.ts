@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { appConfig } from '../../../config/app.config.js';
 import { SourceType } from '../../../generated/prisma/enums.js';
-import { excerptOf } from '../../demo/excerpt.js';
+import { demoBooksInFull, excerptOf } from '../../demo/excerpt.js';
 import { search } from '../../retrieval/retrieval.service.js';
 import { QUERY_MODES, type RetrievedChunk } from '../../retrieval/retrieval.types.js';
 import type { AgentTool } from './tool.types.js';
@@ -113,9 +113,9 @@ export const searchSources: AgentTool<typeof input> = {
         lineStart: lines?.from,
         lineEnd: lines?.to,
         // A demo visitor's agent gets an excerpt of the matched text, not the whole section
-        // of a book.
+        // of a book (unless DEMO_FULL_BOOKS is on).
         text:
-          !ctx.isOwner && best.sourceType === 'PDF'
+          !ctx.isOwner && !demoBooksInFull() && best.sourceType === 'PDF'
             ? excerptOf(children.map((chunk) => chunk.content).join('\n\n')).text
             : block.content,
       });

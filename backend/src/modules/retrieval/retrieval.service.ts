@@ -5,7 +5,7 @@ import { embedTexts, type EmbedKind } from '../../llm/embeddings.js';
 import { rerank as rerankDocs } from '../../llm/reranker.js';
 import { withRerankSlot } from '../../utils/rateLimit.js';
 import { BadRequestError, UpstreamError } from '../../utils/errors/app.error.js';
-import { excerptOf } from '../demo/excerpt.js';
+import { demoBooksInFull, excerptOf } from '../demo/excerpt.js';
 import { identifierWords } from '../ingestion/code/identifiers.js';
 import type { WorkspaceSettings } from '../workspaces/workspace.dto.js';
 import { assertWorkspaceAccess } from '../workspaces/workspace.service.js';
@@ -341,6 +341,8 @@ export async function searchWorkspaceService(
 ) {
   const workspace = await assertWorkspaceAccess(userId, workspaceId, { allowDemoRead: true });
   const owner = workspace.userId === userId;
+  // Visitors read the demo's books as the owner does only when DEMO_FULL_BOOKS is on.
+  const inFull = owner || demoBooksInFull();
   if (!owner && (input.queryMode !== 'none' || input.rerank === true)) {
     throw new BadRequestError('Query modes and reranking are not available on the demo workspace');
   }
@@ -352,10 +354,10 @@ export async function searchWorkspaceService(
     mode: input.mode ?? settings.defaultSearchMode ?? 'hybrid',
     rerank: owner ? input.rerank : false,
     // Parent sections are whole pages of the demo's book; visitors get snippets only.
-    expandParents: owner ? input.expandParents : false,
+    expandParents: inFull ? input.expandParents : false,
     signal,
   });
-  if (owner) return result;
+  if (inFull) return result;
   return {
     ...result,
     results: result.results.map((chunk) => ({

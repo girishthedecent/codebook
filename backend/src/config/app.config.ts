@@ -226,7 +226,8 @@ export const appConfig = {
     // The demo workspace's owner, made by `pnpm db:seed -- --demo` (no password, never signs in).
     ownerEmail: 'demo@codebook.local',
     workspaceName: 'CodeBook demo',
-    // Visitors who don't own the demo read short excerpts, never whole pages of a book.
+    // Visitors who don't own the demo read short excerpts, never whole pages of a book (unless
+    // DEMO_FULL_BOOKS is on).
     excerptChars: 600,
     // Repeat first questions are answered from AnswerCache for this long.
     answerCacheTtlSec: 24 * 60 * 60,

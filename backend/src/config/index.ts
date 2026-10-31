@@ -121,6 +121,10 @@ const baseSchema = z.object({
   // Scripted stand-ins for every model: chat, study and memory work with no provider keys
   // and no quota, for the web app's browser tests and offline development.
   LLM_MOCK: z.stringbool().default(false),
+  // The demo's books are free to share (it is seeded with openly licensed ones), so its
+  // visitors read them as the owner does: whole pages, the PDF itself, no limit on quoting.
+  // Off by default: a demo with a copyrighted book stays excerpt-only.
+  DEMO_FULL_BOOKS: z.stringbool().default(false),
 });
 
 const schema = baseSchema

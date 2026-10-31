@@ -2,7 +2,7 @@ import { appConfig } from '../../config/app.config.js';
 import { countLines } from '../ingestion/code/lines.js';
 import { BadRequestError, NotFoundError } from '../../utils/errors/app.error.js';
 import { assertWithinLimit } from '../../utils/rateLimit.js';
-import { excerptOf } from '../demo/excerpt.js';
+import { demoBooksInFull, excerptOf } from '../demo/excerpt.js';
 import type { ListFilesQuery, SourceContentQuery } from './source.dto.js';
 import { getSourceService } from './source.service.js';
 import {
@@ -43,7 +43,7 @@ export async function listFilesService(userId: string, sourceId: string, query: 
 
 /**
  * A page, section or line range of a source. A book in the demo workspace is read by its
- * visitors as short excerpts, and only so many a day per IP.
+ * visitors as short excerpts, and only so many a day per IP, unless DEMO_FULL_BOOKS is on.
  */
 export async function getContentService(
   userId: string,
@@ -52,7 +52,7 @@ export async function getContentService(
   clientIp: string | undefined,
 ) {
   const source = await getSourceService(userId, sourceId);
-  const excerpt = source.type === 'PDF' && source.workspace.userId !== userId;
+  const excerpt = source.type === 'PDF' && source.workspace.userId !== userId && !demoBooksInFull();
   if (excerpt) await assertWithinLimit('demoContent', `ip:${clientIp ?? 'unknown'}`);
 
   if (query.path !== undefined) {

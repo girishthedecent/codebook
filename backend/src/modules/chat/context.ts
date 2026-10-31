@@ -2,6 +2,7 @@ import prismaClient from '../../config/db.config.js';
 import type { Message, Workspace } from '../../generated/prisma/client.js';
 import type { ChatMessage } from '../../llm/client.js';
 import { DEFAULT_AGENT_PROMPT, agentSystemPrompts } from '../../llm/prompts/agentSystem.js';
+import { demoBooksInFull } from '../demo/excerpt.js';
 import { memoryBlock } from '../memory/memory.recall.js';
 import { conversationHistory } from './conversation.service.js';
 import { agentTools } from './tools/index.js';
@@ -38,7 +39,8 @@ async function sourcesList(workspaceId: string) {
     .join('\n');
 }
 
-// Visitors of the demo (everyone but its owner): its book is copyrighted.
+// Visitors of the demo (everyone but its owner), unless it shows its books in full: its book
+// is copyrighted.
 const DEMO_HINT =
   '- This is the public demo workspace: quote at most two short lines from a source, and summarize instead of copying longer passages.';
 
@@ -51,7 +53,7 @@ function workspaceHint(workspace: Workspace, userId: string, available: Readonly
   const known = preferred.filter((name) => available.has(name));
   const lines = [
     known.length > 0 ? `- In this workspace, start with ${known.join(' or ')}.` : '',
-    workspace.isDemo && workspace.userId !== userId ? DEMO_HINT : '',
+    workspace.isDemo && workspace.userId !== userId && !demoBooksInFull() ? DEMO_HINT : '',
   ];
   return lines.filter(Boolean).join('\n');
 }

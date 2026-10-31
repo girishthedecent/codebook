@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { appConfig } from '../../../config/app.config.js';
-import { excerptOf } from '../../demo/excerpt.js';
+import { demoBooksInFull, excerptOf } from '../../demo/excerpt.js';
 import { countLines } from '../../ingestion/code/lines.js';
 import { findFile, findPageText, findTocSection } from '../../sources/sourceContent.repository.js';
 import type { AgentTool, ToolResult } from './tool.types.js';
@@ -28,9 +28,10 @@ type Args = z.infer<typeof input>;
 // Pages of a book are joined by \f.
 const pageBreaks = (text: string) => text.split('\f').length - 1;
 
-// Only the demo's owner reads its book in full (see demo/excerpt.ts).
+// Only the demo's owner reads its book in full, unless DEMO_FULL_BOOKS is on (see
+// demo/excerpt.ts).
 const excerptsOnly = (source: ToolSourceRow, ctx: Parameters<AgentTool['execute']>[1]) =>
-  source.type === 'PDF' && !ctx.isOwner;
+  source.type === 'PDF' && !ctx.isOwner && !demoBooksInFull();
 const EXCERPT_NOTE =
   '\nThis is the public demo: a book is only shown as short excerpts, here and in search results. Search for the specific point with search_sources rather than reading pages.';
 
