@@ -25,7 +25,10 @@ function emit() {
 export function askAbout(next: AskAbout) {
   const quote = next.quote.replace(/\s+/g, ' ').trim();
   if (!quote) return;
-  current = { ...next, quote: quote.length > MAX_QUOTE ? `${quote.slice(0, MAX_QUOTE - 1)}…` : quote };
+  current = {
+    ...next,
+    quote: quote.length > MAX_QUOTE ? `${quote.slice(0, MAX_QUOTE - 1)}…` : quote,
+  };
   emit();
 }
 
