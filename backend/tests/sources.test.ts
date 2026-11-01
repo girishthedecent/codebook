@@ -44,7 +44,7 @@ let alice: User;
 let bob: User;
 let workspaceId: string;
 let send: ReturnType<typeof spyOnSend>;
-const spyOnSend = () => vi.spyOn(inngest, 'send').mockResolvedValue({ ids: [] } as never);
+const spyOnSend = () => vi.spyOn(inngest, 'send').mockResolvedValue({ ids: [] });
 const usedUsers: string[] = [];
 
 beforeEach(async () => {
@@ -186,7 +186,7 @@ describe('PDF upload', () => {
   });
 
   it('drops the source when storage fails', async () => {
-    vi.spyOn(s3Client, 'send').mockRejectedValueOnce(new Error('storage down') as never);
+    vi.spyOn(s3Client, 'send').mockRejectedValueOnce(new Error('storage down'));
     const res = await uploadPdf(alice);
     expect(res.status).toBe(502);
     expect(await prismaClient.source.count()).toBe(0);

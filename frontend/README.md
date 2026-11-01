@@ -1,6 +1,6 @@
 # CodeBook web app
 
-The browser app for the CodeBook API in `../backend`. Vite + React, TanStack Router and Query, Tailwind with our own tokens.
+The browser app for the CodeBook API in `../backend`. Vite + React, TanStack Router and Query, Tailwind with custom design tokens.
 
 ## Run
 
@@ -35,7 +35,7 @@ src/
   auth/       better-auth client, session helpers, `useMe`, route guards
   routes/     TanStack file routes (routeTree.gen.ts is generated)
   features/   screen logic per module (chat, sources, viewer, graph, study, …)
-  ui/         our components, built on radix primitives
+  ui/         shared components, built on Radix primitives
   workers/    Shiki highlighting worker and its themes
   lib/        small helpers (class names, keyboard shortcuts, theme, breakpoints, viewer URL params)
   styles/     tokens.css (design tokens) and base.css

@@ -4,7 +4,7 @@ import { s } from './strings';
 
 /**
  * The chips after a sentence or item. An item the set couldn't tie to a passage says so
- * quietly; one that simply has none renders nothing.
+ * quietly; one that has none renders nothing.
  */
 export function Cites({ citations, uncited }: { citations: Citation[]; uncited?: boolean }) {
   if (citations.length === 0) {

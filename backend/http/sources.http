@@ -46,7 +46,7 @@ Origin: {{origin}}
 
 { "type": "GITHUB_REPO", "url": "https://github.com/karpathy/nanoGPT" }
 
-### Add a website (maxDepth 0–2, maxPages 1–50)
+### Add a website (maxDepth 0-2, maxPages 1-50)
 POST {{base}}/api/v1/workspaces/{{workspaceId}}/sources
 Content-Type: application/json
 Origin: {{origin}}

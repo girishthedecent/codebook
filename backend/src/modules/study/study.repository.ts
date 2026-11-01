@@ -98,8 +98,6 @@ export async function findWorkspaceSources(workspaceId: string, sourceIds: strin
   });
 }
 
-// ---- gathering --------------------------------------------------------------------------
-
 const passageSelect = {
   id: true,
   sourceId: true,

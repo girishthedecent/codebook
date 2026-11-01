@@ -2,11 +2,9 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { X } from '@phosphor-icons/react';
 import { cn } from '@/lib/cn';
 
-/**
- * A small toaster. `toast()` works from anywhere (no hook needed); `<Toaster />` mounts once.
- * Bottom-left, at most three at a time, gone after 5 s unless hovered. Only for results of
- * background work — anything the user just did gets an inline confirmation instead.
- */
+// `toast()` works from anywhere, no hook needed; `<Toaster />` mounts once. Bottom-left, at most
+// three at a time, gone after 5 s unless hovered. Only for results of background work; anything
+// the user just did gets an inline confirmation instead.
 
 export type ToastKind = 'info' | 'ok' | 'error';
 

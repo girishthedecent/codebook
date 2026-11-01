@@ -112,7 +112,7 @@ export function useHighlight(
   if (!result || code === undefined || result.lang !== lang) return undefined;
   if (result.code === code) return result.lines;
   // Lines are cut at "\n", so a shared start or end is a whole number of lines.
-  if (code.startsWith(result.code + '\n')) return result.lines as Array<Token[] | undefined>;
+  if (code.startsWith(result.code + '\n')) return result.lines;
   if (code.endsWith('\n' + result.code)) {
     const added = code.slice(0, code.length - result.code.length).split('\n').length - 1;
     return [...new Array<Token[] | undefined>(added), ...result.lines];

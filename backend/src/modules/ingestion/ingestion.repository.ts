@@ -23,15 +23,13 @@ export async function setIngestState(sourceId: string, data: Prisma.SourceUpdate
   return count > 0;
 }
 
-// ---- draft ------------------------------------------------------------------------------
-
 /**
  * Stores the parsed source (and a repository's code graph) for this run, replacing any older
  * run's draft. False when the source is gone.
  */
 export async function saveDraft(sourceId: string, runId: string, draft: Draft, graph?: DraftGraph) {
-  const data = draft as unknown as Prisma.InputJsonValue;
-  const graphData = graph ? (graph as unknown as Prisma.InputJsonValue) : Prisma.DbNull;
+  const data = draft as Prisma.InputJsonValue;
+  const graphData = graph ? (graph as Prisma.InputJsonValue) : Prisma.DbNull;
   try {
     await prismaClient.ingestDraft.upsert({
       where: { sourceId },
@@ -54,7 +52,7 @@ export async function loadDraft(sourceId: string, runId: string) {
     where: { sourceId },
     select: { runId: true, data: true },
   });
-  return row?.runId === runId ? (row.data as unknown as Draft) : null;
+  return row?.runId === runId ? (row.data as Draft) : null;
 }
 
 /** The code graph saved with the draft. The index transaction checks the run owns it. */
@@ -63,10 +61,8 @@ export async function loadGraph(sourceId: string) {
     where: { sourceId },
     select: { graph: true },
   });
-  return (row?.graph ?? null) as unknown as DraftGraph | null;
+  return (row?.graph ?? null) as DraftGraph | null;
 }
-
-// ---- context cache ----------------------------------------------------------------------
 
 export async function findContexts(keys: string[]) {
   if (keys.length === 0) return new Map<string, string>();
@@ -78,8 +74,6 @@ export async function saveContexts(entries: { key: string; context: string }[]) 
   if (entries.length === 0) return;
   await prismaClient.contextCache.createMany({ data: entries, skipDuplicates: true });
 }
-
-// ---- index ------------------------------------------------------------------------------
 
 type IndexInput = {
   sourceId: string;

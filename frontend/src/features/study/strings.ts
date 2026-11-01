@@ -8,7 +8,7 @@ export const s = {
   emptyHint: 'Make a quiz, flashcards, a mind map or a summary from your sources.',
   guestNote: "Sets made from the demo's sources.",
   demoNote: 'The demo workspace is read-only. Make a workspace of your own to create study sets.',
-  signIn: 'Make your own — sign in',
+  signIn: 'Sign in to make your own',
   all: 'All',
   loading: 'Loading study sets',
   loadingOne: 'Loading the study set',

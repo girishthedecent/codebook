@@ -12,7 +12,6 @@ import {
   loadCorpusSpec,
   sourcesFor,
   workspaceName,
-  type CorpusSource,
 } from './corpusWorkspace.js';
 
 const spec = loadCorpusSpec('core');
@@ -164,7 +163,7 @@ describe('estimateEmbeddings', () => {
   });
 
   it('has nothing to go by without an indexed copy', () => {
-    expect(estimateEmbeddings(book as CorpusSource, 'context', null)).toBeNull();
+    expect(estimateEmbeddings(book, 'context', null)).toBeNull();
   });
 });
 

@@ -40,7 +40,7 @@ function failed(path: string, status: number): never {
   throw new UpstreamError('GitHub', { status });
 }
 
-/** The repository, or null when it doesn't exist (or our token can't see it). */
+/** The repository, or null when it doesn't exist (or the token can't see it). */
 export async function getRepo(owner: string, repo: string): Promise<GithubRepo | null> {
   const path = `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
   const res = await githubGet(path);

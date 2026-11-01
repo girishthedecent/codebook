@@ -24,7 +24,7 @@ export function linear(domain: [number, number], range: [number, number]) {
   return (v: number) => r0 + (v - d0) * k;
 }
 
-/** 0 / 950 / 1.2K / 34K / 1.2M — compact from 1,000 up. */
+/** 0 / 950 / 1.2K / 34K / 1.2M: compact from 1,000 up. */
 export function compact(v: number) {
   const abs = Math.abs(v);
   if (abs >= 1e6) return `${trim(v / 1e6)}M`;

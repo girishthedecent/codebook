@@ -85,8 +85,6 @@ export function mainLanguages(source: Source): string {
   return `${top.slice(0, -1).join(', ')} and ${top[top.length - 1]}`;
 }
 
-// ---- indexing progress ----------------------------------------------------------------
-
 // The stages each kind of source goes through, in order; QUEUED and DONE are not steps.
 const steps: Record<SourceType, SourceStage[]> = {
   PDF: [
@@ -157,8 +155,6 @@ export function idleText(minutes: number) {
   if (minutes < 120) return `${minutes} min`;
   return `${Math.floor(minutes / 60)} hours`;
 }
-
-// ---- failures -------------------------------------------------------------------------
 
 // The backend stores a short message with each failure; these few are written for logs more
 // than for readers, so they get a plainer sentence. Anything else is shown as it is.

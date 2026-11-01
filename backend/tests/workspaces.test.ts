@@ -14,7 +14,7 @@ const MISSING_ID = 'cjld2cjxh0000qzrmn831i7rn';
 let alice: User;
 
 let send: ReturnType<typeof spyOnSend>;
-const spyOnSend = () => vi.spyOn(inngest, 'send').mockResolvedValue({ ids: [] } as never);
+const spyOnSend = () => vi.spyOn(inngest, 'send').mockResolvedValue({ ids: [] });
 
 beforeEach(async () => {
   await resetDb();

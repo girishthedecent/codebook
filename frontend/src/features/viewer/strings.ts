@@ -16,7 +16,7 @@ export const s = {
   of: 'of',
   zoom: 'Zoom',
   fitWidth: 'Fit width',
-  excerpt: 'Excerpt — the demo shows up to 600 characters of a page.',
+  excerpt: 'Excerpt. The demo shows up to 600 characters of a page.',
   noText: 'This page has no text.',
   callers: 'Callers',
   dependencies: 'Dependencies',

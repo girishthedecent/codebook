@@ -3,8 +3,8 @@ import { isIP } from 'node:net';
 import { Agent, fetch, type Response } from 'undici';
 import { isAllowedAddress, isTestAddress } from './network.js';
 
-// Fetching URLs that users hand us. Checking the URL when it is saved isn't enough: DNS can
-// answer differently by the time we fetch (rebinding), and a redirect can point anywhere.
+// Fetching URLs that users submit. Checking the URL when it is saved isn't enough: DNS can
+// answer differently by the time of the fetch (rebinding), and a redirect can point anywhere.
 // So every connection checks the address it actually connects to, and every redirect hop
 // goes through the same checks as the first URL.
 
@@ -20,7 +20,7 @@ export class UrlRefusedError extends FetchError {}
 class BlockedAddressError extends Error {}
 
 // Hostnames are resolved here, at connect time. Every address must be allowed, not just
-// the one we'd pick: otherwise a retry or a second connection could use another one.
+// the one that would be picked: otherwise a retry or a second connection could use another one.
 const agent = new Agent({
   connect: {
     lookup(hostname, options, callback) {

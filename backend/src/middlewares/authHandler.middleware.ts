@@ -5,7 +5,7 @@ import { auth } from '../config/auth.config.js';
 import { serverConfig } from '../config/index.js';
 
 // better-auth's toNodeHandler() builds the URL from the client's Host / X-Forwarded-Proto and
-// reads bodies of any size, so we build the request ourselves with a fixed base.
+// reads bodies of any size, so the request is built here with a fixed base.
 const base = new URL(serverConfig.BETTER_AUTH_URL).origin;
 
 /**

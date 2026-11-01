@@ -51,7 +51,7 @@ beforeEach(async () => {
   admin = await signedInUser('admin@example.com');
   reader = await signedInUser('reader@example.com');
   serverConfig.ADMIN_USER_IDS = [admin.userId];
-  send = vi.spyOn(inngest, 'send').mockResolvedValue({ ids: [] } as never);
+  send = vi.spyOn(inngest, 'send').mockResolvedValue({ ids: [] });
 
   const dataset = await prismaClient.evalDataset.create({ data: { name: 'core' } });
   datasetId = dataset.id;

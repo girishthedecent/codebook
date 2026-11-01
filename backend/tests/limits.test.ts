@@ -35,7 +35,7 @@ let demoId: string;
 beforeEach(async () => {
   await resetDb();
   resetCircuitBreaker();
-  vi.spyOn(inngest, 'send').mockResolvedValue({ ids: [] } as never);
+  vi.spyOn(inngest, 'send').mockResolvedValue({ ids: [] });
   const owner = await prismaClient.user.create({
     data: { id: 'demo-owner', name: 'Demo', email: 'demo@example.com', isSystem: true },
   });

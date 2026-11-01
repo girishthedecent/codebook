@@ -49,8 +49,6 @@ export type UploadedFile = {
   size: number;
 };
 
-// ---- reading ----------------------------------------------------------------------------
-
 /** The source if this user may read it (demo sources included); otherwise a 404. */
 export async function getSourceService(userId: string, sourceId: string) {
   const source = await findSourceForUser(userId, sourceId, { includeDemo: true });
@@ -85,8 +83,6 @@ export async function listSourcesService(
   await assertWorkspaceAccess(userId, workspaceId, { allowDemoRead: true });
   return listSources(workspaceId, page);
 }
-
-// ---- adding -----------------------------------------------------------------------------
 
 // `title` is for callers that build a source from a spec (the eval corpus, the demo seed): the
 // title is part of every embedding input, so a copy that must match an indexed one keeps its
@@ -242,8 +238,6 @@ async function queueIngest(source: Source, reason: 'created' | 'resync') {
   }
 }
 
-// ---- changing ---------------------------------------------------------------------------
-
 export async function deleteSourceService(userId: string, sourceId: string) {
   const source = await findSourceForUser(userId, sourceId);
   if (!source || !(await deleteSource(sourceId))) throw new NotFoundError('Source not found');
@@ -286,8 +280,6 @@ export async function countSourcesService(workspaceId: string) {
   return countSourcesByStatus(workspaceId);
 }
 
-// ---- progress ---------------------------------------------------------------------------
-
 /**
  * Sends the source's state now and whenever it changes, then `done` / `failed` and closes.
  * Polls the row: simple, and one query a second per open stream is cheap. Postgres
@@ -328,8 +320,6 @@ export function watchSourceProgress(sourceId: string, stream: SseStream) {
   };
   run();
 }
-
-// ---- helpers ----------------------------------------------------------------------------
 
 // The PDF spec allows a few bytes before the header, but not more than 1 KB.
 async function assertPdfHeader(path: string) {

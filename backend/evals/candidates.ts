@@ -64,8 +64,6 @@ export async function writeJson(file: string, value: unknown) {
   await rename(temp, file);
 }
 
-// --- synthetic ---------------------------------------------------------------------------
-
 export type SourceKey = 'book' | 'repo' | 'docs';
 
 const CASE_TYPE: Record<SourceKey, EvalCaseType> = { book: 'BOOK', repo: 'CODE', docs: 'BOOK' };
@@ -249,16 +247,14 @@ export async function synthesizeCandidates(options: SynthOptions) {
   return made;
 }
 
-// --- failures ----------------------------------------------------------------------------
-
 export type FailureScope =
   { workspaceId: string; userId?: never } | { userId: string; workspaceId?: never };
 
 export type FailureReason = 'thumbs_down' | 'invalid_citations' | 'weak_retrieval';
 
 /**
- * Answers in one workspace (or of one user) that went wrong — a thumbs down, citations that
- * pointed nowhere, or a search that found nothing good — as candidates to turn into cases.
+ * Answers in one workspace (or of one user) that went wrong (a thumbs down, citations that
+ * pointed nowhere, or a search that found nothing good) as candidates to turn into cases.
  * Only the question and a short excerpt of the answer are kept, never what it was shown.
  */
 export async function failureCandidates(scope: FailureScope, limit = 200): Promise<Candidate[]> {
@@ -326,8 +322,6 @@ export function addNew(existing: Candidate[], fresh: Candidate[]) {
   const added = fresh.filter((candidate) => !ids.has(candidate.id));
   return { candidates: [...existing, ...added], added: added.length };
 }
-
-// --- import ------------------------------------------------------------------------------
 
 type RawCase = { id?: unknown; origin?: unknown };
 

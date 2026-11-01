@@ -30,7 +30,7 @@ let workspaceId: string;
 let book: Awaited<ReturnType<typeof seedSource>>;
 let send: ReturnType<typeof spyOnSend>;
 
-const spyOnSend = () => vi.spyOn(inngest, 'send').mockResolvedValue({ ids: [] } as never);
+const spyOnSend = () => vi.spyOn(inngest, 'send').mockResolvedValue({ ids: [] });
 
 /** The prompts the study model was sent, in order. */
 let prompts: string[];
@@ -42,7 +42,7 @@ function studyModel(reply: (prompt: string, numbers: number[]) => unknown) {
     const numbers = [...prompt.matchAll(/<source n="(\d+)"/g)].map((m) => Number(m[1]));
     return JSON.stringify(reply(prompt, numbers));
   });
-  useModels({ [STUDY.primary!.model]: model, [STUDY.fallback!.model]: model });
+  useModels({ [STUDY.primary.model]: model, [STUDY.fallback!.model]: model });
 }
 
 const question = (i: number, citations: number[], options = ['A', 'B', 'C', 'D']) => ({
@@ -274,9 +274,9 @@ describe('generation', () => {
       });
     });
     useModels({
-      [STUDY.primary!.model]: study,
+      [STUDY.primary.model]: study,
       [STUDY.fallback!.model]: study,
-      [SUMMARIZE.primary!.model]: condense,
+      [SUMMARIZE.primary.model]: condense,
       [SUMMARIZE.fallback!.model]: condense,
     });
     return summarizePrompts;
@@ -642,7 +642,7 @@ describe('POST /study/:id/cancel', () => {
       expect((await cancel(id)).status).toBe(200);
       return reply;
     };
-    useModels({ [STUDY.primary!.model]: model, [STUDY.fallback!.model]: model });
+    useModels({ [STUDY.primary.model]: model, [STUDY.fallback!.model]: model });
 
     await run(id);
 
@@ -682,7 +682,7 @@ describe('why a set failed', () => {
 
   it('says the models could not answer when every one failed', async () => {
     const { id, error } = await runThatFails({
-      [STUDY.primary!.model]: scriptedModel([apiError(500)]),
+      [STUDY.primary.model]: scriptedModel([apiError(500)]),
       [STUDY.fallback!.model]: scriptedModel([apiError(500)]),
     });
     expect((error as { code?: string }).code).toBe('MODEL_UNAVAILABLE');
@@ -698,7 +698,7 @@ describe('why a set failed', () => {
 
   it('says the model took too long when it did', async () => {
     const { id, error } = await runThatFails({
-      [STUDY.primary!.model]: scriptedModel([new LlmTimeoutError(60_000)]),
+      [STUDY.primary.model]: scriptedModel([new LlmTimeoutError(60_000)]),
       [STUDY.fallback!.model]: scriptedModel([new LlmTimeoutError(60_000)]),
     });
 
@@ -713,7 +713,7 @@ describe('why a set failed', () => {
 
   it('keeps provider details out of what the user is told', async () => {
     const { id, error } = await runThatFails({
-      [STUDY.primary!.model]: scriptedModel([apiError(500)]),
+      [STUDY.primary.model]: scriptedModel([apiError(500)]),
       [STUDY.fallback!.model]: scriptedModel([apiError(500)]),
     });
     await failure(id, error);
@@ -810,7 +810,7 @@ describe('model failures', () => {
 
   it('turns output that misses the schema into feedback', async () => {
     useModels({
-      [STUDY.primary!.model]: scriptedModel(['not json']),
+      [STUDY.primary.model]: scriptedModel(['not json']),
       [STUDY.fallback!.model]: scriptedModel(['{"title": 3}']),
     });
 
@@ -821,7 +821,7 @@ describe('model failures', () => {
 
   it('throws other failures, so the step is retried', async () => {
     useModels({
-      [STUDY.primary!.model]: scriptedModel([apiError(400)]),
+      [STUDY.primary.model]: scriptedModel([apiError(400)]),
       [STUDY.fallback!.model]: scriptedModel([apiError(400)]),
     });
 

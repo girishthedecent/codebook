@@ -186,8 +186,6 @@ export function resolveGraph(files: GraphFile[]): { graph: DraftGraph; stats: Gr
     });
   }
 
-  // ---- lookups ------------------------------------------------------------------------
-
   const bindingTarget = (index: FileIndex, local: string) => {
     for (const fact of index.imports) {
       if (!fact.target) continue;

@@ -92,13 +92,13 @@ export async function rerank(
           max_length: appConfig.retrieval.reranker.maxTokens,
         },
       );
-      const { logits } = (await loaded.model(inputs)) as { logits: Tensor };
+      const { logits } = await loaded.model(inputs);
       // One relevance logit per pair.
       const width = logits.dims[1] ?? 1;
       for (let row = 0; row < batch.length; row++) {
         scores.push(sigmoid(Number(logits.data[row * width])));
       }
-      tokensIn += countTokens(inputs.attention_mask as Tensor);
+      tokensIn += countTokens(inputs.attention_mask);
     }
   } catch (error) {
     if (options.signal?.aborted) throw error;

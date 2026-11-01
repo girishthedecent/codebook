@@ -68,9 +68,6 @@ function count(node: MindmapNode): number {
   return 1 + node.children.reduce((n, c) => n + count(c), 0);
 }
 
-// ---------------------------------------------------------------------------------------------
-// Outline
-
 type TreeProps = {
   root: MindmapNode;
   folded: Set<string>;
@@ -212,8 +209,7 @@ function OutlineItem({
   );
 }
 
-// ---------------------------------------------------------------------------------------------
-// Map: columns by depth, leaves one row apart, each parent centred on its children.
+// The map: columns by depth, leaves one row apart, each parent centred on its children.
 
 const COL = 240;
 const ROW = 34;
@@ -386,7 +382,7 @@ function MapCanvas({ root, folded, toggle, index }: TreeProps) {
     const dy = next.y - prev.y;
     moved.current += Math.abs(dx) + Math.abs(dy);
     if (moved.current > 4) {
-      (e.currentTarget as Element).setPointerCapture?.(e.pointerId);
+      e.currentTarget.setPointerCapture?.(e.pointerId);
       setView((v) => ({ ...v, x: v.x + dx, y: v.y + dy }));
     }
   };

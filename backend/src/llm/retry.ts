@@ -96,7 +96,7 @@ export function parseRetryAfterMs(headers: Record<string, string> | undefined) {
 
 /**
  * How long to wait before trying the same model again, or null when it isn't worth it:
- * the error isn't a rate limit / server / network error, or the provider asks us to wait
+ * the error isn't a rate limit / server / network error, or the provider asks for a wait
  * longer than the policy allows (the fallback model answers sooner).
  */
 export function retryDelayMs(

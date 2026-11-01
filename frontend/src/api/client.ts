@@ -1,10 +1,8 @@
 import createClient from 'openapi-fetch';
 import type { paths } from './schema';
 
-/**
- * One fetch client for the whole app. Relative base URL: in dev Vite proxies `/api` to the
- * backend, in production both sit behind one origin, so the auth cookie is always first-party.
- */
+// Relative base URL: in dev Vite proxies `/api` to the backend, in production both sit behind
+// one origin, so the auth cookie is always first-party.
 export const api = createClient<paths>({
   baseUrl: '/',
   credentials: 'include',

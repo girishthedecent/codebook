@@ -5,8 +5,9 @@ import { latestAnswerFile, loadAnswerRuns, writeAnswerReport } from './answerRep
 import { latestFile, loadRuns, REPORT_DIR, writeReport } from './reportMarkdown.js';
 
 // pnpm evals:report [--suite retrieval|answer] [--runs id,id] [--split DEV] [--dataset core]
-//   [--corpus context] — by default the latest run of each config on that split and dataset
-// (for retrieval, the latest full run; for answers, on one corpus and with one judge).
+//   [--corpus context]
+// By default the latest run of each config on that split and dataset (for retrieval, the
+// latest full run; for answers, on one corpus and with one judge).
 
 async function main() {
   const { values } = parseArgs({

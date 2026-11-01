@@ -31,7 +31,7 @@ const reasonLabel: Record<FailedQuery['reasons'][number], string> = {
 /** Answers that errored, were marked not helpful, cited badly or retrieved weakly. */
 export function FailedQueries() {
   const q = useFailedQueries();
-  const rows = flatItems(q.data) as FailedQuery[];
+  const rows = flatItems(q.data);
   const [open, setOpen] = useState<string | null>(null);
 
   return (

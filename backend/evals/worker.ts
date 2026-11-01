@@ -8,7 +8,7 @@ import logger from '../src/config/logger.config.js';
 import { createRunEval, evalsInngest } from './runEval.function.js';
 import { suites } from './suites.js';
 
-// pnpm evals:worker — serves the eval app's Inngest functions on EVALS_WORKER_PORT. Runs are
+// pnpm evals:worker: serves the eval app's Inngest functions on EVALS_WORKER_PORT. Runs are
 // queued with POST /api/v1/evals/runs (admins) and run here, one at a time.
 
 const app = express();

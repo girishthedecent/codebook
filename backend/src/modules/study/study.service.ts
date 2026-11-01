@@ -26,8 +26,6 @@ import type { StudyData } from './study.schemas.js';
 // Stored citations keep this much of each passage: enough for the snippet and a preview.
 const STORED_TEXT_CHARS = 1_500;
 
-// ---- reading ----------------------------------------------------------------------------
-
 export async function listStudyService(userId: string, workspaceId: string, query: ListStudyQuery) {
   await assertWorkspaceAccess(userId, workspaceId, { allowDemoRead: true });
   const { type, ...page } = query;
@@ -40,8 +38,6 @@ export async function getStudyService(userId: string, artifactId: string) {
   if (!artifact) throw new NotFoundError('Study set not found');
   return artifact;
 }
-
-// ---- generating -------------------------------------------------------------------------
 
 export async function createStudyService(
   userId: string,
@@ -115,8 +111,6 @@ export async function deleteStudyService(userId: string, artifactId: string) {
   await deleteArtifact(artifactId);
 }
 
-// ---- called by the Inngest function -----------------------------------------------------
-
 /** Marks the run as started; null when the artifact was deleted or cancelled meanwhile. */
 export async function startStudy(artifactId: string) {
   const artifact = await updateActiveArtifact(artifactId, {
@@ -150,8 +144,8 @@ export async function saveStudy(
     error: null,
     errorCode: null,
     title: data.title.slice(0, 200) || undefined,
-    data: data as unknown as Prisma.InputJsonValue,
-    sources: sources as unknown as Prisma.InputJsonValue,
+    data: data as Prisma.InputJsonValue,
+    sources: sources as Prisma.InputJsonValue,
     model: model ?? null,
     promptVersion: promptFor[artifact.type].id,
   });

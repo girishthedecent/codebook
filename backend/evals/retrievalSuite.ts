@@ -1,6 +1,6 @@
 import prismaClient from '../src/config/db.config.js';
 import { serverConfig } from '../src/config/index.js';
-import { Prisma, type EvalCase, type EvalResult } from '../src/generated/prisma/client.js';
+import type { EvalCase, EvalResult } from '../src/generated/prisma/client.js';
 import type { EvalSplit } from '../src/generated/prisma/enums.js';
 import { embedTexts } from '../src/llm/embeddings.js';
 import { embeddingRoute, textRoutes } from '../src/llm/models.js';
@@ -321,7 +321,7 @@ export async function startRetrieval(options: RunOptions): Promise<StartedRun> {
             corpusVersion: corpus.corpusVersion,
             sources: corpus.sources,
           },
-        } as Prisma.InputJsonValue,
+        },
         gitSha: sha,
         promptVersions: prompts.map((prompt) => prompt.id),
         models: {
@@ -453,8 +453,8 @@ export async function runRetrievalCase(runId: string, caseId: string) {
       data: {
         runId,
         caseId: evalCase.id,
-        retrieved: retrieved as unknown as Prisma.InputJsonValue,
-        scores: scores as Prisma.InputJsonValue,
+        retrieved,
+        scores,
         latencyMs,
         costUsd,
         error,
@@ -481,7 +481,7 @@ export async function finishRetrieval(runId: string) {
     data: {
       status: 'DONE',
       finishedAt: new Date(),
-      summary: summary as unknown as Prisma.InputJsonValue,
+      summary,
     },
   });
   openRuns.delete(runId);

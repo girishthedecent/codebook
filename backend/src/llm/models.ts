@@ -39,7 +39,7 @@ export type TextRoute = {
 
 // Groq free tier: 8K tokens/min, 1K requests/day, ~200K tokens/day, counted per model,
 // and only tokens actually used count (not maxOutputTokens). Splitting work between the
-// two gpt-oss models doubles what we get. Llama models are enterprise-only on Groq.
+// two gpt-oss models doubles the budget. Llama models are enterprise-only on Groq.
 //
 // Gemini free tier: limits are per project and shown in AI Studio, not in the API.
 // gemini-3.7-flash and 3.8-flash are listed but don't answer on the free tier, so 3.6 is used.

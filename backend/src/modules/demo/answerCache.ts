@@ -79,7 +79,7 @@ export async function findCachedAnswer(key: string): Promise<CachedAnswer | null
   if (!row) return null;
   return {
     content: row.content,
-    citations: row.citations as unknown as CheckedCitation[],
+    citations: row.citations as CheckedCitation[],
     model: row.model,
     promptId: row.promptId,
   };
@@ -124,7 +124,7 @@ export async function storeCachedAnswer(
 
   const data = {
     content: answer.content,
-    citations: citations as unknown as Prisma.InputJsonValue,
+    citations: citations as Prisma.InputJsonValue,
     model: answer.model,
     promptId: answer.promptId,
     createdAt: new Date(),

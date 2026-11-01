@@ -208,7 +208,7 @@ export async function streamStep(
           toolName,
           input,
         })),
-        responseMessages: value.responseMessages as ChatMessage[],
+        responseMessages: value.responseMessages,
         model: ref,
         call,
       };

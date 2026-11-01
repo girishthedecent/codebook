@@ -23,8 +23,6 @@ export async function getDemoService() {
   };
 }
 
-// ---- seeding (pnpm db:seed -- --demo) ---------------------------------------------------
-
 /**
  * The system user that owns the demo. It has no password, so nobody signs in as it; an
  * account of that email that can sign in (registered by hand) is refused, since it would

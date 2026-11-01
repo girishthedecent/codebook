@@ -40,9 +40,8 @@ if (cssTag) {
   }
 }
 
-// The text on the landing page repaints when its web fonts arrive, and that repaint is what
-// sets the largest contentful paint. Without a hint the fonts are only found after the
-// stylesheet has been parsed, a round trip later; preloading starts them with the stylesheet.
+// The landing text repaints when its web fonts arrive, which sets the largest contentful paint.
+// Without a preload the fonts are only found once the stylesheet is parsed, a round trip later.
 if (cssTag) {
   const css = await readFile(dist + cssTag[1]!.slice(1), 'utf8');
   const wanted = [/source-serif-4-latin-opsz-normal/, /ibm-plex-sans-latin-(400|500)-normal/];
@@ -55,11 +54,10 @@ if (cssTag) {
   html = html.replace('</head>', `${hints}</head>`);
 }
 
-// The landing page has an entry of its own (src/landing.tsx) that makes the prerendered markup
-// interactive, so `/` never loads the app: its links are ordinary navigations, and the app
-// starts on the page they lead to. A hover or touch only warms the app's files so that
-// navigation is quick. Every other URL serves this same file, so there the app starts at once,
-// with the preloads the build would have emitted.
+// `/` loads only the landing entry (src/landing.tsx); its links are ordinary navigations and the
+// app starts on the page they lead to. A hover or touch warms the app's files so that navigation
+// is quick. Every other URL is served this same file, so there the app starts at once, with the
+// preloads the build would have emitted.
 type Chunk = { file: string; src?: string; isEntry?: boolean; imports?: string[]; css?: string[] };
 const manifest = JSON.parse(await readFile(dist + '.vite/manifest.json', 'utf8')) as Record<
   string,

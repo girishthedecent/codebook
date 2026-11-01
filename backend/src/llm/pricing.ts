@@ -2,8 +2,8 @@ import { Prisma } from '../generated/prisma/client.js';
 import logger from '../config/logger.config.js';
 
 // USD per 1M tokens, list prices from console.groq.com/docs/models and
-// ai.google.dev/gemini-api/docs/pricing, checked 2026-10-23. We run on free tiers, so this
-// is what the traffic would cost, for reporting and evals, not what we pay.
+// ai.google.dev/gemini-api/docs/pricing, checked 2026-10-23. The app runs on free tiers, so
+// this is what the traffic would cost, for reporting and evals, not what is paid.
 type Price = {
   input: number;
   output: number;

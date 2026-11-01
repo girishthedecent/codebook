@@ -8,7 +8,7 @@ export const meQueryOptions = queryOptions({
   queryKey: keys.me,
   queryFn: async ({ signal }): Promise<Me | null> => {
     try {
-      return (await unwrap(api.GET('/api/v1/me', { signal }))) as Me;
+      return await unwrap(api.GET('/api/v1/me', { signal }));
     } catch (error) {
       if (isApiError(error, 401)) return null;
       throw error;

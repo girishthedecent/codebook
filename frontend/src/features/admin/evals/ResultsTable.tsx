@@ -17,6 +17,8 @@ const cols =
 export function ResultsTable({ results }: { results: EvalResult[] }) {
   const scroller = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState<Set<string>>(new Set());
+  // No React Compiler in this app, so the virtualizer's unmemoizable API is fine here.
+  // eslint-disable-next-line react-hooks/incompatible-library
   const rows = useVirtualizer({
     count: results.length,
     getScrollElement: () => scroller.current,

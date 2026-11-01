@@ -53,8 +53,6 @@ import type {
 const LIVE = 'https://codebook.girishthedecent.space';
 const frontend = fileURLToPath(new URL('../', import.meta.url));
 
-// ---- command line ---------------------------------------------------------------------------
-
 function option(name: string) {
   const at = process.argv.indexOf(name);
   return at === -1 ? undefined : process.argv[at + 1];
@@ -70,8 +68,6 @@ const fixturesDir = outDir
   ? join(outDir, 'fixtures')
   : join(frontend, 'src/features/landing/fixtures');
 const imagesDir = outDir ? join(outDir, 'public/landing') : join(frontend, 'public/landing');
-
-// ---- talking to the server ------------------------------------------------------------------
 
 const cookies = new Map<string, string>();
 let signedIn = false;
@@ -193,8 +189,6 @@ function ensureGuest() {
   return guestReady;
 }
 
-// ---- writing files --------------------------------------------------------------------------
-
 async function writeFixture(name: string, value: unknown) {
   const file = join(fixturesDir, name);
   const config = (await resolveConfig(file)) ?? {};
@@ -210,8 +204,6 @@ async function writeImage(name: string, bytes: Uint8Array) {
     `  wrote ${join(imagesDir, name).replace(frontend, '')} (${Math.round(bytes.length / 1024)} KB)`,
   );
 }
-
-// ---- code, coloured ---------------------------------------------------------------------------
 
 // The colours the highlighter's light theme gives each kind of token; the page paints its own.
 const kindOfColor: Record<string, string> = {
@@ -247,8 +239,6 @@ async function colour(lines: string[], path: string): Promise<CodeToken[][]> {
     return out.length ? out : [['', '']];
   });
 }
-
-// ---- the demo ---------------------------------------------------------------------------------
 
 const countOf = (value: unknown) => (typeof value === 'number' ? value : undefined);
 
@@ -289,8 +279,6 @@ async function starterQuestions(demo: Demo): Promise<string[]> {
   );
   return seed.starterQuestions;
 }
-
-// ---- the book -----------------------------------------------------------------------------------
 
 type PdfPage = Awaited<ReturnType<Awaited<ReturnType<typeof getDocument>['promise']>['getPage']>>;
 type Viewport = ReturnType<PdfPage['getViewport']>;
@@ -453,8 +441,6 @@ async function attentionPage(book: Source): Promise<number | undefined> {
   return undefined;
 }
 
-// ---- the code ---------------------------------------------------------------------------------
-
 type FileLines = {
   path: string;
   lineStart: number;
@@ -488,8 +474,6 @@ async function searchSymbols(repo: Source, name: string) {
     `/api/v1/sources/${repo.id}/graph/symbols?q=${encodeURIComponent(name)}&limit=20`,
   );
 }
-
-// ---- the call graph ---------------------------------------------------------------------------
 
 // Where the graph slice starts: the parts of a forward pass and of the training loop.
 const GRAPH_SEEDS = (
@@ -574,8 +558,6 @@ function longestChain(edges: Array<[string, string]>): [string, string] | undefi
   return best;
 }
 
-// ---- study sets -------------------------------------------------------------------------------
-
 type StudyListItem = { id: string; type: string; status: string };
 type StudyDetail = { data?: unknown; sources: Citation[] };
 
@@ -633,8 +615,6 @@ async function studyItems(workspaceId: string): Promise<StudyFixture | undefined
   return out.flashcard || out.quiz ? out : undefined;
 }
 
-// ---- one question -----------------------------------------------------------------------------
-
 type StreamedEvent = { event: string; data: Record<string, unknown> };
 
 async function askOnce(workspaceId: string, question: string): Promise<TurnFixture> {
@@ -690,8 +670,8 @@ async function askOnce(workspaceId: string, question: string): Promise<TurnFixtu
       steps.push(step);
       open.push({ key, step });
     } else {
-      const at2 = open.findIndex((o) => o.key === key);
-      const pending = at2 === -1 ? undefined : open.splice(at2, 1)[0]!.step;
+      const match = open.findIndex((o) => o.key === key);
+      const pending = match === -1 ? undefined : open.splice(match, 1)[0]!.step;
       const step = pending ?? { tool: String(data.tool), startAt: at };
       if (!pending) steps.push(step);
       step.ms = countOf(data.ms);
@@ -722,8 +702,6 @@ async function askOnce(workspaceId: string, question: string): Promise<TurnFixtu
     latencyMs: countOf(done.latencyMs) ?? Math.round(performance.now() - startedAt),
   };
 }
-
-// ---- main -----------------------------------------------------------------------------------------
 
 async function main() {
   console.log(`Capturing from ${base}${skipTurn ? ' (without the question)' : ''}`);

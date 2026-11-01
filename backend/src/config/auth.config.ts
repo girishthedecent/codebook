@@ -53,7 +53,7 @@ export const auth = betterAuth({
       create: {
         // isGuest is what the rest of the app checks; the plugin only knows isAnonymous.
         before: async (user) => {
-          if ((user as { isAnonymous?: boolean }).isAnonymous) {
+          if (user.isAnonymous) {
             return { data: { ...user, isGuest: true } };
           }
         },

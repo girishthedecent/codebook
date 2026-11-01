@@ -122,9 +122,7 @@ describe('mergeAccepted', () => {
 
   it('replaces a case it imported before, but not a hand-written one with the same id', () => {
     const before = mergeAccepted([manual], [synthetic()]).cases;
-    const again = mergeAccepted(before as { id: string }[], [
-      synthetic({ question: 'Edited question?' }),
-    ]);
+    const again = mergeAccepted(before, [synthetic({ question: 'Edited question?' })]);
     expect(again.cases).toHaveLength(2);
     expect(again.cases[1]).toMatchObject({ question: 'Edited question?' });
 
@@ -295,7 +293,7 @@ describe('synthesizeCandidates', () => {
     const { sourceId, ids } = await seedBook();
     generateMock.mockImplementation(async (options) => {
       const prompt = (options as { prompt: string }).prompt;
-      return reply(!prompt.includes('Index pages.')) as never;
+      return reply(!prompt.includes('Index pages.'));
     });
 
     const made = await synthesizeCandidates({

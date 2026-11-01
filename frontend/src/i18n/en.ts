@@ -1,5 +1,4 @@
-// All user-facing strings live here so the copy stays consistent in one place.
-// Sentence case, plain words, no exclamation marks.
+// User-facing strings. Sentence case, plain words, no exclamation marks.
 export const en = {
   app: { name: 'CodeBook', tagline: 'Ask a book and its code together.' },
   nav: {

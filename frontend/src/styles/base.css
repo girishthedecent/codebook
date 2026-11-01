@@ -50,8 +50,7 @@
 }
 
 /* For labels and kickers. The packaged serif has no small-cap glyphs, so the browser scales
-   capitals and the spacing evens them out; real glyphs are used if the font gains them.
-   Oldstyle numerals are Tailwind's oldstyle-nums, which the packaged font doesn't draw yet. */
+   capitals and the letter-spacing evens them out. */
 @utility small-caps {
   font-variant-caps: all-small-caps;
   letter-spacing: 0.06em;

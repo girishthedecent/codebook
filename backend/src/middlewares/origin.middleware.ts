@@ -12,7 +12,7 @@ const allowed = new Set([
 
 /**
  * CSRF guard for cookie-authenticated writes. A cross-site page can send a multipart form
- * without a CORS preflight and the browser attaches our session cookie (SameSite=Lax only
+ * without a CORS preflight and the browser attaches the session cookie (SameSite=Lax only
  * stops that for some requests), so writes from a browser must come from a trusted origin.
  * Requests without an Origin header (curl, server-to-server) carry no victim's cookies.
  */

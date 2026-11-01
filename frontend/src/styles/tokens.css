@@ -1,5 +1,4 @@
-/* Design tokens. Everything visible derives from these; components never hard-code a color.
-   Paper and ink, one accent. Dark mode is warm charcoal, not blue-black. */
+/* Design tokens. Components take their colours from here and never hard-code one. */
 
 @import 'tailwindcss';
 
@@ -178,7 +177,7 @@
   --series-2: #767064;
 }
 
-/* The only two motions the primitives use. Reduced motion turns them off in base.css. */
+/* The two animations the primitives use; base.css switches them off for reduced motion. */
 @keyframes fade-in {
   from {
     opacity: 0;

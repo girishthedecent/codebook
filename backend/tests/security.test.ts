@@ -5,8 +5,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import winston from 'winston';
 import { resetDb } from './helpers/db.js';
 
-// The checks in docs/security.md that need a test of their own. The rest
-// are covered next to the code they protect; docs/security.md lists where.
+// Security checks that need a test of their own; the rest sit next to the code they protect.
 
 type Layer = {
   route?: { path: string; methods: Record<string, boolean> };

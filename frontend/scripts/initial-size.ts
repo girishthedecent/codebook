@@ -1,8 +1,7 @@
-// What a first visit downloads, per way in. The build has two entries: `/` loads the landing
-// entry alone, any other address loads the app. Each is its entry plus the shared chunks it
-// imports statically; the entry file by itself undercounts, because the router, query and React
-// code split into shared chunks that load with it. Lazy chunks (viewer, graph, study) are not
-// counted. The larger of the two has to fit the budget.
+// What a first visit downloads, per way in: `/` loads the landing entry alone, any other address
+// loads the app. Each is its entry plus the shared chunks it imports statically (the entry file
+// alone undercounts). Lazy chunks (viewer, graph, study) are not counted. The larger of the two
+// has to fit the budget.
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { gzipSync } from 'node:zlib';

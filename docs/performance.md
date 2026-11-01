@@ -79,7 +79,7 @@ sizes interleaved per question:
 | **8 (kept)**   | 5.3 s | 5.6 s          |
 | 20 (one batch) | 4.8 s | 5.7 s          |
 
-Loading the model takes 1–7 s, depending on the disk cache. With reranking off by default
+Loading the model takes 1-7 s, depending on the disk cache. With reranking off by default
 it loads on the first search that asks for it; turning `rerankByDefault` on also loads it
 at boot (`warmUpReranker`).
 

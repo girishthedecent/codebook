@@ -64,7 +64,6 @@ export const graphStrings = {
   inFile: 'in',
   methodOf: 'of',
 
-  // The overview
   startTitle: 'Where to start',
   startHint: 'The symbols the rest of the code leans on most.',
   callCount: (n: number) => (n === 1 ? 'called from 1 place' : `called from ${n} places`),
@@ -78,7 +77,6 @@ export const graphStrings = {
   packageCalls: (n: number) => (n === 1 ? '1 call' : `${n} calls`),
   emptyGraph: 'No functions or classes were found in this repository.',
 
-  // What lies outside the repository
   outsideTitle: 'Outside the repository',
   outsideHint:
     'Libraries, built-ins and calls the graph could not match to a definition, grouped by the name each call starts with.',
@@ -87,7 +85,6 @@ export const graphStrings = {
   ownMethods: 'Methods of the same object',
   andMore: (n: number) => `and ${n} more`,
 
-  // Trace
   traceFrom: 'From',
   traceTo: 'To',
   traceIntro: (max: number) =>
@@ -100,7 +97,6 @@ export const graphStrings = {
   withinCalls: (n: number) => (n === 1 ? 'in 1 call' : `in ${n} calls`),
   traceMaxCalls: 6,
 
-  // Header
   statsLine: (s: { symbols: number; inside: number; outside: number }) =>
     `${s.symbols.toLocaleString()} symbols · ${s.inside.toLocaleString()} calls inside the repo · ${s.outside.toLocaleString()} to libraries or unmatched`,
   stateIndexing: (name: string) => `Reading ${name}`,

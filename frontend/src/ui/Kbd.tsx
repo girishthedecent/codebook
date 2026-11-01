@@ -1,7 +1,6 @@
 import type { ReactNode } from 'react';
 import { cn } from '@/lib/cn';
 
-/** A keyboard key or chord, e.g. <Kbd>⌘K</Kbd>. */
 export function Kbd({ children, className }: { children: ReactNode; className?: string }) {
   return (
     <kbd

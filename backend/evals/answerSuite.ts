@@ -209,7 +209,7 @@ export async function startAnswers(options: AnswerRunOptions): Promise<StartedRu
             corpusVersion: corpus.corpusVersion,
             sources: corpus.sources,
           },
-        } as Prisma.InputJsonValue,
+        },
         gitSha: sha,
         promptVersions: prompts.map((prompt) => prompt.id),
         models: {
@@ -473,7 +473,7 @@ async function rejudge(run: AnswerRun, evalCase: EvalCase, stored: EvalResult) {
       : [
           prismaClient.evalResult.update({
             where: { id: stored.id },
-            data: { scores: scores as unknown as Prisma.InputJsonValue },
+            data: { scores },
           }),
         ]),
     prismaClient.evalRun.update({
@@ -530,11 +530,11 @@ export async function runAnswerCase(runId: string, caseId: string) {
       data: {
         runId,
         caseId: evalCase.id,
-        retrieved: answered.context as unknown as Prisma.InputJsonValue,
+        retrieved: answered.context,
         answer: answered.answer,
-        citations: answered.citations as unknown as Prisma.InputJsonValue,
+        citations: answered.citations,
         toolTrajectory: answered.trajectory as unknown as Prisma.InputJsonValue,
-        scores: scores as unknown as Prisma.InputJsonValue,
+        scores,
         latencyMs: answered.latencyMs,
         tokensIn: answered.tokensIn,
         tokensOut: answered.tokensOut,
@@ -584,7 +584,7 @@ export async function finishAnswers(runId: string) {
     data: {
       status: 'DONE',
       finishedAt: new Date(),
-      summary: summary as unknown as Prisma.InputJsonValue,
+      summary,
     },
   });
   openRuns.delete(runId);

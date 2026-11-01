@@ -59,7 +59,7 @@ export function openSse(req: Request, res: Response): SseStream {
   };
 
   openStreams.add(stream);
-  // The client went away. If it left before we got here (while access was checked), 'close'
+  // The client went away. If it left before this point (while access was checked), 'close'
   // has already fired, so check now too or the stream would poll for nobody.
   req.on('close', () => stream.close());
   if (draining || !res.socket || res.socket.destroyed) stream.close();

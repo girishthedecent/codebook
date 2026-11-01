@@ -41,7 +41,7 @@ let send: ReturnType<typeof vi.spyOn>;
 beforeEach(async () => {
   await resetDb();
   resetCircuitBreaker();
-  send = vi.spyOn(inngest, 'send').mockResolvedValue({ ids: [] } as never);
+  send = vi.spyOn(inngest, 'send').mockResolvedValue({ ids: [] });
   alice = await signedInUser('alice@example.com');
   const workspace = await alice.agent.post('/api/v1/workspaces').send({ name: 'Security' });
   workspaceId = (workspace.body as { data: { id: string } }).data.id;

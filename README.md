@@ -32,8 +32,8 @@
 Learning a codebase usually means reading two things side by side: the prose that explains an
 idea (a book chapter, a framework's guide) and the code that implements it. CodeBook puts both
 in one workspace. Add a PDF, a public GitHub repository or a docs site, then ask questions. An
-agent decides how to look for each answer, and every claim in the answer points at the page,
-section or `file:line` it came from, which opens beside the chat.
+agent decides how to look for each answer, and every claim points at the page, section or
+`file:line` it came from, which opens beside the chat.
 
 The [live demo](https://codebook.girishthedecent.space) needs no account. It holds *The Little
 Book of Deep Learning*, Andrej Karpathy's nanoGPT and Hugging Face's text generation guide, and
@@ -76,9 +76,9 @@ a pinned commit with a code graph (TypeScript, JavaScript, Python), and docs sit
 politely (robots.txt, one site at a time). Ingestion runs in the background with live progress,
 and a source stays searchable while it re-indexes.
 
-**Chat.** A tool-using agent streams its steps and its answer. Answers read like a page with
-footnotes: numbered notes under the answer (in the margin on wide screens) open the cited book
-page, code lines or docs section in a resizable viewer. A failed answer can be retried in place,
+**Chat.** A tool-using agent streams its steps and its answer. Numbered notes under the answer
+(in the margin on wide screens) open the cited book page, code lines or docs section in a
+resizable viewer. A failed answer can be retried in place,
 and a stopped one keeps what it had written.
 
 **Code graph.** An overview of the repository, then any symbol's callers and calls, the path
@@ -100,9 +100,8 @@ sets. Guests need no account and get 10 questions a day.
 model, 14 days of usage per user, and admin pages for failed answers, model and key usage,
 ingestion failures, rate-limit hits, circuit-breaker state and eval runs.
 
-**Web app.** An editorial reading interface in light and dark, laid out for phones (bottom tabs,
-the viewer as a sheet) as well as desktops, keyboard-friendly, and under 150 KB of JavaScript on
-first load.
+**Web app.** Light and dark themes, a phone layout (bottom tabs, the viewer as a sheet) as well
+as a desktop one, keyboard navigation, and under 150 KB of JavaScript on first load.
 
 ## How it works
 
@@ -465,8 +464,7 @@ rate-limit bucket, too high and a client could choose its own address. Eval runs
 where the eval worker runs (`EVALS_WORKER_ENABLED`), so the admin page says so on a deploy
 without one.
 
-Security checks and their evidence are written up in [docs/security.md](docs/security.md), query
-plans and tuning in [docs/performance.md](docs/performance.md).
+Query plans and tuning are written up in [docs/performance.md](docs/performance.md).
 
 ## API
 
@@ -518,7 +516,7 @@ frontend/
     api/          typed API client generated from the OpenAPI spec
     workers/      pdf.js and Shiki workers
   scripts/        prerender, demo capture, bundle budgets
-docs/             security review, performance notes
+docs/             performance notes
 render.yaml       Render blueprint: one service for the API and the web app
 ```
 

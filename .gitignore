@@ -13,9 +13,6 @@ coverage/
 !.env.example
 !.env.production.example
 
-# local tool settings
-.claude/settings.local.json
-
 # evals: copyrighted corpus stays local, keep only the latest report
 backend/evals/corpus/
 backend/evals/reports/*
@@ -25,7 +22,3 @@ backend/evals/reports/*
 # generated candidates quote the corpus or users' questions; labels quote judged claims
 backend/evals/datasets/*-candidates.json
 backend/evals/calibration/
-
-# working notes, local only
-/PLAN.md
-/frontend/PLAN.md
