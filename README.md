@@ -78,14 +78,22 @@ and a source stays searchable while it re-indexes.
 
 **Chat.** A tool-using agent streams its steps and its answer. Numbered notes under the answer
 (in the margin on wide screens) open the cited book page, code lines or docs section in a
-resizable viewer. A failed answer can be retried in place,
-and a stopped one keeps what it had written.
+resizable viewer. A failed answer can be retried in place, and a stopped one keeps what it had
+written. Conversations can be pinned, filtered and exported as Markdown with the citations as
+footnotes.
+
+**Reading.** Select text in the viewer to ask about it, highlight it with a note, or copy a link
+to the exact place. Find in page (⌘F / Ctrl F) on book pages, code and docs, with a jump to a
+search of the whole source. Highlights are listed per source and on one page per workspace.
+Several PDFs can be dropped on the library at once.
 
 **Code graph.** An overview of the repository, then any symbol's callers and calls, the path
 between two functions, and the library calls a symbol makes.
 
 **Study.** Quizzes, flashcards, mind maps and summaries generated from a whole workspace, one
-book chapter or one repository folder, with the same citations as answers.
+book chapter or one repository folder, with the same citations as answers. Scores are kept, so a
+quiz shows how the last attempts went and replays only the questions you missed. Flashcards
+export to CSV and Anki, quizzes and summaries to Markdown or print, mind maps to SVG.
 
 **Memory.** The agent keeps lasting facts about you from conversations. It can be turned off per
 question, and every memory can be edited or deleted.
@@ -97,11 +105,12 @@ passages with the matching terms marked.
 sets. Guests need no account and get 10 questions a day.
 
 **Limits and monitoring.** Per-user rate limits and daily token budgets, a circuit breaker per
-model, 14 days of usage per user, and admin pages for failed answers, model and key usage,
+model and key, a usage page with the last 14 days, and admin pages for failed answers, model and key usage,
 ingestion failures, rate-limit hits, circuit-breaker state and eval runs.
 
-**Web app.** Light and dark themes, a phone layout (bottom tabs, the viewer as a sheet) as well
-as a desktop one, keyboard navigation, and under 150 KB of JavaScript on first load.
+**Web app.** Light and dark themes, a reading text size and line width, a phone layout (bottom
+tabs, the viewer as a sheet) as well as a desktop one, keyboard shortcuts (`?` lists them), a
+download of all your data as JSON, and under 150 KB of JavaScript on first load.
 
 ## How it works
 
@@ -214,9 +223,10 @@ another Google project is tried before the next model, and when a question can't
 search falls back to keyword matches and says so.
 
 **Reliability.** A model or key that hits its quota is skipped for a minute (a circuit breaker
-per model and key; one whose daily quota is used up is skipped until it starts over), a retried answer replaces the failed attempt, a guest whose answer failed
-because the models were out of quota gets the question back, and repeat first questions to the
-demo are answered from a 24-hour cache without model calls.
+per model and key; one whose daily quota is used up is skipped until it starts over). A retried
+answer replaces the failed attempt, a guest whose answer failed because the models were out of
+quota gets the question back, and repeat first questions to the demo are answered from a 24-hour
+cache without model calls.
 
 ## Evaluation
 
@@ -481,8 +491,9 @@ origin. The full spec, with request and response schemas and the SSE event types
 | Workspaces | `GET/POST /workspaces`, `GET/PATCH/DELETE /workspaces/:workspaceId`, `POST /workspaces/:workspaceId/search` |
 | Sources | `GET/POST /workspaces/:workspaceId/sources` (PDF upload as multipart, repo or website as JSON), `GET/DELETE /sources/:sourceId`, `POST /sources/:sourceId/resync`, `GET /sources/:sourceId/events` (SSE ingest progress), `GET /sources/:sourceId/toc`, `/files`, `/content`, `/file` (the PDF, with ranges) |
 | Code graph | `GET /sources/:sourceId/graph/overview`, `/symbols`, `/callers`, `/dependencies`, `/path` |
-| Chat | `GET/POST /workspaces/:workspaceId/conversations`, `GET/PATCH/DELETE /conversations/:conversationId`, `POST /conversations/:conversationId/messages` (SSE: `title`, `step`, `token`, `citations`, `done`, `error`; `retry: true` replaces a failed attempt), `POST /messages/:messageId/feedback` |
-| Study | `GET/POST /workspaces/:workspaceId/study` (`QUIZ`, `FLASHCARDS`, `MINDMAP`, `SUMMARY`, scoped by topic, chapter or folder), `GET/DELETE /study/:studyId`, `POST /study/:studyId/regenerate`, `POST /study/:studyId/cancel` |
+| Chat | `GET/POST /workspaces/:workspaceId/conversations` (pinned first), `GET/PATCH/DELETE /conversations/:conversationId` (`title`, `pinned`), `POST /conversations/:conversationId/messages` (SSE: `title`, `step`, `token`, `citations`, `done`, `error`; `retry: true` replaces a failed attempt), `POST /messages/:messageId/feedback` |
+| Study | `GET/POST /workspaces/:workspaceId/study` (`QUIZ`, `FLASHCARDS`, `MINDMAP`, `SUMMARY`, scoped by topic, chapter or folder), `GET/DELETE /study/:studyId`, `POST /study/:studyId/regenerate`, `POST /study/:studyId/cancel`, `GET/POST /study/:studyId/attempts` |
+| Highlights | `GET/POST /workspaces/:workspaceId/highlights`, `PATCH/DELETE /highlights/:highlightId` |
 | Memory | `GET/POST/DELETE /memories`, `PATCH/DELETE /memories/:memoryId`, `POST /memories/:memoryId/restore` |
 | Usage | `GET /usage/me`: tokens and cost today and over 7 and 30 days, the last 14 days, the limits left, and a guest's daily questions |
 | Monitoring (admin) | `GET /monitoring/stats`, `/failed-queries`, `/models`, `/ingestion-failures`, `/rate-limits`, `/circuit-breaker` |
@@ -496,7 +507,7 @@ requests for most modules (REST Client format).
 ```
 backend/
   src/
-    modules/      one folder per feature (chat, sources, ingestion, retrieval, graph, study, ...)
+    modules/      one folder per feature (chat, sources, ingestion, retrieval, graph, study, highlights, ...)
     llm/          model routing, retries, circuit breaker, prompts, embeddings
     inngest/      background function registration
     routers/      /api/v1 mounts
