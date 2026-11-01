@@ -111,6 +111,11 @@ type Entry = {
   controller: AbortController | null;
   buffer: string;
   frame: number | null;
+  lastFrame: number;
+  /** The answer is complete but its text is still being shown: how the turn ends after that. */
+  ending: Partial<TurnState> | null;
+  /** Runs once the turn has ended on screen. */
+  afterEnd: (() => void) | null;
   listeners: Set<() => void>;
 };
 
@@ -119,7 +124,16 @@ const entries = new Map<string, Entry>();
 function entryOf(conversationId: string): Entry {
   let entry = entries.get(conversationId);
   if (!entry) {
-    entry = { state: idle, controller: null, buffer: '', frame: null, listeners: new Set() };
+    entry = {
+      state: idle,
+      controller: null,
+      buffer: '',
+      frame: null,
+      lastFrame: 0,
+      ending: null,
+      afterEnd: null,
+      listeners: new Set(),
+    };
     entries.set(conversationId, entry);
   }
   return entry;
@@ -130,24 +144,76 @@ function update(entry: Entry, change: (t: TurnState) => TurnState) {
   entry.listeners.forEach((l) => l());
 }
 
-function flush(entry: Entry) {
-  entry.frame = null;
-  if (!entry.buffer) return;
-  const chunk = entry.buffer;
-  entry.buffer = '';
-  update(entry, (t) => ({ ...t, text: t.text + chunk }));
+// Text is shown at a steady pace rather than as it arrives. Gemini sends a paragraph at a
+// time, Groq a whole answer in under a second, and a saved demo answer comes in one piece;
+// shown as received, all three read as bursts. The pace rises with what is waiting, so the
+// screen never trails the stream by much.
+const CHARS_PER_MS = 0.5;
+const CATCH_UP_MS = 1_200;
+// Once the answer is complete, what is left is shown within about this long.
+const END_MS = 500;
+
+const instant = () =>
+  document.hidden || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+function schedule(entry: Entry) {
+  if (entry.frame !== null) return;
+  if (!entry.buffer) entry.lastFrame = performance.now();
+  entry.frame = requestAnimationFrame(() => flush(entry));
 }
 
+function flush(entry: Entry) {
+  entry.frame = null;
+  if (entry.buffer) {
+    const now = performance.now();
+    const elapsed = Math.min(now - entry.lastFrame, 100);
+    entry.lastFrame = now;
+    let take = entry.buffer.length;
+    if (!instant()) {
+      const perMs = Math.max(
+        CHARS_PER_MS,
+        entry.buffer.length / (entry.ending ? END_MS : CATCH_UP_MS),
+      );
+      take = Math.max(1, Math.round(perMs * elapsed));
+      // End on a word, so a word never shows half written.
+      const space = entry.buffer.indexOf(' ', take);
+      if (space !== -1 && space - take < 12) take = space + 1;
+    }
+    const chunk = entry.buffer.slice(0, take);
+    entry.buffer = entry.buffer.slice(take);
+    update(entry, (t) => ({ ...t, text: t.text + chunk }));
+  }
+  if (entry.buffer) entry.frame = requestAnimationFrame(() => flush(entry));
+  else if (entry.ending) finish(entry, entry.ending);
+}
+
+/** Ends the turn now, with all the text received so far on screen. */
 function finish(entry: Entry, patch: Partial<TurnState>) {
   if (entry.frame !== null) cancelAnimationFrame(entry.frame);
-  flush(entry);
+  entry.frame = null;
+  const rest = entry.buffer;
+  entry.buffer = '';
+  entry.ending = null;
   update(entry, (t) => ({
     ...t,
     ...patch,
+    text: t.text + rest,
     endedAt: Date.now(),
     steps: t.steps.map((s) => (s.running ? { ...s, running: false } : s)),
   }));
   entry.controller = null;
+  const after = entry.afterEnd;
+  entry.afterEnd = null;
+  after?.();
+}
+
+/** Ends a complete answer once its text has been shown. */
+function finishShown(entry: Entry, patch: Partial<TurnState>) {
+  if (!entry.buffer || instant()) finish(entry, patch);
+  else {
+    entry.ending = patch;
+    schedule(entry);
+  }
 }
 
 /** Stops a conversation's turn and forgets it; for a conversation that was deleted. */
@@ -192,7 +258,11 @@ async function runTurn(
   entry.controller?.abort();
   const ac = new AbortController();
   entry.controller = ac;
+  if (entry.frame !== null) cancelAnimationFrame(entry.frame);
+  entry.frame = null;
   entry.buffer = '';
+  entry.ending = null;
+  entry.afterEnd = null;
   update(entry, () => ({
     ...idle,
     status: 'streaming',
@@ -226,14 +296,14 @@ async function runTurn(
           update(entry, (t) => ({ ...t, steps: upsertStep(t.steps, ev.data) }));
           break;
         case 'token':
+          schedule(entry);
           entry.buffer += ev.data.text;
-          entry.frame ??= requestAnimationFrame(() => flush(entry));
           break;
         case 'citations':
           update(entry, (t) => ({ ...t, citations: ev.data.items }));
           break;
         case 'done':
-          finish(entry, { status: 'done', done: ev.data });
+          finishShown(entry, { status: 'done', done: ev.data });
           break;
         case 'error':
           finish(entry, { status: 'error', error: ev.data });
@@ -282,7 +352,11 @@ async function runTurn(
   } finally {
     // A deleted conversation has nothing to refetch.
     if (entries.get(conversationId) === entry) {
-      invalidateConversation(client, workspaceId, conversationId);
+      // The saved answer takes over from a refetch made after the turn ended on screen, so
+      // while the last of the text is still being shown, the refetch waits for it.
+      const refetch = () => invalidateConversation(client, workspaceId, conversationId);
+      if (entry.ending) entry.afterEnd = refetch;
+      else refetch();
       if (firstQuestion) refreshTitlesLater(client, workspaceId, conversationId);
     }
   }
@@ -290,8 +364,8 @@ async function runTurn(
 }
 
 /**
- * Runs one chat turn over SSE. Tokens arrive far faster than React needs to paint, so they
- * collect in a buffer that is flushed once per animation frame. When the turn ends, however
+ * Runs one chat turn over SSE. Tokens collect in a buffer that is shown a little at a time,
+ * once per animation frame. When the turn ends, however
  * it ends, the conversation is refetched: the saved messages are the truth after that.
  */
 export function useTurn(workspaceId: string, conversationId: string) {
