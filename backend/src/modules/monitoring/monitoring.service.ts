@@ -175,7 +175,7 @@ function configuredModels() {
 }
 
 /**
- * Which models are being skipped after repeated quota errors. The state lives in this server
+ * Which models are being skipped after a quota error. The state lives in this server
  * process (it is not shared between instances and starts empty on a restart).
  */
 export function circuitBreakerService(now = Date.now()) {
@@ -184,7 +184,6 @@ export function circuitBreakerService(now = Date.now()) {
     model,
     open: seen.get(model)?.open ?? false,
     openUntil: seen.get(model)?.openUntil ?? null,
-    recentQuotaErrors: seen.get(model)?.recentQuotaErrors ?? 0,
   }));
-  return { ...appConfig.circuitBreaker, models };
+  return { coolOffMs: appConfig.circuitBreaker.coolOffMs, models };
 }

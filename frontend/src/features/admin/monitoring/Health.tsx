@@ -94,7 +94,7 @@ function Breaker() {
       title="Models being skipped"
       hint={
         q.data &&
-        `A model that returns ${q.data.quotaErrors} quota errors within ${duration(q.data.windowMs)} is skipped for ${duration(q.data.coolOffMs)}. This is the state of the running server and starts empty after a restart.`
+        `A model or key that hits a quota is skipped for ${duration(q.data.coolOffMs)}, or until a daily quota starts over. This is the state of the running server and starts empty after a restart.`
       }
     >
       {q.isPending ? (
@@ -112,8 +112,7 @@ function Breaker() {
 // with the query.
 function BreakerList({ breaker, asOf }: { breaker: CircuitBreaker; asOf: number }) {
   const open = breaker.models.filter((m) => m.open);
-  const warming = breaker.models.filter((m) => !m.open && m.recentQuotaErrors > 0);
-  if (open.length === 0 && warming.length === 0) {
+  if (open.length === 0) {
     return <EmptyState className="py-2">No model is being skipped.</EmptyState>;
   }
   return (
@@ -124,15 +123,6 @@ function BreakerList({ breaker, asOf }: { breaker: CircuitBreaker; asOf: number 
           <span className="font-mono text-xs text-ink">{m.model}</span>
           <span className="text-ink-2">
             back in {m.openUntil ? duration(new Date(m.openUntil).getTime() - asOf) : 'a moment'}
-          </span>
-        </li>
-      ))}
-      {warming.map((m) => (
-        <li key={m.model} className="flex flex-wrap items-center gap-x-3">
-          <StatusDot tone="warn" label="Close" />
-          <span className="font-mono text-xs text-ink">{m.model}</span>
-          <span className="text-ink-2">
-            {m.recentQuotaErrors} of {breaker.quotaErrors} quota errors
           </span>
         </li>
       ))}

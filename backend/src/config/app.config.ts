@@ -278,10 +278,10 @@ export const appConfig = {
     keepHitsHours: 48,
   },
   circuitBreaker: {
-    // A model that hits its quota this many times within the window is skipped for coolOffMs.
-    quotaErrors: 3,
-    windowMs: 60_000,
-    coolOffMs: 5 * 60_000,
+    // A key that hits its quota is skipped for coolOffMs: the next call goes to the next key or
+    // model at once, and free-tier minute limits are back within a minute. A daily limit is
+    // skipped until it starts over (see circuitBreaker.ts).
+    coolOffMs: 60_000,
   },
   github: {
     apiUrl: 'https://api.github.com',

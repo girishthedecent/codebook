@@ -397,32 +397,23 @@ describe('GET /monitoring/circuit-breaker', () => {
   const flash = { provider: 'google', model: 'gemini-3.6-flash' } as const;
 
   it('lists every model with whether it is being skipped', async () => {
-    const { quotaErrors, windowMs, coolOffMs } = appConfig.circuitBreaker;
-    for (let i = 0; i < quotaErrors; i++) noteQuotaError(flash);
-    noteQuotaError({ provider: 'groq', model: 'openai/gpt-oss-120b' });
+    const { coolOffMs } = appConfig.circuitBreaker;
+    noteQuotaError(flash);
 
     const before = Date.now();
     const state = await get('circuit-breaker');
 
-    expect(state).toMatchObject({ quotaErrors, windowMs, coolOffMs });
+    expect(state).toMatchObject({ coolOffMs });
     const byModel = Object.fromEntries(state.models.map((m: { model: string }) => [m.model, m]));
-    expect(byModel['google/gemini-3.6-flash']).toMatchObject({ open: true, recentQuotaErrors: 0 });
+    expect(byModel['google/gemini-3.6-flash']).toMatchObject({ open: true });
     const openUntil = Date.parse(byModel['google/gemini-3.6-flash'].openUntil);
     expect(openUntil).toBeGreaterThanOrEqual(before + coolOffMs - 5_000);
     expect(openUntil).toBeLessThanOrEqual(Date.now() + coolOffMs);
-    // One error is not enough to open it.
-    expect(byModel['groq/openai/gpt-oss-120b']).toEqual({
-      model: 'groq/openai/gpt-oss-120b',
-      open: false,
-      openUntil: null,
-      recentQuotaErrors: 1,
-    });
     // A model that never failed is listed too.
     expect(byModel['groq/openai/gpt-oss-20b']).toEqual({
       model: 'groq/openai/gpt-oss-20b',
       open: false,
       openUntil: null,
-      recentQuotaErrors: 0,
     });
     expect(byModel['google/gemini-embedding-2']).toMatchObject({ open: false });
   });

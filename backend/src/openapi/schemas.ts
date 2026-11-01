@@ -771,9 +771,7 @@ export const rateLimitUseSchema = z
 
 export const circuitBreakerSchema = z
   .object({
-    // A model with this many quota errors inside `windowMs` is skipped for `coolOffMs`.
-    quotaErrors: z.int(),
-    windowMs: z.int(),
+    // A key that hits a quota is skipped for `coolOffMs`, or until a daily quota starts over.
     coolOffMs: z.int(),
     // Every model a task can use. The state is this server process's own: it is not shared
     // between instances and starts empty after a restart.
@@ -782,7 +780,6 @@ export const circuitBreakerSchema = z
         model: z.string(),
         open: z.boolean(),
         openUntil: date.nullable(),
-        recentQuotaErrors: z.int(),
       }),
     ),
   })

@@ -14,7 +14,7 @@ import type { ModelRef } from './models.js';
 
 const groq: ModelRef = { provider: 'groq', model: 'openai/gpt-oss-120b' };
 const otherGroq: ModelRef = { provider: 'groq', model: 'openai/gpt-oss-20b' };
-const { quotaErrors, windowMs, coolOffMs } = appConfig.circuitBreaker;
+const { coolOffMs } = appConfig.circuitBreaker;
 
 const apiError = (statusCode: number, message = 'failed', responseBody?: string) =>
   new APICallError({
@@ -33,7 +33,7 @@ describe('other keys', () => {
   it('keep their own state, so the first key running out does not skip the second', () => {
     const gemini: ModelRef = { provider: 'google', model: 'gemini-3.6-flash' };
     const second: ModelRef = { ...gemini, key: 1 };
-    for (let i = 0; i < quotaErrors; i++) noteQuotaError(gemini);
+    noteQuotaError(gemini);
     expect(isOpen(gemini)).toBe(true);
     expect(isOpen(second)).toBe(false);
   });
@@ -67,35 +67,24 @@ describe('isQuotaError', () => {
 });
 
 describe('circuit breaker', () => {
-  it('opens a model after enough quota errors in the window, and closes after the cool-off', () => {
+  it('skips a model from its first quota error until the cool-off ends', () => {
     const start = 1_000_000;
-    for (let i = 0; i < quotaErrors - 1; i++) noteQuotaError(groq, start + i);
-    expect(isOpen(groq, start + quotaErrors)).toBe(false);
+    expect(isOpen(groq, start)).toBe(false);
 
-    noteQuotaError(groq, start + quotaErrors);
-    expect(isOpen(groq, start + quotaErrors)).toBe(true);
-    expect(isOpen(otherGroq, start + quotaErrors)).toBe(false);
+    noteQuotaError(groq, start);
+    expect(isOpen(groq, start)).toBe(true);
+    expect(isOpen(otherGroq, start)).toBe(false);
 
-    expect(isOpen(groq, start + quotaErrors + coolOffMs - 1)).toBe(true);
-    expect(isOpen(groq, start + quotaErrors + coolOffMs)).toBe(false);
+    expect(isOpen(groq, start + coolOffMs - 1)).toBe(true);
+    expect(isOpen(groq, start + coolOffMs)).toBe(false);
   });
 
-  it('only counts errors inside the window', () => {
+  it('starts the cool-off again on the next error', () => {
     const start = 1_000_000;
-    for (let i = 0; i < quotaErrors - 1; i++) noteQuotaError(groq, start);
-    noteQuotaError(groq, start + windowMs + 1);
-
-    expect(isOpen(groq, start + windowMs + 1)).toBe(false);
-  });
-
-  it('needs a fresh run of errors to open again after closing', () => {
-    const start = 1_000_000;
-    for (let i = 0; i < quotaErrors; i++) noteQuotaError(groq, start);
-    const reopenAt = start + coolOffMs;
-    expect(isOpen(groq, reopenAt)).toBe(false);
-
-    noteQuotaError(groq, reopenAt);
-    expect(isOpen(groq, reopenAt)).toBe(false);
+    noteQuotaError(groq, start);
+    noteQuotaError(groq, start + coolOffMs);
+    expect(isOpen(groq, start + coolOffMs)).toBe(true);
+    expect(isOpen(groq, start + 2 * coolOffMs)).toBe(false);
   });
 });
 
@@ -106,29 +95,12 @@ describe('breakerStates', () => {
     expect(breakerStates(start)).toEqual([]);
   });
 
-  it('reports a model with errors short of opening, and counts only the window', () => {
-    noteQuotaError(groq, start);
-    noteQuotaError(groq, start + windowMs - 1);
-
-    expect(breakerStates(start + windowMs - 1)).toEqual([
-      { model: 'groq/openai/gpt-oss-120b', open: false, openUntil: null, recentQuotaErrors: 2 },
-    ]);
-    expect(breakerStates(start + windowMs)[0]).toMatchObject({ recentQuotaErrors: 1 });
-  });
-
   it('reports an open model with when it closes, and closed again after that', () => {
-    for (let i = 0; i < quotaErrors; i++) noteQuotaError(groq, start);
-    noteQuotaError(otherGroq, start);
+    noteQuotaError(groq, start);
 
-    const states = breakerStates(start + 1);
-    expect(states.find((state) => state.model === 'groq/openai/gpt-oss-120b')).toEqual({
-      model: 'groq/openai/gpt-oss-120b',
-      open: true,
-      openUntil: new Date(start + coolOffMs),
-      recentQuotaErrors: 0,
-    });
-    expect(states.find((state) => state.model === 'groq/openai/gpt-oss-20b')?.open).toBe(false);
-
+    expect(breakerStates(start + 1)).toEqual([
+      { model: 'groq/openai/gpt-oss-120b', open: true, openUntil: new Date(start + coolOffMs) },
+    ]);
     expect(breakerStates(start + coolOffMs)[0]).toMatchObject({ open: false, openUntil: null });
   });
 
@@ -206,10 +178,11 @@ describe('daily limits', () => {
     expect(dailyLimitResetsIn(gemini, geminiDaily, now)).toBe(14 * 60 * 60 * 1000 + 60_000);
   });
 
-  it('still needs several minute-limit errors before skipping', () => {
+  it('skips a minute limit only for the cool-off', () => {
     const now = Date.parse('2026-07-15T17:00:00Z');
     noteQuotaError(gemini, now, geminiMinute);
-    expect(isOpen(gemini, now)).toBe(false);
+    expect(isOpen(gemini, now)).toBe(true);
+    expect(isOpen(gemini, now + coolOffMs)).toBe(false);
   });
 
   it('skips a Groq model for as long as Groq says to wait', () => {
@@ -220,9 +193,10 @@ describe('daily limits', () => {
     expect(isOpen(groq, now + 433_000)).toBe(false);
   });
 
-  it('falls back to the usual count when a day limit gives no time to wait', () => {
+  it('uses the cool-off when a day limit gives no time to wait', () => {
     const now = Date.parse('2026-07-15T17:00:00Z');
     noteQuotaError(groq, now, apiError(429, 'on requests per day (RPD): Limit 1000, Used 1000'));
-    expect(isOpen(groq, now)).toBe(false);
+    expect(isOpen(groq, now + coolOffMs - 1)).toBe(true);
+    expect(isOpen(groq, now + coolOffMs)).toBe(false);
   });
 });

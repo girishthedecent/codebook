@@ -3,11 +3,11 @@ import { appConfig } from '../config/app.config.js';
 import logger from '../config/logger.config.js';
 import { modelLabel, type ModelRef } from './models.js';
 
-// Free tiers run out per model (Groq counts each model on its own). A model that keeps
-// answering "quota exhausted" is skipped for a while, so calls go straight to the fallback
+// Free tiers run out per model and key (Groq counts each model on its own). A key that answers
+// "quota exhausted" is skipped for a while, so calls go straight to the next key or model
 // instead of paying for retries that will fail.
 
-type ModelState = { errors: number[]; openUntil: number };
+type ModelState = { openUntil: number };
 
 const states = new Map<string, ModelState>();
 
@@ -67,33 +67,23 @@ function untilPacificMidnight(now: number) {
 }
 
 export function noteQuotaError(ref: ModelRef, now = Date.now(), error?: unknown) {
-  const { quotaErrors, windowMs, coolOffMs } = appConfig.circuitBreaker;
-  const state = states.get(keyOf(ref)) ?? { errors: [], openUntil: 0 };
   const resetsIn =
     error !== undefined && isDailyLimit(error) ? dailyLimitResetsIn(ref, error, now) : undefined;
-  if (resetsIn !== undefined) {
-    state.openUntil = Math.max(state.openUntil, now + resetsIn);
-    state.errors = [];
-    logger.warn('Model daily quota used up; skipping it until it starts over', {
-      model: modelLabel(ref),
-      until: new Date(state.openUntil).toISOString(),
-    });
-    states.set(keyOf(ref), state);
-    return;
-  }
-  state.errors = [...state.errors.filter((at) => now - at < windowMs), now];
-  if (state.errors.length >= quotaErrors && state.openUntil <= now) {
-    state.openUntil = now + coolOffMs;
-    state.errors = [];
-    logger.warn('Model quota exhausted; skipping it for a while', {
-      model: modelLabel(ref),
-      untilMs: coolOffMs,
-    });
-  }
+  const state = states.get(keyOf(ref)) ?? { openUntil: 0 };
+  state.openUntil = Math.max(
+    state.openUntil,
+    now + (resetsIn ?? appConfig.circuitBreaker.coolOffMs),
+  );
   states.set(keyOf(ref), state);
+  logger.warn(
+    resetsIn === undefined
+      ? 'Model quota exhausted; skipping it for a while'
+      : 'Model daily quota used up; skipping it until it starts over',
+    { model: modelLabel(ref), until: new Date(state.openUntil).toISOString() },
+  );
 }
 
-/** True while the model is being skipped after repeated quota errors. */
+/** True while the model is being skipped after a quota error. */
 export function isOpen(ref: ModelRef, now = Date.now()) {
   const state = states.get(keyOf(ref));
   return state !== undefined && state.openUntil > now;
@@ -104,21 +94,13 @@ export type BreakerState = {
   model: string;
   open: boolean;
   openUntil: Date | null;
-  // Quota errors inside the current window, not yet enough to open it.
-  recentQuotaErrors: number;
 };
 
 /** What the breaker knows about every model it has seen a quota error from. For monitoring. */
 export function breakerStates(now = Date.now()): BreakerState[] {
-  const { windowMs } = appConfig.circuitBreaker;
   return [...states].map(([model, state]) => {
     const open = state.openUntil > now;
-    return {
-      model,
-      open,
-      openUntil: open ? new Date(state.openUntil) : null,
-      recentQuotaErrors: state.errors.filter((at) => now - at < windowMs).length,
-    };
+    return { model, open, openUntil: open ? new Date(state.openUntil) : null };
   });
 }
 

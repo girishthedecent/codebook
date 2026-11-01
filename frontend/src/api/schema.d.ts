@@ -5066,10 +5066,7 @@ export interface components {
                 open: boolean;
                 /** Format: date-time */
                 openUntil: string | null;
-                recentQuotaErrors: number;
             }[];
-            quotaErrors: number;
-            windowMs: number;
         };
         Citation: {
             chunkId?: string;
