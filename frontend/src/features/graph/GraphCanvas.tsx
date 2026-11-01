@@ -14,9 +14,10 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/base.css';
 import type { GraphSymbol } from '@/api/types';
-import { Button, Kbd } from '@/ui';
+import { Button, Kbd, Tooltip, TooltipProvider } from '@/ui';
 import { cn } from '@/lib/cn';
 import { useBreakpoint } from '@/lib/breakpoints';
+import { downloadText, fileSlug } from '@/lib/download';
 import { prefersReducedMotion } from './hooks';
 import {
   NODE_HEIGHT,
@@ -26,6 +27,7 @@ import {
   type LaidNode,
   type MoreMarker,
 } from './layout';
+import { mapSvg } from './mapSvg';
 import { graphStrings as t, kindLabel } from './strings';
 
 type SymbolNodeData = {
@@ -37,39 +39,57 @@ type SymbolNodeData = {
 type SymbolNode = Node<SymbolNodeData, 'symbol'>;
 type MoreNode = Node<{ count: number; side: MoreMarker['side'] }, 'more'>;
 
+/** "function, model.py, lines 42–61": what the hover card says about a symbol. */
+function SymbolTip({ symbol }: { symbol: GraphSymbol }) {
+  return (
+    <span className="flex flex-col gap-0.5">
+      <span>
+        <span className="text-ink-3">{kindLabel(symbol.kind)}</span>{' '}
+        <span className="font-mono [overflow-wrap:anywhere]">{symbol.name}</span>
+      </span>
+      <span className="text-ink-3">
+        <span className="font-mono [overflow-wrap:anywhere]">{symbol.filePath}</span>,{' '}
+        {t.lines(symbol.lineStart, symbol.lineEnd)}
+      </span>
+    </span>
+  );
+}
+
 const SymbolNodeView = memo(function SymbolNodeView({ data }: NodeProps<SymbolNode>) {
   const { symbol, role, highlighted, selected } = data;
   return (
-    <div
-      style={{ width: NODE_WIDTH, height: NODE_HEIGHT }}
-      className={cn(
-        'flex cursor-pointer flex-col justify-center rounded-sm border bg-paper px-2.5',
-        role === 'center' || highlighted ? 'border-accent' : 'border-edge hover:border-ink-3',
-        role === 'center' && 'bg-accent-wash',
-        selected && 'outline-2 outline-offset-2 outline-accent',
-      )}
-    >
-      {/* Edges need handles; they are invisible and nothing can be connected by hand. */}
-      <Handle
-        type="target"
-        position={Position.Left}
-        isConnectable={false}
-        className="!size-px !min-h-0 !min-w-0 !border-0 !bg-transparent"
-      />
-      <div className="flex min-w-0 items-baseline gap-1.5 text-xs">
-        <span className="shrink-0 text-ink-3">{kindLabel(symbol.kind)}</span>
-        <span className="truncate font-mono text-ink">{symbol.name}</span>
+    <Tooltip content={<SymbolTip symbol={symbol} />} side="bottom">
+      <div
+        style={{ width: NODE_WIDTH, height: NODE_HEIGHT }}
+        className={cn(
+          'flex cursor-pointer flex-col justify-center rounded-sm border bg-paper px-2.5',
+          role === 'center' || highlighted ? 'border-accent' : 'border-edge hover:border-ink-3',
+          role === 'center' && 'bg-accent-wash',
+          selected && 'outline-2 outline-offset-2 outline-accent',
+        )}
+      >
+        {/* Edges need handles; they are invisible and nothing can be connected by hand. */}
+        <Handle
+          type="target"
+          position={Position.Left}
+          isConnectable={false}
+          className="!size-px !min-h-0 !min-w-0 !border-0 !bg-transparent"
+        />
+        <div className="flex min-w-0 items-baseline gap-1.5 text-xs">
+          <span className="shrink-0 text-ink-3">{kindLabel(symbol.kind)}</span>
+          <span className="truncate font-mono text-ink">{symbol.name}</span>
+        </div>
+        <div className="truncate font-mono text-xs text-ink-3">
+          {symbol.filePath}:{symbol.lineStart}
+        </div>
+        <Handle
+          type="source"
+          position={Position.Right}
+          isConnectable={false}
+          className="!size-px !min-h-0 !min-w-0 !border-0 !bg-transparent"
+        />
       </div>
-      <div className="truncate font-mono text-xs text-ink-3">
-        {symbol.filePath}:{symbol.lineStart}
-      </div>
-      <Handle
-        type="source"
-        position={Position.Right}
-        isConnectable={false}
-        className="!size-px !min-h-0 !min-w-0 !border-0 !bg-transparent"
-      />
-    </div>
+    </Tooltip>
   );
 });
 
@@ -298,7 +318,20 @@ function Canvas({
           fitView
           className="text-ink [&_.react-flow__node:focus-visible]:outline-2 [&_.react-flow__node:focus-visible]:outline-offset-2 [&_.react-flow__node:focus-visible]:outline-accent"
         >
-          <Panel position="top-right">
+          <Panel position="top-right" className="flex gap-1">
+            <Button
+              size="sm"
+              className="bg-paper"
+              onClick={() =>
+                downloadText(
+                  `${fileSlug(label, 'code-graph')}.svg`,
+                  mapSvg(layout, label, highlight),
+                  'image/svg+xml;charset=utf-8',
+                )
+              }
+            >
+              {t.exportSvg}
+            </Button>
             <Button size="sm" className="bg-paper" onClick={fit}>
               {t.fitView}
             </Button>
@@ -324,7 +357,9 @@ function Canvas({
 export default function GraphCanvas(props: GraphCanvasProps) {
   return (
     <ReactFlowProvider>
-      <Canvas {...props} />
+      <TooltipProvider>
+        <Canvas {...props} />
+      </TooltipProvider>
     </ReactFlowProvider>
   );
 }

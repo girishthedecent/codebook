@@ -31,8 +31,9 @@ export function openCommandMenu() {
 }
 
 /**
- * ⌘K / Ctrl K. Jumps to any page, source, workspace or recent conversation, finds passages in
- * the sources, and runs the few actions that don't need a form. Mounted once by each layout.
+ * ⌘K / Ctrl K. Finds sources, passages, workspaces and recent conversations, and lists the
+ * actions: the few that don't need a form, then a "Go to" for every page. Mounted once by each
+ * layout.
  */
 export function CommandMenu() {
   const [open, setOpen] = useState(false);
@@ -157,17 +158,9 @@ function Menu({ close, showShortcuts }: { close: () => void; showShortcuts: () =
     close();
   };
 
-  const places: [string, () => void][] = [
-    [s.chat, () => inWorkspace('')],
-    [s.sources, () => inWorkspace('/sources')],
-    [strings.nav.graph, () => inWorkspace('/graph')],
-    [s.study, () => inWorkspace('/study')],
-    ...(isGuest ? [] : ([[strings.nav.memory, () => go('/memory')]] as [string, () => void][])),
-    [strings.nav.usage, () => go('/usage')],
-    [strings.nav.settings, () => go('/settings')],
-    ...(isAdmin ? ([[strings.nav.admin, () => go('/admin')]] as [string, () => void][]) : []),
-  ];
-  const shownPlaces = places.filter(([label]) => match(label));
+  type Action = [label: string, run: () => void];
+  const when = (yes: boolean, ...items: Action[]) => (yes ? items : []);
+
   const shownSources = flatItems(sources.data)
     .filter((src) => match(displayTitle(src).name))
     .slice(0, SOURCES_SHOWN);
@@ -177,31 +170,38 @@ function Menu({ close, showShortcuts }: { close: () => void; showShortcuts: () =
     .filter((conv) => match(conv.title))
     .slice(0, 8);
 
-  const actions: [string, () => void][] = [
-    ...(workspaceId
-      ? ([[s.newConversation, () => inWorkspace('')]] as [string, () => void][])
-      : []),
-    [s.toggleTheme, toggleTheme],
-    ...(bp !== 'phone' ? ([[s.shortcuts, showShortcuts]] as [string, () => void][]) : []),
-    ...(isGuest
-      ? ([
-          [
-            en.auth.signIn,
-            () =>
-              go(
-                `/sign-in?next=${encodeURIComponent(window.location.pathname + window.location.search)}`,
-              ),
-          ],
-        ] as [string, () => void][])
-      : ([
-          [
-            strings.nav.signOut,
-            () => {
-              close();
-              void signOut();
-            },
-          ],
-        ] as [string, () => void][])),
+  // `go` takes a plain address, so a page another part of the app adds later needs no import here.
+  const actions: Action[] = [
+    ...when(Boolean(workspaceId), [s.newConversation, () => inWorkspace('')]),
+    [c.switchTheme, toggleTheme],
+    ...when(bp !== 'phone', [s.shortcuts, showShortcuts]),
+    [c.goTo(c.library), () => inWorkspace('/sources')],
+    [c.goTo(s.study), () => inWorkspace('/study')],
+    [c.goTo(c.graph), () => inWorkspace('/graph')],
+    // Highlights belong to an account; a visitor has none.
+    ...when(!isGuest && Boolean(workspaceId), [
+      c.goTo(c.highlights),
+      () => inWorkspace('/highlights'),
+    ]),
+    ...when(!isGuest, [c.goTo(strings.nav.memory), () => go('/memory')]),
+    [c.goTo(strings.nav.usage), () => go('/usage')],
+    [c.goTo(strings.nav.settings), () => go('/settings')],
+    ...when(isAdmin, [c.goTo(strings.nav.admin), () => go('/admin')]),
+    isGuest
+      ? [
+          en.auth.signIn,
+          () =>
+            go(
+              `/sign-in?next=${encodeURIComponent(window.location.pathname + window.location.search)}`,
+            ),
+        ]
+      : [
+          strings.nav.signOut,
+          () => {
+            close();
+            void signOut();
+          },
+        ],
   ];
   const shownActions = actions.filter(([label]) => match(label));
 
@@ -221,16 +221,6 @@ function Menu({ close, showShortcuts }: { close: () => void; showShortcuts: () =
         {!searching || !passages.isFetching ? (
           <Command.Empty className="px-3 py-6 text-sm text-ink-3">{s.empty}</Command.Empty>
         ) : null}
-
-        {shownPlaces.length > 0 && (
-          <Group heading={s.goTo}>
-            {shownPlaces.map(([label, run]) => (
-              <Item key={label} value={`go ${label}`} onSelect={run}>
-                {label}
-              </Item>
-            ))}
-          </Group>
-        )}
 
         {shownSources.length > 0 && (
           <Group heading={c.sources}>
@@ -369,7 +359,7 @@ const shortcutList: [string, string][] = [
   ['Esc', 'Close the viewer or a dialog'],
   ['[  ]', 'Previous and next page in the viewer'],
   ['←  →', 'Previous and next flashcard'],
-  ['K  A', 'Know a flashcard, or see it again'],
+  ['K  D', "Know a flashcard, or don't know it yet"],
   ['1 to 6', 'Pick a quiz answer, Enter for next'],
 ];
 

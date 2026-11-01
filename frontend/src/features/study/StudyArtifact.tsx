@@ -3,7 +3,12 @@ import { useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { flatItems } from '@/api/queries/keys';
 import { useSources } from '@/api/queries/sources';
-import { studyQueryOptions, useCancelStudy, useRegenerateStudy } from '@/api/queries/study';
+import {
+  attemptsOf,
+  studyQueryOptions,
+  useCancelStudy,
+  useRegenerateStudy,
+} from '@/api/queries/study';
 import type { StudyDetail } from '@/api/types';
 import { displayTitle } from '@/lib/displayTitle';
 import { BackLink, Button, Callout, ProgressRule, Skeleton, TextLink } from '@/ui';
@@ -13,10 +18,13 @@ import { Flashcards } from './Flashcards';
 import { relativeDate } from './format';
 import { MindMap } from './MindMap';
 import { QuizPlayer } from './QuizPlayer';
+import { QuizSheet } from './QuizSheet';
 import type { StudySearch } from './search';
 import { isStale, studyState } from './state';
 import { s, typeLabel } from './strings';
+import { StudyExport } from './StudyExport';
 import { Summary } from './Summary';
+import './study.css';
 
 type Props = {
   workspaceId: string;
@@ -44,13 +52,13 @@ export function StudyArtifact({
   });
 
   return (
-    <div className="px-4 py-6 pb-10 sm:px-8">
+    <div className="study-print px-4 py-6 pb-10 sm:px-8">
       {showBack && (
         <BackLink
           to="/w/$workspaceId/study"
           params={{ workspaceId }}
           search={{ kind: search.kind }}
-          className="mb-3"
+          className="study-screen-only mb-3"
         >
           {s.back}
         </BackLink>
@@ -110,6 +118,7 @@ function Loaded({
   const index = citationIndex(study);
   const state = studyState(study);
   const stale = isStale(study);
+  const { lastAttempt } = attemptsOf(study);
   // Regenerating swaps the buttons for a progress line, so focus would be lost with them.
   const title = useRef<HTMLHeadingElement>(null);
   const remake = () => regenerate.mutate(study.id, { onSuccess: () => title.current?.focus() });
@@ -129,14 +138,19 @@ function Loaded({
           {study.title}
         </h2>
         <MadeFrom study={study} workspaceId={workspaceId} />
-        {!readOnly && !state.making && (
-          <div className="mt-3 flex gap-1">
-            <Button size="sm" variant="ghost" loading={regenerate.isPending} onClick={remake}>
-              {s.regenerate}
-            </Button>
-            <Button size="sm" variant="ghost" onClick={() => setConfirm(true)}>
-              {s.delete}
-            </Button>
+        {(content || !readOnly) && !state.making && (
+          <div className="study-screen-only mt-3 flex flex-wrap gap-1">
+            {content && <StudyExport content={content} title={study.title} index={index} />}
+            {!readOnly && (
+              <>
+                <Button size="sm" variant="ghost" loading={regenerate.isPending} onClick={remake}>
+                  {s.regenerate}
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setConfirm(true)}>
+                  {s.delete}
+                </Button>
+              </>
+            )}
           </div>
         )}
         {regenerate.isError && <Callout error={regenerate.error} className="mt-3" />}
@@ -197,16 +211,38 @@ function Loaded({
         ) : !content ? (
           <p className="max-w-prose font-serif text-base text-ink-2">{s.unreadable}</p>
         ) : content.type === 'QUIZ' ? (
-          <QuizPlayer
-            key={study.updatedAt}
-            storageKey={`quiz:${study.id}:${study.updatedAt}`}
-            quiz={content.data}
-            index={index}
-          />
+          <>
+            <div className="study-screen-only">
+              <QuizPlayer
+                key={study.updatedAt}
+                storageKey={`quiz:${study.id}:${study.updatedAt}`}
+                quiz={content.data}
+                index={index}
+                workspaceId={workspaceId}
+                studyId={study.id}
+                lastAttempt={lastAttempt}
+              />
+            </div>
+            <QuizSheet quiz={content.data} index={index} />
+          </>
         ) : content.type === 'FLASHCARDS' ? (
-          <Flashcards deck={content.data} index={index} search={search} setSearch={setSearch} />
+          <Flashcards
+            deck={content.data}
+            index={index}
+            search={search}
+            setSearch={setSearch}
+            workspaceId={workspaceId}
+            studyId={study.id}
+            lastAttempt={lastAttempt}
+          />
         ) : content.type === 'MINDMAP' ? (
-          <MindMap key={study.updatedAt} map={content.data} index={index} />
+          <MindMap
+            key={study.updatedAt}
+            map={content.data}
+            index={index}
+            workspaceId={workspaceId}
+            title={study.title}
+          />
         ) : (
           <Summary summary={content.data} index={index} />
         )}
@@ -277,8 +313,8 @@ function countLabel(content: StudyContent) {
     case 'FLASHCARDS':
       return s.cardsCount(n);
     case 'MINDMAP':
-      return `${n} topics`;
+      return s.topicsCount(n);
     case 'SUMMARY':
-      return `${n} section${n === 1 ? '' : 's'}`;
+      return s.sectionsCount(n);
   }
 }

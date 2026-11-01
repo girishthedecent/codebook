@@ -4,6 +4,7 @@ import { DotsThree } from '@phosphor-icons/react';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { flatItems } from '@/api/queries/keys';
 import {
+  attemptsOf,
   studiesQueryOptions,
   useCancelStudy,
   useDeleteStudy,
@@ -174,6 +175,7 @@ function StudyRow({
   readOnly: boolean;
 }) {
   const state = studyState(study);
+  const { lastAttempt } = attemptsOf(study);
   const navigate = useNavigate();
   const regenerate = useRegenerateStudy(workspaceId);
   const cancel = useCancelStudy(workspaceId);
@@ -191,6 +193,19 @@ function StudyRow({
             <span>{typeLabel[study.type]}</span>
             <span aria-hidden>·</span>
             <span>{relativeDate(study.createdAt)}</span>
+            {lastAttempt && (
+              <>
+                <span aria-hidden>·</span>
+                <span title={s.lastScore(lastAttempt.score, lastAttempt.total)}>
+                  <span aria-hidden className="tabular-nums">
+                    {lastAttempt.score}/{lastAttempt.total}
+                  </span>
+                  <span className="sr-only">
+                    {s.lastScore(lastAttempt.score, lastAttempt.total)}
+                  </span>
+                </span>
+              </>
+            )}
             {state.tone && (
               <StatusDot tone={state.tone} label={state.label} className="ml-1 text-ink-3" />
             )}
@@ -262,7 +277,7 @@ function RowMenu({
           <Button
             variant="ghost"
             size="sm"
-            aria-label={`Actions for ${study.title}`}
+            aria-label={s.actionsFor(study.title)}
             className="mt-1 size-9 px-0 max-sm:size-11"
           >
             <DotsThree size={18} weight="bold" aria-hidden />

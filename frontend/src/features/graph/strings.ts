@@ -30,6 +30,10 @@ export const graphStrings = {
   openInViewer: 'Open the code',
   center: 'Center',
   fitView: 'Fit',
+  exportSvg: 'Export SVG',
+  askAbout: 'Ask about this',
+  lines: (start: number, end: number) =>
+    end !== start ? `lines ${start}–${end}` : `line ${start}`,
   selectHint: 'Tap a node to open its code or center the map on it.',
   selectHintKeys:
     'Click a node, or Tab to one and press Enter, then open its code or center the map on it.',

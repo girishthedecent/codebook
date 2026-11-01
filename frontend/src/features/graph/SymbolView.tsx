@@ -1,4 +1,6 @@
 import { lazy, Suspense, useMemo, type ReactNode } from 'react';
+import { useNavigate } from '@tanstack/react-router';
+import { askAbout } from '@/lib/askAbout';
 import { useBreakpoint } from '@/lib/breakpoints';
 import type { GraphSymbol } from '@/api/types';
 import { Button, Skeleton, TabPanel, Tabs, TextButton } from '@/ui';
@@ -9,7 +11,7 @@ import { CompactMap } from './CompactMap';
 import { Connections } from './GraphTree';
 import { ErrorNote } from './ErrorNote';
 import { Segmented } from './Segmented';
-import { graphStrings as t, kindNoun } from './strings';
+import { graphStrings as t, kindLabel, kindNoun } from './strings';
 
 const GraphCanvas = lazy(() => import('./GraphCanvas'));
 
@@ -21,6 +23,8 @@ export function SymbolView({ repo, symbolRef }: { repo: string; symbolRef: strin
   const bp = useBreakpoint();
   const search = graphRoute.useSearch();
   const navigate = graphRoute.useNavigate();
+  const { workspaceId } = graphRoute.useParams();
+  const toChat = useNavigate();
   const nav = useGraphNavigation(repo);
   const symbol = useSymbolByRef(repo, symbolRef);
   const overview = useOverview(repo);
@@ -63,6 +67,20 @@ export function SymbolView({ repo, symbolRef }: { repo: string; symbolRef: strin
         onOpen={() => nav.openInViewer(center)}
         onTraceFrom={() => nav.traceFrom(center)}
         onTraceTo={() => nav.traceTo(center)}
+        onAsk={() => {
+          askAbout({
+            quote: center.signature ?? `${kindLabel(center.kind)} ${center.name}`,
+            label: symbolCaption(center),
+            target: {
+              kind: 'file',
+              sourceId: repo,
+              path: center.filePath,
+              lineStart: center.lineStart,
+              lineEnd: center.lineEnd,
+            },
+          });
+          void toChat({ to: '/w/$workspaceId', params: { workspaceId } });
+        }}
       />
       {bp === 'phone' ? (
         connections
@@ -111,18 +129,16 @@ function SymbolHeader({
   onOpen,
   onTraceFrom,
   onTraceTo,
+  onAsk,
 }: {
   symbol: GraphSymbol;
   onOpen: () => void;
   onTraceFrom: () => void;
   onTraceTo: () => void;
+  onAsk: () => void;
 }) {
   const file = symbol.kind === 'FILE';
   const owner = symbol.kind === 'METHOD' ? ownerOf(symbol) : undefined;
-  const lines =
-    symbol.lineEnd !== symbol.lineStart
-      ? `lines ${symbol.lineStart}–${symbol.lineEnd}`
-      : `line ${symbol.lineStart}`;
 
   return (
     <header className="mb-8 max-w-3xl">
@@ -152,7 +168,7 @@ function SymbolHeader({
         <TextButton onClick={onOpen} title={t.openInViewer}>
           {symbol.filePath}
         </TextButton>
-        {file ? '' : `, ${lines}`}
+        {file ? '' : `, ${t.lines(symbol.lineStart, symbol.lineEnd)}`}
       </p>
       <div className="mt-4 flex flex-wrap gap-2">
         <Button size="sm" onClick={onTraceFrom}>
@@ -161,9 +177,18 @@ function SymbolHeader({
         <Button size="sm" onClick={onTraceTo}>
           {t.traceToHere}
         </Button>
+        <Button size="sm" onClick={onAsk}>
+          {t.askAbout}
+        </Button>
       </div>
     </header>
   );
+}
+
+/** "model.py, lines 42–61", the way a citation names a listing; a file is just its path. */
+function symbolCaption(symbol: GraphSymbol) {
+  if (symbol.kind === 'FILE') return symbol.filePath;
+  return `${symbol.filePath}, ${t.lines(symbol.lineStart, symbol.lineEnd)}`;
 }
 
 /** The class a method belongs to, from its qualified name (`model.py#GPT.forward`). */

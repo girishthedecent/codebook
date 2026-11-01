@@ -6,7 +6,7 @@ import {
   type KeyboardEvent,
   type PointerEvent as ReactPointerEvent,
 } from 'react';
-import { CaretRight } from '@phosphor-icons/react';
+import { CaretRight, DotsThree } from '@phosphor-icons/react';
 import type { Citation } from '@/api/types';
 import { Button, TabPanel, Tabs } from '@/ui';
 import { cn } from '@/lib/cn';
@@ -14,12 +14,24 @@ import { useBreakpoint } from '@/lib/breakpoints';
 import { Cites } from './Cites';
 import { citationsOf, type MindmapData, type MindmapNode } from './data';
 import { s } from './strings';
+import { edge, FONT, layout, PAD, ROOT_FONT, ROW, type Placed } from './mapLayout';
+import { NodeMenu } from './NodeMenu';
 import { treeKey, type TreeEntry, type TreeMove } from './treeNav';
 
-type Props = { map: MindmapData; index: Map<number, Citation> };
+type Props = {
+  map: MindmapData;
+  index: Map<number, Citation>;
+  workspaceId: string;
+  /** The set's title, for asking about a topic that cites nothing. */
+  title: string;
+};
 
-/** A folding tree: an SVG map on wide screens (with an outline tab), an outline on phones. */
-export function MindMap({ map, index }: Props) {
+/**
+ * A folding tree: an SVG map on wide screens (with an outline tab), an outline on phones. Each
+ * topic has a menu (its button, or the context-menu key or Shift+F10 on a focused topic) to ask
+ * about it or open what it cites.
+ */
+export function MindMap({ map, index, workspaceId, title }: Props) {
   const phone = useBreakpoint() === 'phone';
   const [view, setView] = useState('map');
   // Folded node ids, shared by both views so switching keeps what you folded.
@@ -32,7 +44,9 @@ export function MindMap({ map, index }: Props) {
       return next;
     });
 
-  if (phone) return <Outline root={map.root} folded={folded} toggle={toggle} index={index} />;
+  const tree = { root: map.root, folded, toggle, index, workspaceId, title };
+
+  if (phone) return <Outline {...tree} />;
 
   return (
     <Tabs
@@ -45,10 +59,10 @@ export function MindMap({ map, index }: Props) {
       ]}
     >
       <TabPanel value="map" className="pt-4">
-        <MapCanvas root={map.root} folded={folded} toggle={toggle} index={index} />
+        <MapCanvas {...tree} />
       </TabPanel>
       <TabPanel value="outline" className="pt-4">
-        <Outline root={map.root} folded={folded} toggle={toggle} index={index} />
+        <Outline {...tree} />
       </TabPanel>
     </Tabs>
   );
@@ -73,7 +87,12 @@ type TreeProps = {
   folded: Set<string>;
   toggle: (id: string) => void;
   index: Map<number, Citation>;
+  workspaceId: string;
+  title: string;
 };
+
+/** The menu key, or Shift+F10 where there is none, as on any desktop. */
+const isMenuKey = (e: KeyboardEvent) => e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10');
 
 /** The visible nodes in reading order, with the facts the keyboard handler needs. */
 function visibleEntries(root: MindmapNode, folded: Set<string>): TreeEntry[] {
@@ -88,15 +107,22 @@ function visibleEntries(root: MindmapNode, folded: Set<string>): TreeEntry[] {
   return list;
 }
 
-function Outline({ root, folded, toggle, index }: TreeProps) {
+function Outline(props: TreeProps) {
+  const { root, folded, toggle } = props;
   const entries = useMemo(() => visibleEntries(root, folded), [root, folded]);
   // Only one row is a tab stop; the arrow keys move it.
   const [stop, setStop] = useState(root.id);
+  const [menuFor, setMenuFor] = useState<string | null>(null);
   const items = useRef(new Map<string, HTMLElement>());
   const tab = entries.some((e) => e.id === stop) ? stop : root.id;
 
   const onKeyDown = (e: KeyboardEvent<HTMLElement>, id: string) => {
     if (e.target !== e.currentTarget || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (isMenuKey(e)) {
+      e.preventDefault();
+      setMenuFor(id);
+      return;
+    }
     const move = treeKey(e.key, id, entries, 'list');
     if (!move) return;
     e.preventDefault();
@@ -107,12 +133,13 @@ function Outline({ root, folded, toggle, index }: TreeProps) {
   return (
     <ul role="tree" aria-label={root.label} className="text-sm">
       <OutlineItem
+        {...props}
         node={root}
         depth={0}
-        folded={folded}
-        toggle={toggle}
-        index={index}
+        trail={[root.label]}
         tab={tab}
+        menuFor={menuFor}
+        onMenu={setMenuFor}
         onStop={setStop}
         onKeyDown={onKeyDown}
         register={(id, el) => {
@@ -126,22 +153,21 @@ function Outline({ root, folded, toggle, index }: TreeProps) {
 
 type ItemProps = {
   tab: string;
+  /** The topic whose menu is open, if any. */
+  menuFor: string | null;
+  onMenu: (id: string | null) => void;
   onStop: (id: string) => void;
   onKeyDown: (e: KeyboardEvent<HTMLElement>, id: string) => void;
   register: (id: string, el: HTMLElement | null) => void;
 };
 
-function OutlineItem({
-  node,
-  depth,
-  folded,
-  toggle,
-  index,
-  tab,
-  onStop,
-  onKeyDown,
-  register,
-}: { node: MindmapNode; depth: number } & Omit<TreeProps, 'root'> & ItemProps) {
+function OutlineItem(
+  props: { node: MindmapNode; depth: number; trail: string[] } & Omit<TreeProps, 'root'> &
+    ItemProps,
+) {
+  const { node, depth, trail, folded, toggle, index, tab, menuFor, onMenu, onStop, onKeyDown } =
+    props;
+  const { register, workspaceId, title } = props;
   const hasChildren = node.children.length > 0;
   const open = hasChildren && !folded.has(node.id);
   return (
@@ -186,21 +212,36 @@ function OutlineItem({
             <span className="ml-1 font-mono text-xs text-ink-3">+{node.children.length}</span>
           )}
         </span>
+        <NodeMenu
+          node={node}
+          trail={trail}
+          index={index}
+          workspaceId={workspaceId}
+          title={title}
+          open={menuFor === node.id}
+          onOpenChange={(next) => onMenu(next ? node.id : null)}
+          trigger={
+            <button
+              type="button"
+              // The row is the tab stop; the menu key opens this from the keyboard.
+              tabIndex={-1}
+              aria-label={s.map.actionsFor(node.label)}
+              className="ml-auto flex size-10 shrink-0 items-center justify-center rounded-xs text-ink-3 hover:bg-paper-2 hover:text-ink max-sm:size-11"
+            >
+              <DotsThree size={16} weight="bold" aria-hidden />
+            </button>
+          }
+        />
       </div>
       {open && (
         <ul role="group" className="pl-5">
           {node.children.map((child) => (
             <OutlineItem
+              {...props}
               key={child.id}
               node={child}
               depth={depth + 1}
-              folded={folded}
-              toggle={toggle}
-              index={index}
-              tab={tab}
-              onStop={onStop}
-              onKeyDown={onKeyDown}
-              register={register}
+              trail={[...trail, child.label]}
             />
           ))}
         </ul>
@@ -209,85 +250,14 @@ function OutlineItem({
   );
 }
 
-// The map: columns by depth, leaves one row apart, each parent centred on its children.
-
-const COL = 240;
-const ROW = 34;
-const PAD = 24;
-const MAX_LABEL = 210;
-const FONT = '13px "IBM Plex Sans", system-ui, sans-serif';
-const ROOT_FONT = '600 14px "IBM Plex Sans", system-ui, sans-serif';
-
-type Placed = {
-  node: MindmapNode;
-  x: number;
-  y: number;
-  label: string;
-  width: number;
-  depth: number;
-  parent?: Placed;
-  kids: Placed[];
-  folded: boolean;
-};
-
-let ctx: CanvasRenderingContext2D | null | undefined;
-function measure(text: string, font: string) {
-  if (ctx === undefined) ctx = document.createElement('canvas').getContext('2d');
-  if (!ctx) return text.length * 6.8;
-  ctx.font = font;
-  return ctx.measureText(text).width;
-}
-
-/** Shortens a label to fit the column, on a word boundary when there is one. */
-function fit(label: string, font: string): { label: string; width: number } {
-  let width = measure(label, font);
-  if (width <= MAX_LABEL) return { label, width };
-  let cut = label;
-  while (cut.length > 4 && measure(cut + '…', font) > MAX_LABEL) {
-    const space = cut.lastIndexOf(' ', cut.length - 2);
-    cut = space > cut.length * 0.6 ? cut.slice(0, space) : cut.slice(0, -1);
-  }
-  cut = cut.trimEnd() + '…';
-  width = measure(cut, font);
-  return { label: cut, width };
-}
-
-function layout(root: MindmapNode, folded: Set<string>): Placed[] {
-  const placed: Placed[] = [];
-  let row = 0;
-  const walk = (node: MindmapNode, depth: number, parent?: Placed): Placed => {
-    const font = depth === 0 ? ROOT_FONT : FONT;
-    const { label, width } = fit(node.label, font);
-    const isFolded = folded.has(node.id) && node.children.length > 0;
-    const me: Placed = {
-      node,
-      x: depth * COL,
-      y: 0,
-      label,
-      width,
-      depth,
-      parent,
-      kids: [],
-      folded: isFolded,
-    };
-    placed.push(me);
-    const kids = isFolded ? [] : node.children.map((child) => walk(child, depth + 1, me));
-    me.kids = kids;
-    if (kids.length === 0) me.y = row++ * ROW;
-    else me.y = (kids[0]!.y + kids[kids.length - 1]!.y) / 2;
-    return me;
-  };
-  walk(root, 0);
-  return placed;
-}
-
 type View = { x: number; y: number; k: number };
 
-function MapCanvas({ root, folded, toggle, index }: TreeProps) {
+function MapCanvas({ root, folded, toggle, index, workspaceId, title }: TreeProps) {
   const nodes = useMemo(() => layout(root, folded), [root, folded]);
   const box = useRef<HTMLDivElement>(null);
   const [view, setView] = useState<View>({ x: PAD, y: PAD, k: 1 });
   const [selected, setSelected] = useState<string | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
   // Only one node is a tab stop; the arrow keys move it.
   const [stop, setStop] = useState(root.id);
   const items = useRef(new Map<string, SVGGElement>());
@@ -417,6 +387,12 @@ function MapCanvas({ root, folded, toggle, index }: TreeProps) {
 
   const onKeyDown = (e: KeyboardEvent<SVGGElement>, n: Placed) => {
     if (e.target !== e.currentTarget || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (isMenuKey(e)) {
+      e.preventDefault();
+      setSelected(n.node.id);
+      setMenuOpen(true);
+      return;
+    }
     const move: TreeMove | undefined = treeKey(e.key, n.node.id, entries, 'columns');
     if (!move) return;
     e.preventDefault();
@@ -505,16 +481,37 @@ function MapCanvas({ root, folded, toggle, index }: TreeProps) {
           </Button>
         </div>
       </div>
-      <p className="mt-2 min-h-5 text-xs text-ink-3">
+      <div className="mt-2 flex min-h-10 items-start justify-between gap-3 text-xs text-ink-3">
         {current ? (
           <>
-            <span className="text-ink-2">{current.node.label}</span>{' '}
-            <Cites citations={cites} uncited={current.node.uncited} />
+            <p className="pt-2.5">
+              <span className="text-ink-2">{current.node.label}</span>{' '}
+              <Cites citations={cites} uncited={current.node.uncited} />
+            </p>
+            <NodeMenu
+              node={current.node}
+              trail={trailOf(current)}
+              index={index}
+              workspaceId={workspaceId}
+              title={title}
+              open={menuOpen}
+              onOpenChange={setMenuOpen}
+              trigger={
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="mt-1.5 shrink-0"
+                  aria-label={s.map.actionsFor(current.node.label)}
+                >
+                  <DotsThree size={16} weight="bold" aria-hidden />
+                </Button>
+              }
+            />
           </>
         ) : (
-          s.map.hint
+          <p className="pt-2.5">{s.map.hint}</p>
         )}
-      </p>
+      </div>
     </div>
   );
 }
@@ -592,12 +589,10 @@ function MapNode(props: MapNodeProps) {
   );
 }
 
-/** A soft S-curve from the end of the parent's label to the child's dot. */
-function edge(from: Placed, to: Placed) {
-  const x1 = from.x + from.width + 16;
-  const x2 = to.x - 6;
-  const mid = (x1 + x2) / 2;
-  return `M${x1},${from.y} C${mid},${from.y} ${mid},${to.y} ${x2},${to.y}`;
+function trailOf(n: Placed): string[] {
+  const labels: string[] = [];
+  for (let at: Placed | undefined = n; at; at = at.parent) labels.unshift(at.node.label);
+  return labels;
 }
 
 /** The view scaled by `factor` around the point (px, py), within the zoom limits. */

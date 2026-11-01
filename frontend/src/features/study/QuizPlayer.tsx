@@ -1,14 +1,24 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useRecordAttempt, type AttemptMark, type RecordAttemptBody } from '@/api/queries/study';
 import type { Citation } from '@/api/types';
-import { Button, Kbd, ProgressRule } from '@/ui';
+import { Button, Kbd, ProgressRule, TextButton } from '@/ui';
 import { cn } from '@/lib/cn';
 import { useBreakpoint } from '@/lib/breakpoints';
 import { useShortcut } from '@/lib/keyboard';
+import { RecentAttempts } from './AttemptHistory';
 import { Cites } from './Cites';
 import { citationsOf, type QuizData } from './data';
 import { s } from './strings';
 
-type Progress = { at: number; answers: Record<string, number>; finished: boolean };
+type Progress = {
+  at: number;
+  answers: Record<string, number>;
+  finished: boolean;
+  /** The questions of a round that goes over the missed ones; absent for the whole quiz. */
+  only?: string[];
+  /** The score before this round, so the result can say how it went last time. */
+  previous?: AttemptMark | null;
+};
 
 // A reload or a trip to the viewer shouldn't throw away a half-finished quiz.
 function loadProgress(key: string, quiz: QuizData): Progress | undefined {
@@ -16,9 +26,15 @@ function loadProgress(key: string, quiz: QuizData): Progress | undefined {
     const raw = sessionStorage.getItem(key);
     if (!raw) return undefined;
     const p = JSON.parse(raw) as Progress;
+    const only = Array.isArray(p.only) ? p.only : undefined;
+    const length = only ? only.length : quiz.questions.length;
     const ok =
-      Number.isInteger(p.at) && p.at >= 0 && p.at < quiz.questions.length && p.answers !== null;
-    return ok && typeof p.answers === 'object' ? p : undefined;
+      Number.isInteger(p.at) &&
+      p.at >= 0 &&
+      p.at < length &&
+      typeof p.answers === 'object' &&
+      p.answers !== null;
+    return ok ? { ...p, only } : undefined;
   } catch {
     return undefined;
   }
@@ -33,41 +49,54 @@ function saveProgress(key: string, p: Progress | undefined) {
   }
 }
 
-/**
- * One question per screen. Picking a choice locks it in and shows the answer with its
- * explanation and references; the result screen lists what was missed.
- */
-export function QuizPlayer({
-  quiz,
-  index,
-  storageKey,
-}: {
+type Props = {
   quiz: QuizData;
   index: Map<number, Citation>;
   /** Where progress is kept for this tab; the key changes when the set is regenerated. */
   storageKey: string;
-}) {
+  workspaceId: string;
+  studyId: string;
+  /** The requester's last finished run, as the server had it when the set loaded. */
+  lastAttempt: AttemptMark | null;
+};
+
+/**
+ * One question per screen. Picking a choice locks it in and shows the answer with its
+ * explanation and references. A finished run is saved as an attempt; the result screen gives
+ * the score against last time, a short history, and a round of only the missed questions.
+ */
+export function QuizPlayer({ quiz, index, storageKey, workspaceId, studyId, lastAttempt }: Props) {
   const saved = useMemo(() => loadProgress(storageKey, quiz), [storageKey, quiz]);
   const [at, setAt] = useState(saved?.at ?? 0);
   const [answers, setAnswers] = useState<Record<string, number>>(saved?.answers ?? {});
   const [finished, setFinished] = useState(saved?.finished ?? false);
+  const [only, setOnly] = useState(saved?.only);
+  const [previous, setPrevious] = useState(saved?.previous);
   const [resumed] = useState(Boolean(saved) && !saved?.finished);
   useEffect(() => {
-    const started = finished || at > 0 || Object.keys(answers).length > 0;
-    saveProgress(storageKey, started ? { at, answers, finished } : undefined);
-  }, [storageKey, at, answers, finished]);
+    const started = finished || at > 0 || Object.keys(answers).length > 0 || Boolean(only);
+    saveProgress(storageKey, started ? { at, answers, finished, only, previous } : undefined);
+  }, [storageKey, at, answers, finished, only, previous]);
+
+  const record = useRecordAttempt(workspaceId, studyId);
   const keyboard = useBreakpoint() !== 'phone';
-  // After "Next", focus moves to the new question so keyboard and screen-reader users start
-  // there; otherwise it would stay on whichever choice was last pressed.
+
+  // After "Next", a finished run or a new round, focus moves to the new heading so keyboard and
+  // screen-reader users start there; otherwise it would stay on whichever button was pressed.
   const heading = useRef<HTMLHeadingElement>(null);
   const first = useRef(true);
+  const roundKey = only?.join(',') ?? '';
   useEffect(() => {
     if (first.current) first.current = false;
     else heading.current?.focus();
-  }, [at]);
+  }, [at, finished, roundKey]);
 
-  const total = quiz.questions.length;
-  const question = quiz.questions[at];
+  const questions = useMemo(
+    () => (only ? quiz.questions.filter((q) => only.includes(q.id)) : quiz.questions),
+    [quiz, only],
+  );
+  const total = questions.length;
+  const question = questions[at];
   const picked = question ? answers[question.id] : undefined;
   const answered = picked !== undefined;
   const last = at === total - 1;
@@ -78,12 +107,25 @@ export function QuizPlayer({
   };
   const next = () => {
     if (!answered) return;
-    if (last) setFinished(true);
-    else setAt(at + 1);
+    if (!last) {
+      setAt(at + 1);
+      return;
+    }
+    setFinished(true);
+    // A round of only the missed questions is practice: saving it would make the history
+    // compare 2 of 3 with 6 of 8.
+    if (only) return;
+    setPrevious(lastAttempt);
+    record.mutate({
+      score: questions.filter((q) => answers[q.id] === q.answerIndex).length,
+      total,
+      items: quiz.questions.map((q, i) => ({ index: i, ok: answers[q.id] === q.answerIndex })),
+    });
   };
-  const restart = () => {
+  const startRound = (ids: string[] | undefined) => {
     setAnswers({});
     setAt(0);
+    setOnly(ids);
     setFinished(false);
   };
 
@@ -95,23 +137,39 @@ export function QuizPlayer({
   if (total === 0) return null;
 
   if (finished) {
-    const right = quiz.questions.filter((q) => answers[q.id] === q.answerIndex).length;
+    const right = questions.filter((q) => answers[q.id] === q.answerIndex).length;
+    const missed = questions.filter((q) => answers[q.id] !== q.answerIndex).map((q) => q.id);
     const percent = Math.round((right / total) * 100);
     return (
       <div className="max-w-[640px]">
-        <p className="heading-display">
+        <h3 ref={heading} tabIndex={-1} className="heading-display outline-none">
           {s.quiz.score(right, total)}{' '}
           <span className="font-sans text-base font-normal text-ink-3">{percent}%</span>
-        </p>
+        </h3>
         <p className="mt-1 text-sm text-ink-3">
-          {right === total ? s.quiz.allRight : s.quiz.scoreLabel}
+          {only ? s.quiz.missedRoundDone : right === total ? s.quiz.allRight : s.quiz.scoreLabel}
+          {!only && previous && ` ${s.quiz.lastTime(previous.score, previous.total)}`}
         </p>
-        <section aria-labelledby="review" className="mt-8">
+        {!only && <SaveState record={record} />}
+        {!only && <RecentAttempts studyId={studyId} className="mt-5" />}
+
+        <div className="mt-6 flex flex-wrap gap-2">
+          {missed.length > 0 && (
+            <Button variant="primary" onClick={() => startRound(missed)}>
+              {s.quiz.goOverMissed(missed.length)}
+            </Button>
+          )}
+          <Button variant="secondary" onClick={() => startRound(undefined)}>
+            {only ? s.quiz.wholeAgain : s.quiz.again}
+          </Button>
+        </div>
+
+        <section aria-labelledby="review" className="mt-10">
           <h3 id="review" className="heading-section">
-            {s.quiz.review}
+            {only ? s.quiz.reviewRound : s.quiz.review}
           </h3>
           <ol className="mt-3 flex flex-col gap-5">
-            {quiz.questions.map((q, n) => {
+            {questions.map((q) => {
               const mine = answers[q.id];
               const correct = mine === q.answerIndex;
               return (
@@ -127,7 +185,7 @@ export function QuizPlayer({
                   </span>
                   <div className="min-w-0">
                     <p className="font-serif text-base text-ink">
-                      <span className="text-ink-3">{n + 1}. </span>
+                      <span className="text-ink-3">{quiz.questions.indexOf(q) + 1}. </span>
                       {q.question}
                     </p>
                     {!correct && mine !== undefined && (
@@ -149,9 +207,6 @@ export function QuizPlayer({
             })}
           </ol>
         </section>
-        <Button className="mt-8" variant="secondary" onClick={restart}>
-          {s.quiz.again}
-        </Button>
       </div>
     );
   }
@@ -161,6 +216,7 @@ export function QuizPlayer({
   return (
     <div className="max-w-[640px]">
       {resumed && <p className="mb-2 text-xs text-ink-3">{s.quiz.resumed}</p>}
+      {only && <p className="mb-2 text-xs text-ink-3">{s.quiz.missedRound(total)}</p>}
       <p className="flex items-baseline justify-between text-xs text-ink-3">
         <span>{s.quiz.of(at + 1, total)}</span>
         <span>{question.difficulty}</span>
@@ -174,7 +230,7 @@ export function QuizPlayer({
         {question.question}
       </h3>
 
-      <ol className="mt-5 border-t border-rule" aria-label="Choices">
+      <ol className="mt-5 border-t border-rule" aria-label={s.quiz.choices}>
         {question.options.map((option, i) => {
           const isAnswer = i === question.answerIndex;
           const isPicked = i === picked;
@@ -220,7 +276,8 @@ export function QuizPlayer({
       <div className="mt-6 flex items-center justify-between gap-4">
         {keyboard ? (
           <p className="text-xs text-ink-3">
-            <Kbd>1</Kbd>–<Kbd>4</Kbd> answer · <Kbd>Enter</Kbd> next
+            <Kbd>1</Kbd>–<Kbd>{Math.min(question.options.length, 6)}</Kbd> {s.quiz.keyAnswer} ·{' '}
+            <Kbd>Enter</Kbd> {s.quiz.keyNext}
           </p>
         ) : (
           <span />
@@ -230,5 +287,19 @@ export function QuizPlayer({
         </Button>
       </div>
     </div>
+  );
+}
+
+/** Says so when the score couldn't be kept, with a way to try again; quiet otherwise. */
+function SaveState({ record }: { record: ReturnType<typeof useRecordAttempt> }) {
+  if (!record.isError || !record.variables) return null;
+  const body: RecordAttemptBody = record.variables;
+  return (
+    <p role="alert" className="mt-2 text-xs text-ink-3">
+      {s.quiz.notSaved}{' '}
+      <TextButton className="inline-flex min-h-10 items-center" onClick={() => record.mutate(body)}>
+        {s.retry}
+      </TextButton>
+    </p>
   );
 }
