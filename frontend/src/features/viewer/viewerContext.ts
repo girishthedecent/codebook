@@ -1,5 +1,5 @@
 import { createContext, use } from 'react';
-import type { Highlight } from '@/api/queries/highlights';
+import type { Highlight } from '@/api/types';
 
 export type ViewerContextValue = {
   /** What the find bar is looking for and which hit is current; unset while it is closed. */

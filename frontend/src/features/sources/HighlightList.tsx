@@ -4,9 +4,9 @@ import {
   useDeleteHighlight,
   useHighlights,
   useUpdateHighlight,
-  type Highlight,
 } from '@/api/queries/highlights';
 import { flatItems } from '@/api/queries/keys';
+import type { Highlight } from '@/api/types';
 import { cn } from '@/lib/cn';
 import { Button, Callout, Field, SectionHeading, Skeleton, TextButton, Textarea } from '@/ui';
 import { highlightPlace, highlightTarget } from './highlightPlace';

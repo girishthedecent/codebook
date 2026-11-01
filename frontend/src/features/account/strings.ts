@@ -22,6 +22,7 @@ export const strings = {
     settings: 'Settings',
     admin: 'Admin',
     graph: 'Code graph',
+    highlights: 'Highlights',
     more: 'More',
     signOut: 'Sign out',
   },

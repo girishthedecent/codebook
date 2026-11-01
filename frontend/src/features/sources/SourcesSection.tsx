@@ -7,7 +7,6 @@ import { AddSourceDialog } from './AddSourceDialog';
 import { nameOf, stuckMinutes } from './sourceInfo';
 import { isIndexing } from './sourceMeta';
 import { strings } from './strings';
-import { useIndexingNotices } from './useIndexingNotices';
 import { useNow, useSourceList } from './useSourceList';
 import { useSourceAccess } from './useSourceAccess';
 
@@ -29,7 +28,6 @@ export function SourcesSection({
   const [adding, setAdding] = useState(false);
   const { sources } = query;
   const now = useNow(sources.some((s) => isIndexing(s.status)));
-  useIndexingNotices(workspaceId, sources);
   if (collapsed) return null;
 
   const shown = sources.slice(0, SHOWN);

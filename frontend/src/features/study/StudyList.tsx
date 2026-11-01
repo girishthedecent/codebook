@@ -4,7 +4,6 @@ import { DotsThree } from '@phosphor-icons/react';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { flatItems } from '@/api/queries/keys';
 import {
-  attemptsOf,
   studiesQueryOptions,
   useCancelStudy,
   useDeleteStudy,
@@ -175,7 +174,7 @@ function StudyRow({
   readOnly: boolean;
 }) {
   const state = studyState(study);
-  const { lastAttempt } = attemptsOf(study);
+  const { lastAttempt } = study;
   const navigate = useNavigate();
   const regenerate = useRegenerateStudy(workspaceId);
   const cancel = useCancelStudy(workspaceId);

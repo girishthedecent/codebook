@@ -1,8 +1,8 @@
 import { useState, type KeyboardEvent } from 'react';
+import type { UsageDay } from '@/api/types';
 import { cn } from '@/lib/cn';
 import { formatCost, formatCount } from '@/features/account/format';
 import { strings } from '@/features/account/strings';
-import type { UsageDay } from './types';
 
 const s = strings.usage.days;
 const HEIGHT = 64;

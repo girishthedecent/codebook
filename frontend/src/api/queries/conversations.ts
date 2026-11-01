@@ -9,20 +9,15 @@ import {
   useQueryClient,
 } from '@tanstack/react-query';
 import { api, unwrap } from '../client';
-import type { Conversation, ConversationDetail, FeedbackBody } from '../types';
+import type { Conversation, FeedbackBody, Page } from '../types';
 import { keys } from './keys';
 
-/** When the conversation was pinned (null when it isn't), and its first question, cut short. */
-export type ConversationExtras = { pinnedAt?: string | null; preview?: string | null };
-export type ConversationSummary = Conversation & ConversationExtras;
-export type ConversationDetailWithExtras = ConversationDetail & ConversationExtras;
-
-type ConversationPage = { items: ConversationSummary[]; nextCursor: string | null };
+type ConversationPage = Page<Conversation>;
 
 export const conversationsQueryOptions = (workspaceId: string) =>
   infiniteQueryOptions({
     queryKey: keys.conversations(workspaceId),
-    queryFn: ({ pageParam, signal }): Promise<ConversationPage> =>
+    queryFn: ({ pageParam, signal }) =>
       unwrap(
         api.GET('/api/v1/workspaces/{workspaceId}/conversations', {
           params: { path: { workspaceId }, query: { cursor: pageParam, limit: 50 } },
@@ -131,7 +126,7 @@ export function usePinConversation(workspaceId: string) {
       unwrap(
         api.PATCH('/api/v1/conversations/{conversationId}', {
           params: { path: { conversationId } },
-          body: { pinned } as unknown as { title: string },
+          body: { pinned },
         }),
       ),
     onMutate: async ({ conversationId, pinned }) => {

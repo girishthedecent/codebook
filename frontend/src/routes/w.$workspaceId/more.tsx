@@ -42,6 +42,14 @@ function MorePage() {
           </Row>
           {!isGuest && (
             <Row>
+              <Link to="/w/$workspaceId/highlights" params={{ workspaceId }} className={rowClass}>
+                {strings.nav.highlights}
+                <Caret />
+              </Link>
+            </Row>
+          )}
+          {!isGuest && (
+            <Row>
               <Link to="/memory" className={rowClass}>
                 {strings.nav.memory}
                 <Caret />

@@ -1,25 +1,9 @@
 import { api, isApiError, unwrap } from '@/api/client';
-import type { Conversation, Me, Memory, Message, Page, SourceType, Workspace } from '@/api/types';
+import type { Conversation, Highlight, Me, Memory, Message, Page, Workspace } from '@/api/types';
 import { strings } from '@/features/account/strings';
 
 const s = strings.settings.data;
 const PAGE = 50;
-
-/** A saved passage, as `GET /workspaces/:id/highlights` returns it. */
-type Highlight = {
-  id: string;
-  sourceId: string;
-  sourceTitle: string;
-  sourceType: SourceType;
-  page: number | null;
-  path: string | null;
-  lineStart: number | null;
-  lineEnd: number | null;
-  heading: string | null;
-  text: string;
-  note: string | null;
-  createdAt: string;
-};
 
 export type ExportFile = {
   exportedAt: string;
@@ -88,8 +72,6 @@ export async function collectExport(
         );
         return detail.messages;
       });
-      // The API pages newest first; a reader expects a conversation in the order it happened.
-      messages.reverse();
       counts.messages += messages.length;
       withMessages.push({ ...conversation, messages });
     }
@@ -134,30 +116,19 @@ async function allPages<T>(fetchPage: (cursor?: string) => Promise<Page<T>>): Pr
 }
 
 /**
- * The workspace's highlights, or undefined where there are none to read: a server without the
- * route answers 404, and a workspace the account only visits may answer 403.
- * Requested with fetch because the route is newer than the generated API types; the reply has
- * the same envelope, so `unwrap` reads it.
+ * The workspace's highlights, or undefined where there are none to read: a workspace the account
+ * only visits may answer 403 or 404.
  */
 async function highlightsOf(workspaceId: string, signal: AbortSignal) {
   try {
-    return await allPages((cursor) => {
-      const query = new URLSearchParams({ limit: String(PAGE) });
-      if (cursor) query.set('cursor', cursor);
-      const url = `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/highlights?${query}`;
-      return unwrap<Page<Highlight>>(
-        fetch(url, {
-          credentials: 'include',
-          headers: { Accept: 'application/json' },
+    return await allPages((cursor) =>
+      unwrap(
+        api.GET('/api/v1/workspaces/{workspaceId}/highlights', {
+          params: { path: { workspaceId }, query: { cursor, limit: PAGE } },
           signal,
-        }).then(async (response) => {
-          const body: unknown = await response.json().catch(() => undefined);
-          return response.ok
-            ? { data: body as { data: Page<Highlight> }, response }
-            : { error: body, response };
         }),
-      );
-    });
+      ),
+    );
   } catch (error) {
     if (isApiError(error, 404) || isApiError(error, 403)) return undefined;
     throw error;

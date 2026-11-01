@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useRecordAttempt, type AttemptMark, type RecordAttemptBody } from '@/api/queries/study';
-import type { Citation } from '@/api/types';
+import { useRecordAttempt } from '@/api/queries/study';
+import type { Citation, Study } from '@/api/types';
 import { Button, Kbd, ProgressRule, TextButton } from '@/ui';
 import { cn } from '@/lib/cn';
 import { useBreakpoint } from '@/lib/breakpoints';
@@ -17,7 +17,7 @@ type Progress = {
   /** The questions of a round that goes over the missed ones; absent for the whole quiz. */
   only?: string[];
   /** The score before this round, so the result can say how it went last time. */
-  previous?: AttemptMark | null;
+  previous?: Study['lastAttempt'];
 };
 
 // A reload or a trip to the viewer shouldn't throw away a half-finished quiz.
@@ -57,7 +57,7 @@ type Props = {
   workspaceId: string;
   studyId: string;
   /** The requester's last finished run, as the server had it when the set loaded. */
-  lastAttempt: AttemptMark | null;
+  lastAttempt: Study['lastAttempt'];
 };
 
 /**
@@ -293,7 +293,7 @@ export function QuizPlayer({ quiz, index, storageKey, workspaceId, studyId, last
 /** Says so when the score couldn't be kept, with a way to try again; quiet otherwise. */
 function SaveState({ record }: { record: ReturnType<typeof useRecordAttempt> }) {
   if (!record.isError || !record.variables) return null;
-  const body: RecordAttemptBody = record.variables;
+  const body = record.variables;
   return (
     <p role="alert" className="mt-2 text-xs text-ink-3">
       {s.quiz.notSaved}{' '}

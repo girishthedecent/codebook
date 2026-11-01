@@ -3,12 +3,7 @@ import { useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { flatItems } from '@/api/queries/keys';
 import { useSources } from '@/api/queries/sources';
-import {
-  attemptsOf,
-  studyQueryOptions,
-  useCancelStudy,
-  useRegenerateStudy,
-} from '@/api/queries/study';
+import { studyQueryOptions, useCancelStudy, useRegenerateStudy } from '@/api/queries/study';
 import type { StudyDetail } from '@/api/types';
 import { displayTitle } from '@/lib/displayTitle';
 import { BackLink, Button, Callout, ProgressRule, Skeleton, TextLink } from '@/ui';
@@ -118,7 +113,7 @@ function Loaded({
   const index = citationIndex(study);
   const state = studyState(study);
   const stale = isStale(study);
-  const { lastAttempt } = attemptsOf(study);
+  const { lastAttempt } = study;
   // Regenerating swaps the buttons for a progress line, so focus would be lost with them.
   const title = useRef<HTMLHeadingElement>(null);
   const remake = () => regenerate.mutate(study.id, { onSuccess: () => title.current?.focus() });

@@ -1,9 +1,10 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { Link, useParams } from '@tanstack/react-router';
 import { DownloadSimple } from '@phosphor-icons/react';
-import { useHighlights, type Highlight } from '@/api/queries/highlights';
+import { useHighlights } from '@/api/queries/highlights';
 import { flatItems } from '@/api/queries/keys';
 import { useWorkspace } from '@/api/queries/workspaces';
+import type { Highlight } from '@/api/types';
 import { displayTitle } from '@/lib/displayTitle';
 import { downloadText, fileSlug } from '@/lib/download';
 import { Button, Callout, EmptyState, PageHeader, PageLoading, SourceBadge } from '@/ui';

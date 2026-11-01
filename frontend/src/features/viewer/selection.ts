@@ -1,5 +1,4 @@
-import type { CreateHighlightBody } from '@/api/queries/highlights';
-import type { SourceType } from '@/api/types';
+import type { CreateHighlightBody, SourceType } from '@/api/types';
 import type { ViewerTarget } from '@/lib/viewerParams';
 
 /** What the reader selected, and where it sits, in the words a citation would use. */

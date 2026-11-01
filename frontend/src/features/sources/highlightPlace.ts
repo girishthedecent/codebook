@@ -1,4 +1,4 @@
-import type { Highlight } from '@/api/queries/highlights';
+import type { Highlight } from '@/api/types';
 import type { ViewerTarget } from '@/lib/viewerParams';
 import { hostOf } from './sourceMeta';
 

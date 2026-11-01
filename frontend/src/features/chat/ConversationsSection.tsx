@@ -8,8 +8,8 @@ import {
   useDeleteConversation,
   usePinConversation,
   useRenameConversation,
-  type ConversationSummary,
 } from '@/api/queries/conversations';
+import type { Conversation } from '@/api/types';
 import { Button, Input, Menu, MenuItem, MenuSeparator, Skeleton, TextButton, TextLink } from '@/ui';
 import { useBreakpoint } from '@/lib/breakpoints';
 import { cn } from '@/lib/cn';
@@ -31,10 +31,10 @@ function groupOf(updatedAt: string, now: Date) {
 }
 
 /** Pinned conversations first, in the order the server gives them, then the rest by date. */
-function grouped(items: ConversationSummary[]) {
+function grouped(items: Conversation[]) {
   const now = new Date();
   const pinned = items.filter((c) => c.pinnedAt);
-  const groups: { label: string; items: ConversationSummary[] }[] = pinned.length
+  const groups: { label: string; items: Conversation[] }[] = pinned.length
     ? [{ label: chat.pinned, items: pinned }]
     : [];
   const dated: typeof groups = [];
@@ -51,19 +51,19 @@ function grouped(items: ConversationSummary[]) {
 const squash = (text: string) => text.replace(/\s+/g, ' ').trim().toLowerCase();
 
 /** What a row is called. An untitled conversation goes by how it began, when that is known. */
-function rowTitle(c: ConversationSummary) {
+function rowTitle(c: Conversation) {
   return c.title === chat.untitled && c.preview ? c.preview : c.title;
 }
 
 /** The preview under the title, unless it only repeats it: titles are often its first words. */
-function rowPreview(c: ConversationSummary, title: string) {
+function rowPreview(c: Conversation, title: string) {
   if (!c.preview) return undefined;
   const a = squash(title).replace(/[….]+$/, '');
   const b = squash(c.preview);
   return b.startsWith(a) || a.startsWith(b) ? undefined : c.preview;
 }
 
-function matches(c: ConversationSummary, needle: string) {
+function matches(c: Conversation, needle: string) {
   return squash(c.title).includes(needle) || squash(c.preview ?? '').includes(needle);
 }
 
@@ -193,7 +193,7 @@ function ConversationRow({
   conversation,
 }: {
   workspaceId: string;
-  conversation: ConversationSummary;
+  conversation: Conversation;
 }) {
   const navigate = useNavigate();
   const params = useParams({ strict: false }) as { conversationId?: string };

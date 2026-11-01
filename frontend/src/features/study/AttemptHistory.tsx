@@ -1,4 +1,5 @@
-import { useStudyAttempts, type StudyAttempt } from '@/api/queries/study';
+import { useStudyAttempts } from '@/api/queries/study';
+import type { StudyAttempt } from '@/api/types';
 import { cn } from '@/lib/cn';
 import { relativeDate } from './format';
 import { s } from './strings';

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type PointerEvent } from 'react';
-import { useRecordAttempt, type AttemptMark } from '@/api/queries/study';
-import type { Citation } from '@/api/types';
+import { useRecordAttempt } from '@/api/queries/study';
+import type { Citation, Study } from '@/api/types';
 import { Button, Kbd, TextButton } from '@/ui';
 import { cn } from '@/lib/cn';
 import { useBreakpoint } from '@/lib/breakpoints';
@@ -21,7 +21,7 @@ type Props = {
   workspaceId: string;
   studyId: string;
   /** The requester's last finished pass, as the server had it when the set loaded. */
-  lastAttempt: AttemptMark | null;
+  lastAttempt: Study['lastAttempt'];
 };
 
 /**
@@ -44,7 +44,7 @@ export function Flashcards({
   const know = idSet(search.know);
   const again = idSet(search.again);
   const record = useRecordAttempt(workspaceId, studyId);
-  const [previous, setPrevious] = useState<AttemptMark | null>();
+  const [previous, setPrevious] = useState<Study['lastAttempt']>();
   // Going back to the last card and on again ends the same pass; it is saved once.
   const savedPass = useRef<string | undefined>(undefined);
 

@@ -1,12 +1,11 @@
 import { useUsage } from '@/api/queries/usage';
-import type { Usage } from '@/api/types';
+import type { Usage, UsageDay } from '@/api/types';
 import { useMe } from '@/auth';
 import { Callout, PageHeader, ProgressRule, SectionHeading, Stat, Stats, TextLink } from '@/ui';
 import { ListLoading } from '@/features/account/ListLoading';
 import { formatBytes, formatCost, formatCount, formatReset } from '@/features/account/format';
 import { strings } from '@/features/account/strings';
 import { DayBars } from './DayBars';
-import type { UsageDay, UsageWithDays } from './types';
 
 const s = strings.usage;
 const LIMITS = ['messagesThisHour', 'messagesToday', 'tokensToday'] as const;
@@ -16,7 +15,7 @@ const DAY_MS = 24 * HOUR_MS;
 export function UsagePage() {
   const { isGuest } = useMe();
   const usage = useUsage();
-  const data = usage.data as UsageWithDays | undefined;
+  const data = usage.data;
 
   return (
     <>
@@ -52,9 +51,8 @@ function sum(days: UsageDay[]) {
 }
 
 /** The last seven days in figures, the fourteen behind them as columns, and the month in a line. */
-function Week({ usage }: { usage: UsageWithDays }) {
-  // An older server sends no `days`; the rest of the page still stands without it.
-  const days = usage.days ?? [];
+function Week({ usage }: { usage: Usage }) {
+  const { days } = usage;
   const week = sum(days.slice(-7));
   const before = days.length >= 14 ? sum(days.slice(-14, -7)) : null;
   const month = usage.last30Days;

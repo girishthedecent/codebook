@@ -62,8 +62,9 @@ export type Memory = Schemas['Memory'];
 export type Study = Schemas['Study'];
 export type StudyDetail = Schemas['StudyDetail'];
 export type StudyType = Study['type'];
+export type StudyAttempt = Schemas['StudyAttempt'];
 export type Usage = Schemas['Usage'];
-export type UsageDay = Usage['daily'][number];
+export type UsageDay = Usage['days'][number];
 export type Demo = Schemas['Demo'];
 export type GraphOverview = Schemas['GraphOverview'];
 export type EvalDataset = Schemas['EvalDataset'];
@@ -79,6 +80,7 @@ export type RateLimitUse = Schemas['RateLimitUse'];
 export type CircuitBreaker = Schemas['CircuitBreaker'];
 export type EvalsStatus = Schemas['EvalsStatus'];
 export type FailedQuery = Schemas['FailedQuery'];
+export type Highlight = Schemas['Highlight'];
 
 // Server-sent events, discriminated on `event`.
 export type TurnEvent = Schemas['TurnEvents'];
@@ -96,6 +98,9 @@ export type FeedbackBody = Body<'/api/v1/messages/{messageId}/feedback', 'post'>
 export type CreateMemoryBody = Body<'/api/v1/memories', 'post'>;
 export type UpdateMemoryBody = Body<'/api/v1/memories/{memoryId}', 'patch'>;
 export type CreateStudyBody = Body<'/api/v1/workspaces/{workspaceId}/study', 'post'>;
+export type RecordAttemptBody = Body<'/api/v1/study/{studyId}/attempts', 'post'>;
+export type CreateHighlightBody = Body<'/api/v1/workspaces/{workspaceId}/highlights', 'post'>;
+export type UpdateHighlightBody = Body<'/api/v1/highlights/{highlightId}', 'patch'>;
 export type StartEvalRunBody = Body<'/api/v1/evals/runs', 'post'>;
 
 export type ContentQuery = Query<'/api/v1/sources/{sourceId}/content', 'get'>;
