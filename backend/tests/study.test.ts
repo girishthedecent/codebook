@@ -13,7 +13,7 @@ import type { StudyInput } from '../src/modules/study/study.dto.js';
 import { MAX_GROUPS } from '../src/modules/study/study.gather.js';
 import { generateStudy as generateOnce } from '../src/modules/study/study.generate.js';
 import { UpstreamError } from '../src/utils/errors/app.error.js';
-import { signedInUser } from './helpers/auth.js';
+import { authAgent, ORIGIN, signedInUser } from './helpers/auth.js';
 import { resetDb } from './helpers/db.js';
 import { apiError, promptModel, scriptedModel, useModels } from './helpers/llm-mock.js';
 import { seedSource } from './helpers/retrieval.js';
@@ -826,5 +826,172 @@ describe('model failures', () => {
     });
 
     await expect(run()).rejects.toBeInstanceOf(UpstreamError);
+  });
+});
+
+describe('attempts', () => {
+  type Attempt = { id: string; score: number; total: number; items: unknown[]; createdAt: string };
+  type Summary = {
+    lastAttempt: { score: number; total: number; createdAt: string } | null;
+    attemptCount: number;
+  };
+
+  const attempt = (score: number, total = 4) => ({
+    score,
+    total,
+    items: Array.from({ length: total }, (_, index) => ({ index, ok: index < score })),
+  });
+  const post = (id: string, body: object, agent = alice) =>
+    agent.post(`/api/v1/study/${id}/attempts`).send(body);
+
+  const ownerId = async () =>
+    (await prismaClient.workspace.findUniqueOrThrow({ where: { id: workspaceId } })).userId;
+
+  async function readySet(
+    type: 'QUIZ' | 'FLASHCARDS' | 'SUMMARY' = 'QUIZ',
+    status: 'DONE' | 'RUNNING' = 'DONE',
+  ) {
+    const artifact = await prismaClient.studyArtifact.create({
+      data: {
+        workspaceId,
+        userId: await ownerId(),
+        type,
+        title: 'Set',
+        input: { sourceIds: [book.sourceId], difficulty: 'medium' },
+        status,
+        data: {},
+      },
+    });
+    return artifact.id;
+  }
+
+  async function listed(agent = alice) {
+    const res = await agent.get(`/api/v1/workspaces/${workspaceId}/study`);
+    return (res.body as { data: { items: (Summary & { id: string })[] } }).data.items;
+  }
+
+  it('saves attempts and lists them newest first', async () => {
+    const id = await readySet();
+    const first = await post(id, attempt(2));
+    expect(first.status).toBe(201);
+    expect((first.body as { data: Attempt }).data).toMatchObject({
+      score: 2,
+      total: 4,
+      items: [
+        { index: 0, ok: true },
+        { index: 1, ok: true },
+        { index: 2, ok: false },
+        { index: 3, ok: false },
+      ],
+    });
+    await post(id, attempt(3));
+    await post(id, attempt(4));
+
+    const res = await alice.get(`/api/v1/study/${id}/attempts`).query({ limit: 2 });
+    expect(res.status).toBe(200);
+    const items = (res.body as { data: { items: Attempt[] } }).data.items;
+    expect(items.map((item) => item.score)).toEqual([4, 3]);
+  });
+
+  it("gives each set the reader's last attempt and count, in the list and the detail", async () => {
+    const tried = await readySet();
+    const untried = await readySet('FLASHCARDS');
+    await post(tried, attempt(1));
+    await post(tried, attempt(3));
+
+    const items = await listed();
+    expect(items.find((item) => item.id === tried)).toMatchObject({
+      lastAttempt: { score: 3, total: 4, createdAt: expect.any(String) },
+      attemptCount: 2,
+    });
+    expect(items.find((item) => item.id === untried)).toMatchObject({
+      lastAttempt: null,
+      attemptCount: 0,
+    });
+
+    const detail = await getStudy(tried);
+    expect(detail.body).toMatchObject({ lastAttempt: { score: 3 }, attemptCount: 2 });
+  });
+
+  it('keeps only the latest attempts per user and set', async () => {
+    const id = await readySet();
+    const { attemptsKept } = appConfig.study;
+    const userId = await ownerId();
+    // Old attempts a minute apart, then one more through the API.
+    await prismaClient.studyAttempt.createMany({
+      data: Array.from({ length: attemptsKept }, (_, i) => ({
+        artifactId: id,
+        userId,
+        score: i % 5,
+        total: 4,
+        items: [],
+        createdAt: new Date(Date.UTC(2026, 0, 1, 0, i)),
+      })),
+    });
+    const oldest = await prismaClient.studyAttempt.findFirstOrThrow({
+      where: { artifactId: id },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    expect((await post(id, attempt(4))).status).toBe(201);
+
+    expect(await prismaClient.studyAttempt.count({ where: { artifactId: id } })).toBe(attemptsKept);
+    expect(await prismaClient.studyAttempt.findUnique({ where: { id: oldest.id } })).toBeNull();
+    expect((await getStudy(id)).body).toMatchObject({
+      lastAttempt: { score: 4 },
+      attemptCount: attemptsKept,
+    });
+  });
+
+  it('lets guests and other readers of the demo keep their own', async () => {
+    const id = await readySet();
+    await post(id, attempt(4));
+    expect((await post(id, attempt(1), bob)).status).toBe(404);
+    expect((await bob.get(`/api/v1/study/${id}/attempts`)).status).toBe(404);
+
+    await prismaClient.workspace.update({ where: { id: workspaceId }, data: { isDemo: true } });
+    const guest = authAgent();
+    await guest.post('/api/auth/sign-in/anonymous').set('origin', ORIGIN).send({});
+
+    expect((await post(id, attempt(1), guest)).status).toBe(201);
+    expect((await post(id, attempt(2), bob)).status).toBe(201);
+
+    const mine = await guest.get(`/api/v1/study/${id}/attempts`);
+    const scores = (mine.body as { data: { items: Attempt[] } }).data.items.map((a) => a.score);
+    expect(scores).toEqual([1]);
+    expect((await listed(guest)).find((item) => item.id === id)).toMatchObject({
+      lastAttempt: { score: 1 },
+      attemptCount: 1,
+    });
+    expect((await listed()).find((item) => item.id === id)).toMatchObject({
+      lastAttempt: { score: 4 },
+      attemptCount: 1,
+    });
+  });
+
+  it('refuses bad attempts, sets without items to try, and sets still generating', async () => {
+    const id = await readySet();
+    for (const body of [
+      { score: 5, total: 4, items: [] },
+      { score: -1, total: 4, items: [] },
+      { score: 1, total: 0, items: [] },
+      { score: 1, total: 4, items: [{ index: -1, ok: true }] },
+      { score: 1, total: 4, items: [{ index: 0 }] },
+      { score: 1, total: 4 },
+    ]) {
+      expect((await post(id, body)).status, JSON.stringify(body)).toBe(400);
+    }
+    const tooMany = await alice.get(`/api/v1/study/${id}/attempts`).query({ limit: 51 });
+    expect(tooMany.status).toBe(400);
+
+    expect((await post(await readySet('SUMMARY'), attempt(1))).status).toBe(400);
+    expect((await post(await readySet('QUIZ', 'RUNNING'), attempt(1))).status).toBe(409);
+  });
+
+  it('goes with its set', async () => {
+    const id = await readySet();
+    await post(id, attempt(2));
+    expect((await alice.delete(`/api/v1/study/${id}`)).status).toBe(204);
+    expect(await prismaClient.studyAttempt.count()).toBe(0);
   });
 });

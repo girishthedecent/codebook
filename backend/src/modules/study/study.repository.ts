@@ -86,6 +86,52 @@ export async function requeueArtifact(artifactId: string, staleBefore: Date) {
   return artifact ?? null;
 }
 
+/** Saves the attempt and drops the user's oldest on this set beyond the newest `keep`. */
+export async function createAttempt(data: Prisma.StudyAttemptUncheckedCreateInput, keep: number) {
+  return prismaClient.$transaction(async (tx) => {
+    const attempt = await tx.studyAttempt.create({ data });
+    const older = await tx.studyAttempt.findMany({
+      where: { artifactId: data.artifactId, userId: data.userId },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      skip: keep,
+      select: { id: true },
+    });
+    if (older.length > 0) {
+      await tx.studyAttempt.deleteMany({ where: { id: { in: older.map((row) => row.id) } } });
+    }
+    return attempt;
+  });
+}
+
+/** The user's latest attempts on a set, newest first. */
+export async function listAttempts(artifactId: string, userId: string, take: number) {
+  return prismaClient.studyAttempt.findMany({
+    where: { artifactId, userId },
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    take,
+  });
+}
+
+type AttemptSummaryRow = {
+  artifactId: string;
+  score: number;
+  total: number;
+  createdAt: Date;
+  count: number;
+};
+
+/** For each of these sets the user has tried: their latest attempt and how many are kept. */
+export async function attemptSummaries(userId: string, artifactIds: string[]) {
+  if (artifactIds.length === 0) return [];
+  return prismaClient.$queryRaw<AttemptSummaryRow[]>`
+    SELECT DISTINCT ON ("artifactId") "artifactId", score, total, "createdAt",
+      count(*) OVER (PARTITION BY "artifactId")::int AS count
+    FROM "StudyAttempt"
+    WHERE "userId" = ${userId} AND "artifactId" = ANY(${artifactIds}::text[])
+    ORDER BY "artifactId", "createdAt" DESC, id DESC
+  `;
+}
+
 export async function deleteArtifact(artifactId: string) {
   await prismaClient.studyArtifact.deleteMany({ where: { id: artifactId } });
 }

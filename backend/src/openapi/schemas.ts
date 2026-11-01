@@ -49,7 +49,9 @@ export const errorSchema = z
       .string()
       .describe(
         'VALIDATION_ERROR, UNAUTHENTICATED, FORBIDDEN, NOT_FOUND, CONFLICT, PAYLOAD_TOO_LARGE, ' +
-          'UPSTREAM_ERROR, SERVICE_UNAVAILABLE, INTERNAL, or on a 429 the limit that was hit: ' +
+          'UPSTREAM_ERROR, SERVICE_UNAVAILABLE, INTERNAL; HIGHLIGHT_LIMIT on a 409 when the ' +
+          'workspace already holds as many highlights as a user may keep; or on a 429 the limit ' +
+          'that was hit: ' +
           'GUEST_LIMIT (the demo allowance), HOURLY_LIMIT, DAILY_LIMIT (questions), ' +
           "TOKEN_BUDGET (the day's model budget) or RATE_LIMITED (any other limit).",
       ),
@@ -261,7 +263,17 @@ export const toolCallSchema = z
   .meta({ id: 'ToolCall' });
 
 export const conversationSchema = z
-  .object({ id, workspaceId: id, title: z.string(), createdAt: date, updatedAt: date })
+  .object({
+    id,
+    workspaceId: id,
+    title: z.string(),
+    // When it was pinned; null when it isn't. Pinned conversations head the list.
+    pinnedAt: date.nullable(),
+    // The first question on one line, at most 120 characters; null before anything is asked.
+    preview: z.string().nullable(),
+    createdAt: date,
+    updatedAt: date,
+  })
   .meta({ id: 'Conversation' });
 
 export const messageSchema = z
@@ -534,6 +546,9 @@ export const studySchema = z
     promptVersion: z.string().nullable(),
     createdAt: date,
     updatedAt: date,
+    // The requester's own latest attempt and how many of theirs are kept (at most 50).
+    lastAttempt: z.object({ score: z.int(), total: z.int(), createdAt: date }).nullable(),
+    attemptCount: z.int(),
   })
   .meta({ id: 'Study' });
 
@@ -544,6 +559,35 @@ export const studyDetailSchema = studySchema
     sources: z.array(citationSchema.omit({ valid: true, supported: true })),
   })
   .meta({ id: 'StudyDetail' });
+
+export const studyAttemptSchema = z
+  .object({
+    id,
+    score: z.int(),
+    total: z.int(),
+    // Each item answered: its place in the set, and whether it was right.
+    items: z.array(z.object({ index: z.int(), ok: z.boolean() })),
+    createdAt: date,
+  })
+  .meta({ id: 'StudyAttempt' });
+
+export const highlightSchema = z
+  .object({
+    id,
+    sourceId: id,
+    sourceTitle: z.string(),
+    sourceType: z.enum(SourceType),
+    // Exactly one of page (a PDF page) and path (a file of a repository or website) is set.
+    page: z.int().nullable(),
+    path: z.string().nullable(),
+    lineStart: z.int().nullable(),
+    lineEnd: z.int().nullable(),
+    heading: z.string().nullable(),
+    text: z.string(),
+    note: z.string().nullable(),
+    createdAt: date,
+  })
+  .meta({ id: 'Highlight' });
 
 const usageWindowSchema = z.object({
   messages: z.int(),
@@ -570,6 +614,17 @@ export const usageSchema = z
     last30Days: usageWindowSchema,
     // The last 14 UTC days, oldest first, today last; days without activity are zeros.
     daily: z.array(usageDaySchema),
+    // The same 14 days for charts: questions asked, tokens of model calls in and out, and what
+    // every call cost in US dollars.
+    days: z.array(
+      z.object({
+        date: z.string().describe('UTC calendar day, YYYY-MM-DD'),
+        questions: z.int(),
+        tokensIn: z.int(),
+        tokensOut: z.int(),
+        costUsd: z.number(),
+      }),
+    ),
     sources: z.int(),
     storage: z.object({ pdfBytes: z.int(), limitBytes: z.int() }),
     limits: z.object({

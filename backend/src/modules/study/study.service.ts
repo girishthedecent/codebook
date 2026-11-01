@@ -1,21 +1,31 @@
 import { appConfig } from '../../config/app.config.js';
 import { inngest } from '../../config/inngest.config.js';
-import type { Prisma, StudyArtifact } from '../../generated/prisma/client.js';
+import type { Prisma, StudyArtifact, StudyType } from '../../generated/prisma/client.js';
 import { studyGenerateRequested } from '../../inngest/events.js';
-import { ConflictError, NotFoundError } from '../../utils/errors/app.error.js';
+import { BadRequestError, ConflictError, NotFoundError } from '../../utils/errors/app.error.js';
 import { assertTokenBudget } from '../../utils/quotas.js';
 import type { CitationRef } from '../citations/citations.types.js';
 import { assertWorkspaceAccess } from '../workspaces/workspace.service.js';
-import type { CreateStudyInput, ListStudyQuery, StudyInput } from './study.dto.js';
+import type {
+  AttemptSummary,
+  CreateAttemptInput,
+  CreateStudyInput,
+  ListAttemptsQuery,
+  ListStudyQuery,
+  StudyInput,
+} from './study.dto.js';
 import { citedNumbers, defaultCount, LABELS, promptFor } from './study.generate.js';
 import {
+  attemptSummaries,
   createArtifact,
+  createAttempt,
   deleteArtifact,
   findArtifact,
   findArtifactForUser,
   findTocPath,
   findWorkspaceSources,
   listArtifacts,
+  listAttempts,
   requeueArtifact,
   updateActiveArtifact,
   updateArtifactIfExists,
@@ -37,6 +47,46 @@ export async function getStudyService(userId: string, artifactId: string) {
   const artifact = await findArtifactForUser(userId, artifactId, { includeDemo: true });
   if (!artifact) throw new NotFoundError('Study set not found');
   return artifact;
+}
+
+// Sets with items to get right or wrong; summaries and concept maps are only read.
+const ATTEMPTED_TYPES: ReadonlySet<StudyType> = new Set(['QUIZ', 'FLASHCARDS']);
+
+/**
+ * A pass through a quiz or a deck. Anyone who may read the set may save one (guests on the
+ * demo too): attempts are the user's own, like conversations.
+ */
+export async function createAttemptService(
+  userId: string,
+  artifactId: string,
+  input: CreateAttemptInput,
+) {
+  const artifact = await getStudyService(userId, artifactId);
+  if (!ATTEMPTED_TYPES.has(artifact.type)) {
+    throw new BadRequestError('Only quizzes and flashcards take attempts');
+  }
+  if (artifact.status !== 'DONE') throw new ConflictError('This study set is not ready yet');
+  return createAttempt({ artifactId, userId, ...input }, appConfig.study.attemptsKept);
+}
+
+export async function listAttemptsService(
+  userId: string,
+  artifactId: string,
+  { limit }: ListAttemptsQuery,
+) {
+  await getStudyService(userId, artifactId);
+  return listAttempts(artifactId, userId, limit);
+}
+
+/** The user's record with each of these sets, by set id; sets they never tried are left out. */
+export async function attemptSummariesService(userId: string, artifactIds: string[]) {
+  const rows = await attemptSummaries(userId, artifactIds);
+  return new Map<string, AttemptSummary>(
+    rows.map(({ artifactId, score, total, createdAt, count }) => [
+      artifactId,
+      { lastAttempt: { score, total, createdAt }, attemptCount: count },
+    ]),
+  );
 }
 
 export async function createStudyService(

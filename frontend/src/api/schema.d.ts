@@ -521,7 +521,10 @@ export interface paths {
         };
         options?: never;
         head?: never;
-        /** Rename a conversation */
+        /**
+         * Rename, pin or unpin a conversation
+         * @description Send `title`, `pinned` or both. Pinning a pinned conversation keeps its pin time.
+         */
         patch: {
             parameters: {
                 query?: never;
@@ -534,7 +537,8 @@ export interface paths {
             requestBody?: {
                 content: {
                     "application/json": {
-                        title: string;
+                        pinned?: boolean;
+                        title?: string;
                     };
                 };
             };
@@ -1257,7 +1261,7 @@ export interface paths {
                     };
                     content: {
                         "application/json": {
-                            /** @description VALIDATION_ERROR, UNAUTHENTICATED, FORBIDDEN, NOT_FOUND, CONFLICT, PAYLOAD_TOO_LARGE, UPSTREAM_ERROR, SERVICE_UNAVAILABLE, INTERNAL, or on a 429 the limit that was hit: GUEST_LIMIT (the demo allowance), HOURLY_LIMIT, DAILY_LIMIT (questions), TOKEN_BUDGET (the day's model budget) or RATE_LIMITED (any other limit). */
+                            /** @description VALIDATION_ERROR, UNAUTHENTICATED, FORBIDDEN, NOT_FOUND, CONFLICT, PAYLOAD_TOO_LARGE, UPSTREAM_ERROR, SERVICE_UNAVAILABLE, INTERNAL; HIGHLIGHT_LIMIT on a 409 when the workspace already holds as many highlights as a user may keep; or on a 429 the limit that was hit: GUEST_LIMIT (the demo allowance), HOURLY_LIMIT, DAILY_LIMIT (questions), TOKEN_BUDGET (the day's model budget) or RATE_LIMITED (any other limit). */
                             code: string;
                             correlationId?: string;
                             data: components["schemas"]["Readiness"];
@@ -1282,6 +1286,150 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/v1/highlights/{highlightId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete a highlight */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    highlightId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Deleted */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Invalid request (the details list each issue) */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Not signed in */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Not allowed (e.g. a guest, or writing to the demo workspace) */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Not found, or not yours */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        /**
+         * Change a highlight's note
+         * @description An empty or null `note` removes it.
+         */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    highlightId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        note: string | null;
+                    };
+                };
+            };
+            responses: {
+                /** @description Updated */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: components["schemas"]["Highlight"];
+                            message: string;
+                            /** @enum {boolean} */
+                            success: true;
+                        };
+                    };
+                };
+                /** @description Invalid request (the details list each issue) */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Not signed in */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Not allowed (e.g. a guest, or writing to the demo workspace) */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Not found, or not yours */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
         trace?: never;
     };
     "/api/v1/me": {
@@ -3334,6 +3482,157 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/study/{studyId}/attempts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Your latest attempts at a quiz or a deck of flashcards, newest first */
+        get: {
+            parameters: {
+                query?: {
+                    limit?: number;
+                };
+                header?: never;
+                path: {
+                    studyId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Attempts */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: {
+                                items: components["schemas"]["StudyAttempt"][];
+                            };
+                            message: string;
+                            /** @enum {boolean} */
+                            success: true;
+                        };
+                    };
+                };
+                /** @description Invalid request (the details list each issue) */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Not signed in */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Not found, or not yours */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        /**
+         * Save how a pass through a quiz or a deck of flashcards went
+         * @description For anyone who can read the set, guests on the demo included. Only finished quizzes and flashcards take attempts (400 for other types, 409 until the set is DONE). The latest 50 per user and set are kept; older ones are dropped.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    studyId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        items: {
+                            index: number;
+                            ok: boolean;
+                        }[];
+                        score: number;
+                        total: number;
+                    };
+                };
+            };
+            responses: {
+                /** @description Saved */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: components["schemas"]["StudyAttempt"];
+                            message: string;
+                            /** @enum {boolean} */
+                            success: true;
+                        };
+                    };
+                };
+                /** @description Invalid request (the details list each issue) */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Not signed in */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Not found, or not yours */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Conflicts with the current state */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/study/{studyId}/cancel": {
         parameters: {
             query?: never;
@@ -3925,7 +4224,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Your conversations in a workspace, recently updated first */
+        /**
+         * Your conversations in a workspace: pinned ones first, then recently updated
+         * @description Pinned conversations come first, the most recently pinned on top; the rest follow by last activity. Pinning does not count as activity.
+         */
         get: {
             parameters: {
                 query?: {
@@ -4051,6 +4353,175 @@ export interface paths {
                 };
                 /** @description Not found, or not yours */
                 404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/highlights": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Your highlights in a workspace, newest first
+         * @description Only your own; give `sourceId` for one source.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    cursor?: string;
+                    limit?: number;
+                    sourceId?: string;
+                };
+                header?: never;
+                path: {
+                    workspaceId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description A page of highlights */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: {
+                                items: components["schemas"]["Highlight"][];
+                                nextCursor: string | null;
+                            };
+                            message: string;
+                            /** @enum {boolean} */
+                            success: true;
+                        };
+                    };
+                };
+                /** @description Invalid request (the details list each issue) */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Not signed in */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Not found, or not yours */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        /**
+         * Highlight a passage of a source
+         * @description Give `page` for a PDF or `path` for a file (with `lineStart` and `lineEnd` for code), not both. Workspace owners only; guests get a 403. A user keeps at most 500 per workspace (409 HIGHLIGHT_LIMIT).
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    workspaceId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        heading?: string;
+                        lineEnd?: number;
+                        lineStart?: number;
+                        note?: string;
+                        page?: number;
+                        path?: string;
+                        /** Format: cuid */
+                        sourceId: string;
+                        text: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Saved */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: components["schemas"]["Highlight"];
+                            message: string;
+                            /** @enum {boolean} */
+                            success: true;
+                        };
+                    };
+                };
+                /** @description Invalid request (the details list each issue) */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Not signed in */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Not allowed (e.g. a guest, or writing to the demo workspace) */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Not found, or not yours */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Conflicts with the current state */
+                409: {
                     headers: {
                         [name: string]: unknown;
                     };
@@ -4624,6 +5095,9 @@ export interface components {
             /** Format: date-time */
             createdAt: string;
             id: string;
+            /** Format: date-time */
+            pinnedAt: string | null;
+            preview: string | null;
             title: string;
             /** Format: date-time */
             updatedAt: string;
@@ -4637,6 +5111,9 @@ export interface components {
                 items: components["schemas"]["Message"][];
                 nextCursor: string | null;
             };
+            /** Format: date-time */
+            pinnedAt: string | null;
+            preview: string | null;
             title: string;
             /** Format: date-time */
             updatedAt: string;
@@ -4648,7 +5125,7 @@ export interface components {
             workspace: components["schemas"]["Workspace"];
         };
         Error: {
-            /** @description VALIDATION_ERROR, UNAUTHENTICATED, FORBIDDEN, NOT_FOUND, CONFLICT, PAYLOAD_TOO_LARGE, UPSTREAM_ERROR, SERVICE_UNAVAILABLE, INTERNAL, or on a 429 the limit that was hit: GUEST_LIMIT (the demo allowance), HOURLY_LIMIT, DAILY_LIMIT (questions), TOKEN_BUDGET (the day's model budget) or RATE_LIMITED (any other limit). */
+            /** @description VALIDATION_ERROR, UNAUTHENTICATED, FORBIDDEN, NOT_FOUND, CONFLICT, PAYLOAD_TOO_LARGE, UPSTREAM_ERROR, SERVICE_UNAVAILABLE, INTERNAL; HIGHLIGHT_LIMIT on a 409 when the workspace already holds as many highlights as a user may keep; or on a 429 the limit that was hit: GUEST_LIMIT (the demo allowance), HOURLY_LIMIT, DAILY_LIMIT (questions), TOKEN_BUDGET (the day's model budget) or RATE_LIMITED (any other limit). */
             code: string;
             correlationId?: string;
             details?: {
@@ -4893,6 +5370,22 @@ export interface components {
                 via: string | null;
             }[];
             truncated: boolean;
+        };
+        Highlight: {
+            /** Format: date-time */
+            createdAt: string;
+            heading: string | null;
+            id: string;
+            lineEnd: number | null;
+            lineStart: number | null;
+            note: string | null;
+            page: number | null;
+            path: string | null;
+            sourceId: string;
+            sourceTitle: string;
+            /** @enum {string} */
+            sourceType: "PDF" | "GITHUB_REPO" | "WEBSITE";
+            text: string;
         };
         IngestionFailure: {
             error: string | null;
@@ -5213,6 +5706,7 @@ export interface components {
             skippedReason: string | null;
         };
         Study: {
+            attemptCount: number;
             /** Format: date-time */
             createdAt: string;
             error: string | null;
@@ -5228,6 +5722,12 @@ export interface components {
                 tocNodeId?: string;
                 topic?: string;
             };
+            lastAttempt: {
+                /** Format: date-time */
+                createdAt: string;
+                score: number;
+                total: number;
+            } | null;
             model: string | null;
             promptVersion: string | null;
             /** @enum {string} */
@@ -5239,7 +5739,19 @@ export interface components {
             updatedAt: string;
             workspaceId: string;
         };
+        StudyAttempt: {
+            /** Format: date-time */
+            createdAt: string;
+            id: string;
+            items: {
+                index: number;
+                ok: boolean;
+            }[];
+            score: number;
+            total: number;
+        };
         StudyDetail: {
+            attemptCount: number;
             /** Format: date-time */
             createdAt: string;
             data?: unknown;
@@ -5256,6 +5768,12 @@ export interface components {
                 tocNodeId?: string;
                 topic?: string;
             };
+            lastAttempt: {
+                /** Format: date-time */
+                createdAt: string;
+                score: number;
+                total: number;
+            } | null;
             model: string | null;
             promptVersion: string | null;
             sources: {
@@ -5365,6 +5883,14 @@ export interface components {
                 costUsd: string;
                 day: string;
                 tokens: number;
+            }[];
+            days: {
+                costUsd: number;
+                /** @description UTC calendar day, YYYY-MM-DD */
+                date: string;
+                questions: number;
+                tokensIn: number;
+                tokensOut: number;
             }[];
             guest: {
                 limit: number;

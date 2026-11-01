@@ -29,6 +29,12 @@ import {
   walkQuerySchema,
 } from '../modules/graph/graph.validator.js';
 import {
+  createHighlightSchema,
+  highlightParamsSchema,
+  listHighlightsQuerySchema,
+  updateHighlightSchema,
+} from '../modules/highlights/highlight.validator.js';
+import {
   createMemorySchema,
   listMemoriesQuerySchema,
   memoryParamsSchema,
@@ -50,7 +56,9 @@ import {
   uploadFieldsSchema,
 } from '../modules/sources/source.validator.js';
 import {
+  createAttemptSchema,
   createStudySchema,
+  listAttemptsQuerySchema,
   listStudyQuerySchema,
   studyParamsSchema,
 } from '../modules/study/study.validator.js';
@@ -471,7 +479,10 @@ function apiRoutes(): Route[] {
       method: 'get',
       path: `${workspace}/conversations`,
       tags: ['chat'],
-      summary: 'Your conversations in a workspace, recently updated first',
+      summary: 'Your conversations in a workspace: pinned ones first, then recently updated',
+      description:
+        'Pinned conversations come first, the most recently pinned on top; the rest follow by ' +
+        'last activity. Pinning does not count as activity.',
       access: 'user',
       request: { ...workspaceParams, query: listConversationsQuerySchema },
       responses: { 200: ok('A page of conversations', s.page(s.conversationSchema)) },
@@ -502,7 +513,9 @@ function apiRoutes(): Route[] {
       method: 'patch',
       path: `${API}/conversations/{conversationId}`,
       tags: ['chat'],
-      summary: 'Rename a conversation',
+      summary: 'Rename, pin or unpin a conversation',
+      description:
+        'Send `title`, `pinned` or both. Pinning a pinned conversation keeps its pin time.',
       access: 'user',
       request: {
         params: conversationParamsSchema,
@@ -678,6 +691,81 @@ function apiRoutes(): Route[] {
       request: { params: studyParamsSchema },
       responses: { 200: ok('Cancelled', s.studySchema) },
       errors: [400, 403, 404, 409],
+    },
+
+    {
+      method: 'get',
+      path: `${API}/study/{studyId}/attempts`,
+      tags: ['study'],
+      summary: 'Your latest attempts at a quiz or a deck of flashcards, newest first',
+      access: 'user',
+      request: { params: studyParamsSchema, query: listAttemptsQuerySchema },
+      responses: {
+        200: ok('Attempts', z.object({ items: z.array(s.studyAttemptSchema) })),
+      },
+      errors: [400, 404],
+    },
+    {
+      method: 'post',
+      path: `${API}/study/{studyId}/attempts`,
+      tags: ['study'],
+      summary: 'Save how a pass through a quiz or a deck of flashcards went',
+      description:
+        'For anyone who can read the set, guests on the demo included. Only finished quizzes ' +
+        'and flashcards take attempts (400 for other types, 409 until the set is DONE). The ' +
+        `latest ${appConfig.study.attemptsKept} per user and set are kept; older ones are dropped.`,
+      access: 'user',
+      request: { params: studyParamsSchema, body: { content: json(createAttemptSchema) } },
+      responses: { 201: ok('Saved', s.studyAttemptSchema) },
+      errors: [400, 404, 409],
+    },
+
+    // Highlights
+    {
+      method: 'get',
+      path: `${workspace}/highlights`,
+      tags: ['highlights'],
+      summary: 'Your highlights in a workspace, newest first',
+      description: 'Only your own; give `sourceId` for one source.',
+      access: 'user',
+      request: { ...workspaceParams, query: listHighlightsQuerySchema },
+      responses: { 200: ok('A page of highlights', s.page(s.highlightSchema)) },
+      errors: [400, 404],
+    },
+    {
+      method: 'post',
+      path: `${workspace}/highlights`,
+      tags: ['highlights'],
+      summary: 'Highlight a passage of a source',
+      description:
+        'Give `page` for a PDF or `path` for a file (with `lineStart` and `lineEnd` for code), ' +
+        'not both. Workspace owners only; guests get a 403. A user keeps at most ' +
+        `${appConfig.highlights.maxPerWorkspace} per workspace (409 HIGHLIGHT_LIMIT).`,
+      access: 'user',
+      request: { ...workspaceParams, body: { content: json(createHighlightSchema) } },
+      responses: { 201: ok('Saved', s.highlightSchema) },
+      errors: [400, 403, 404, 409],
+    },
+    {
+      method: 'patch',
+      path: `${API}/highlights/{highlightId}`,
+      tags: ['highlights'],
+      summary: "Change a highlight's note",
+      description: 'An empty or null `note` removes it.',
+      access: 'user',
+      request: { params: highlightParamsSchema, body: { content: json(updateHighlightSchema) } },
+      responses: { 200: ok('Updated', s.highlightSchema) },
+      errors: [400, 403, 404],
+    },
+    {
+      method: 'delete',
+      path: `${API}/highlights/{highlightId}`,
+      tags: ['highlights'],
+      summary: 'Delete a highlight',
+      access: 'user',
+      request: { params: highlightParamsSchema },
+      responses: { 204: ok('Deleted') },
+      errors: [400, 403, 404],
     },
 
     // Monitoring (admin)

@@ -50,3 +50,20 @@ export const listStudyQuerySchema = paginationQuerySchema.extend({
 });
 
 export const studyParamsSchema = z.object({ studyId: z.cuid() });
+
+// What a client reports after a pass through a quiz or a deck. `index` is the item's place in
+// the set, so a client can replay the ones that were missed.
+export const createAttemptSchema = z
+  .object({
+    score: z.int().min(0).max(1_000),
+    total: z.int().min(1).max(1_000),
+    items: z.array(z.object({ index: z.int().min(0).max(999), ok: z.boolean() })).max(1_000),
+  })
+  .refine((attempt) => attempt.score <= attempt.total, {
+    path: ['score'],
+    message: 'Must not be more than total',
+  });
+
+export const listAttemptsQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(appConfig.study.attemptsKept).default(20),
+});

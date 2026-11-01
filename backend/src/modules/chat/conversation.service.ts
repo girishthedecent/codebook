@@ -10,6 +10,7 @@ import { assertWorkspaceAccess } from '../workspaces/workspace.service.js';
 import type {
   CreateConversationInput,
   FeedbackInput,
+  ListConversationsQuery,
   UpdateConversationInput,
 } from './conversation.dto.js';
 import {
@@ -20,13 +21,14 @@ import {
   findConversationForUser,
   findMessageForUser,
   firstExchange,
+  firstQuestion,
   listConversations,
   listMessages,
   messagesAfter,
   replaceTitle,
   saveSummary,
   setFeedback,
-  updateConversationTitle,
+  updateConversation,
 } from './conversation.repository.js';
 
 // Replaced by the start of the first question when it is asked, and by a generated title
@@ -71,7 +73,7 @@ export async function createConversationService(
 export async function listConversationsService(
   userId: string,
   workspaceId: string,
-  page: PaginationQuery,
+  page: ListConversationsQuery,
 ) {
   await assertWorkspaceAccess(userId, workspaceId, { allowDemoRead: true });
   return listConversations(userId, workspaceId, page);
@@ -83,9 +85,13 @@ export async function getConversationService(
   page: PaginationQuery,
 ) {
   const conversation = await conversationFor(userId, conversationId);
+  const [messages, question] = await Promise.all([
+    listMessages(conversation.id, page),
+    firstQuestion(conversation.id),
+  ]);
   return {
-    conversation,
-    messages: await listMessages(conversation.id, page),
+    conversation: { ...conversation, messages: question },
+    messages,
     // Visitors of the demo chat in someone else's workspace; what a turn cost is for owners.
     ownsWorkspace: conversation.workspace.userId === userId,
   };
@@ -96,9 +102,9 @@ export async function updateConversationService(
   conversationId: string,
   input: UpdateConversationInput,
 ) {
-  const conversation = await updateConversationTitle(userId, conversationId, input.title);
+  const conversation = await updateConversation(userId, conversationId, input);
   if (!conversation) throw new NotFoundError('Conversation not found');
-  return conversation;
+  return { ...conversation, messages: await firstQuestion(conversation.id) };
 }
 
 export async function deleteConversationService(userId: string, conversationId: string) {

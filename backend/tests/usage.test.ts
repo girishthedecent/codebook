@@ -67,6 +67,14 @@ describe('GET /usage/me', () => {
     expect(res.status).toBe(200);
     expect(res.body.data.daily).toHaveLength(14);
     expect(res.body.data.daily.at(-1)).toMatchObject({ answers: 0, tokens: 0, costUsd: '0' });
+    expect(res.body.data.days).toHaveLength(14);
+    expect(res.body.data.days.at(-1)).toEqual({
+      date: new Date().toISOString().slice(0, 10),
+      questions: 0,
+      tokensIn: 0,
+      tokensOut: 0,
+      costUsd: 0,
+    });
     expect(res.body.data).toMatchObject({
       today: { messages: 0, tokensIn: 0, tokensOut: 0, costUsd: '0' },
       sources: 0,
@@ -170,6 +178,51 @@ describe('myUsageService', () => {
     expect(daily[1]).toEqual({ day: '2026-10-08', answers: 0, tokens: 0, costUsd: '0' });
     // The question from 14 days ago is left out.
     expect(daily.reduce((sum, d) => sum + d.answers, 0)).toBe(4);
+  });
+
+  it('gives the same 14 days with tokens in and out apart and cost as a number', async () => {
+    await seedQuestions(alice.userId, workspaceId, [hoursAgo(1), hoursAgo(2), daysAgo(13)]);
+    await prismaClient.usageEvent.createMany({
+      data: [
+        usageEvent(alice.userId, hoursAgo(1)),
+        usageEvent(alice.userId, hoursAgo(2), {
+          type: 'EMBEDDING',
+          tokensIn: 999,
+          tokensOut: 0,
+          costUsd: '0.0002',
+        }),
+        usageEvent(alice.userId, daysAgo(13), { tokensIn: 7, tokensOut: 3, costUsd: '0.5' }),
+        usageEvent(alice.userId, daysAgo(14)),
+      ],
+    });
+    // Someone else's day never shows up.
+    const bob = await signedInUser('bob@example.com');
+    await prismaClient.usageEvent.create({ data: usageEvent(bob.userId, hoursAgo(1)) });
+
+    const { days } = await myUsageService(alice.userId, ANY_LIMIT_KEY, NOW.getTime());
+    expect(days).toHaveLength(14);
+    expect(days[0]).toEqual({
+      date: '2026-10-07',
+      questions: 1,
+      tokensIn: 7,
+      tokensOut: 3,
+      costUsd: 0.5,
+    });
+    expect(days[1]).toEqual({
+      date: '2026-10-08',
+      questions: 0,
+      tokensIn: 0,
+      tokensOut: 0,
+      costUsd: 0,
+    });
+    // Embedding tokens stay out of the token counts; their cost is in.
+    expect(days[13]).toEqual({
+      date: '2026-10-20',
+      questions: 2,
+      tokensIn: 100,
+      tokensOut: 10,
+      costUsd: 0.0012,
+    });
   });
 
   it('starts "today" at UTC midnight', async () => {

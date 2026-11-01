@@ -5,6 +5,7 @@ import { turnRouter } from '../../modules/chat/turn.router.js';
 import { demoRouter } from '../../modules/demo/demo.router.js';
 import { evalsRouter } from '../../modules/evals/evals.router.js';
 import healthRouter from '../../modules/health/health.router.js';
+import { highlightRouter } from '../../modules/highlights/highlight.router.js';
 import { memoryRouter } from '../../modules/memory/memory.router.js';
 import { monitoringRouter } from '../../modules/monitoring/monitoring.router.js';
 import { sourceRouter } from '../../modules/sources/source.router.js';
@@ -25,6 +26,7 @@ export const v1Mounts: ReadonlyArray<readonly [prefix: string, router: express.R
   ['/messages', messageRouter],
   ['/memories', memoryRouter],
   ['/study', studyRouter],
+  ['/highlights', highlightRouter],
   ['/usage', usageRouter],
   ['/monitoring', monitoringRouter],
   ['/evals', evalsRouter],

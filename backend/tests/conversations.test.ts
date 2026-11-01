@@ -164,6 +164,110 @@ describe('conversations API', () => {
     expect((await alice.agent.delete(`/api/v1/conversations/${id}`)).status).toBe(404);
   });
 
+  describe('pins', () => {
+    const patch = (id: string, body: object, user = alice) =>
+      user.agent.patch(`/api/v1/conversations/${id}`).send(body);
+
+    async function listIds(limit = 100) {
+      const ids: string[] = [];
+      let cursor: string | null = null;
+      do {
+        const query: Record<string, string | number> = { limit };
+        if (cursor) query.cursor = cursor;
+        const res = await alice.agent.get(conversationsPath()).query(query);
+        expect(res.status).toBe(200);
+        const page = (res.body as { data: Page<ConversationBody> }).data;
+        ids.push(...page.items.map((item) => item.id));
+        cursor = page.nextCursor;
+      } while (cursor);
+      return ids;
+    }
+
+    it('pins and unpins without counting as activity', async () => {
+      const { id } = await startConversation();
+      const before = await loadConversation(id);
+
+      const pinned = await patch(id, { pinned: true });
+      expect(pinned.status).toBe(200);
+      const body = (pinned.body as { data: ConversationBody & { pinnedAt: string | null } }).data;
+      expect(body.pinnedAt).toEqual(expect.any(String));
+      expect(body.title).toBe('New conversation');
+      expect((await loadConversation(id)).updatedAt).toEqual(before.updatedAt);
+
+      // Pinning again keeps the pin time.
+      const again = await patch(id, { pinned: true });
+      expect((again.body as { data: { pinnedAt: string } }).data.pinnedAt).toBe(body.pinnedAt);
+
+      const unpinned = await patch(id, { pinned: false });
+      expect((unpinned.body as { data: { pinnedAt: string | null } }).data.pinnedAt).toBeNull();
+      expect((await loadConversation(id)).updatedAt).toEqual(before.updatedAt);
+    });
+
+    it('renames and pins in one request', async () => {
+      const { id } = await startConversation();
+      const res = await patch(id, { title: 'Salts', pinned: true });
+      expect(res.status).toBe(200);
+      expect((res.body as { data: object }).data).toMatchObject({
+        title: 'Salts',
+        pinnedAt: expect.any(String),
+      });
+      expect((await patch(id, { pinned: 'yes' })).status).toBe(400);
+      expect((await patch(id, { pinned: true }, bob)).status).toBe(404);
+      expect((await loadConversation(id)).pinnedAt).not.toBeNull();
+    });
+
+    it('lists pinned conversations first, the latest pinned on top, across pages', async () => {
+      const ids = [];
+      for (let i = 0; i < 6; i++) ids.push((await startConversation()).id);
+      // Pin times a second apart, so the order doesn't depend on timing.
+      await prismaClient.conversation.update({
+        where: { id: ids[1] },
+        data: { pinnedAt: new Date('2026-01-01T00:00:01Z') },
+      });
+      await prismaClient.conversation.update({
+        where: { id: ids[3] },
+        data: { pinnedAt: new Date('2026-01-01T00:00:02Z') },
+      });
+
+      const expected = [ids[3], ids[1], ids[5], ids[4], ids[2], ids[0]];
+      expect(await listIds()).toEqual(expected);
+      for (const limit of [1, 2, 4]) expect(await listIds(limit)).toEqual(expected);
+    });
+
+    it('refuses a cursor it did not make', async () => {
+      const cursor = Buffer.from(JSON.stringify(['2026-01-01T00:00:00Z', 'x'])).toString(
+        'base64url',
+      );
+      expect((await alice.agent.get(conversationsPath()).query({ cursor })).status).toBe(400);
+    });
+  });
+
+  it('previews the first question, on one line and cut to 120 characters', async () => {
+    const { id: empty } = await startConversation();
+    const { id: short } = await startConversation();
+    const { id: long } = await startConversation();
+    await addMessages(short, [
+      { role: 'USER', content: '  Why salt\n\na hash?  ' },
+      { role: 'ASSISTANT', content: 'So equal passwords hash apart.' },
+      { role: 'USER', content: 'And pepper?' },
+    ]);
+    await addMessages(long, [{ role: 'USER', content: 'word '.repeat(60) }]);
+
+    const res = await alice.agent.get(conversationsPath());
+    const items = (res.body as { data: Page<ConversationBody & { preview: string | null }> }).data
+      .items;
+    const preview = (id: string) => items.find((item) => item.id === id)!.preview;
+    expect(preview(empty)).toBeNull();
+    expect(preview(short)).toBe('Why salt a hash?');
+    expect(Array.from(preview(long)!)).toHaveLength(120);
+    expect(preview(long)!.endsWith('word…')).toBe(true);
+
+    const detail = await alice.agent.get(`/api/v1/conversations/${short}`);
+    expect((detail.body as { data: { preview: string } }).data.preview).toBe('Why salt a hash?');
+    const renamed = await alice.agent.patch(`/api/v1/conversations/${short}`).send({ title: 'S' });
+    expect((renamed.body as { data: { preview: string } }).data.preview).toBe('Why salt a hash?');
+  });
+
   it("hides other users' conversations and workspaces behind a 404", async () => {
     const { id } = await startConversation();
     const [, answer] = await addMessages(id, exchange(2));

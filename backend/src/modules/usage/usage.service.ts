@@ -60,7 +60,20 @@ export async function myUsageService(userId: string, limitKey: string, now = Dat
     today: todayUsage,
     last7Days: windows.get('last7Days')!,
     last30Days: windows.get('last30Days')!,
-    daily: history,
+    daily: history.map(({ day, answers, tokensIn, tokensOut, costUsd }) => ({
+      day,
+      answers,
+      tokens: tokensIn + tokensOut,
+      costUsd,
+    })),
+    // The same 14 days with tokens in and out apart and cost as a number, for charts.
+    days: history.map(({ day, answers, tokensIn, tokensOut, costUsd }) => ({
+      date: day,
+      questions: answers,
+      tokensIn,
+      tokensOut,
+      costUsd: Number(costUsd),
+    })),
     sources: totals.sources,
     storage: { pdfBytes: totals.pdfBytes, limitBytes: pdfStorageBytesPerUser },
     limits: {
