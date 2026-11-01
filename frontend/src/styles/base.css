@@ -178,6 +178,19 @@
     border-bottom: 1px solid var(--rule);
   }
 
+  /* Reading preferences from Settings (lib/prefs.ts). Medium and narrow are the rules above;
+     a width set on the element itself (a utility) still wins over the wide measure. */
+  :root[data-text-size='s'] .prose {
+    font-size: 1rem;
+  }
+  :root[data-text-size='l'] .prose {
+    font-size: 1.1875rem;
+    line-height: 1.6;
+  }
+  :root[data-measure='wide'] .prose {
+    max-width: 80ch;
+  }
+
   :focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: 2px;

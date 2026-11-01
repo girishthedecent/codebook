@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useSyncExternalStore, type RefObject } from 'react';
+import { useEffect, useState, useSyncExternalStore, type RefObject } from 'react';
 import { getTheme, setTheme } from '@/lib/theme';
 
 // Small browser hooks for the landing page. Each returns the same value on the server and on
@@ -91,17 +91,4 @@ export function useVisitor(): Visitor {
     return () => controller.abort();
   }, []);
   return visitor;
-}
-
-/** Calls `tick` about every `ms` while `active`, with a stable ref so callers needn't memoise. */
-export function useInterval(tick: () => void, ms: number, active: boolean) {
-  const latest = useRef(tick);
-  useEffect(() => {
-    latest.current = tick;
-  });
-  useEffect(() => {
-    if (!active) return;
-    const id = setInterval(() => latest.current(), ms);
-    return () => clearInterval(id);
-  }, [ms, active]);
 }

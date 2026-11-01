@@ -69,10 +69,17 @@ export const landing = {
     readme: 'Full tables in the README',
   },
   footer: {
-    line: 'Built as a portfolio project.',
+    tagline: 'Ask a book and its code together, and open every answer at its source.',
+    nav: 'More about CodeBook',
+    demo: 'Try the demo',
+    workspace: 'Open your workspace',
+    signIn: 'Sign in',
+    source: 'Source on GitHub',
+    evals: 'How it was measured',
+    line: 'Built as a portfolio project. Set in Source Serif 4 and IBM Plex.',
     credits:
       'The demo’s book is François Fleuret’s The Little Book of Deep Learning (CC BY-NC-SA 4.0). Its repository is Andrej Karpathy’s nanoGPT (MIT).',
-    source: 'Source on GitHub',
+    top: 'Back to the top',
   },
   demo: {
     waking: 'Waking the server, this can take up to a minute.',

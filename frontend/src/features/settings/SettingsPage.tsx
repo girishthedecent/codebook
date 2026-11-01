@@ -4,6 +4,8 @@ import { Button, Kbd, PageHeader, RadioGroup, SectionHeading, TextLink } from '@
 import { useTheme, type Theme } from '@/lib/theme';
 import { strings } from '@/features/account/strings';
 import { AccountSection } from './AccountSection';
+import { DataSection } from './DataSection';
+import { ReadingSection } from './ReadingSection';
 import { shortcutRows } from './shortcuts';
 
 const s = strings.settings;
@@ -16,8 +18,10 @@ export function SettingsPage({ githubFailed = false }: { githubFailed?: boolean 
       <PageHeader title={s.title} />
       <div className="flex max-w-narrow flex-col gap-10">
         <ThemePicker />
+        <ReadingSection />
         <Shortcuts />
         {isGuest ? <GuestAccount /> : <AccountSection githubFailed={githubFailed} />}
+        {!isGuest && <DataSection />}
       </div>
     </>
   );

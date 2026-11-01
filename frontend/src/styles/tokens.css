@@ -177,7 +177,8 @@
   --series-2: #767064;
 }
 
-/* The two animations the primitives use; base.css switches them off for reduced motion. */
+/* The animations the primitives and the landing use; base.css switches them off for reduced
+   motion. */
 @keyframes fade-in {
   from {
     opacity: 0;
@@ -193,5 +194,15 @@
   }
   to {
     transform: translateX(300%);
+  }
+}
+
+/* The line beside the landing's current starter question, filling as its turn runs out. */
+@keyframes fill-down {
+  from {
+    transform: scaleY(0);
+  }
+  to {
+    transform: scaleY(1);
   }
 }

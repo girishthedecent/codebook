@@ -1,5 +1,14 @@
 // Copy for the pages outside a workspace: memory, usage, settings, the phone "More" tab and the
 // command menu. Sentence case, plain words.
+
+type Place = { name: string; n: number; total: number };
+type Counts = Record<
+  'workspaces' | 'conversations' | 'messages' | 'highlights' | 'memories',
+  number
+>;
+
+const plural = (n: number, one: string, many = `${one}s`) =>
+  `${n.toLocaleString('en')} ${n === 1 ? one : many}`;
 export const strings = {
   layout: {
     back: (name: string) => `Back to ${name}`,
@@ -59,14 +68,22 @@ export const strings = {
     intro:
       'What your questions have used so far. Counts include the model calls behind each answer.',
     guestIntro: 'The demo gives every visitor a small allowance of questions each day.',
-    totals: 'Totals',
-    periods: { today: 'Today', last7Days: 'Last 7 days', last30Days: 'Last 30 days' },
-    cols: {
-      period: 'Period',
-      messages: 'Answers',
-      tokensIn: 'Tokens in',
-      tokensOut: 'Tokens out',
-      cost: 'Cost',
+    week: 'Last 7 days',
+    weekHint: 'Days run midnight to midnight, UTC.',
+    questions: 'Questions',
+    tokens: 'Tokens',
+    cost: 'Cost',
+    weekBefore: (n: string) => `${n} the week before`,
+    month: (questions: string, tokens: string, cost: string) =>
+      `Over the last 30 days: ${questions} questions, ${tokens} tokens, ${cost}.`,
+    days: {
+      label: (n: number, total: string) =>
+        `Questions per day over the last ${n} days, ${total} in all`,
+      reading: (day: string, questions: number, tokens: string, cost: string) =>
+        `${day}: ${questions === 1 ? '1 question' : `${questions} questions`}, ${tokens} tokens, ${cost}`,
+      today: 'Today',
+      table: 'Show as table',
+      cols: { day: 'Day', questions: 'Questions', tokens: 'Tokens', cost: 'Cost' },
     },
     limits: 'Limits',
     limitRows: {
@@ -75,6 +92,7 @@ export const strings = {
       tokensToday: 'Tokens today',
     },
     remaining: (left: string, total: string) => `${left} of ${total} left`,
+    resets: (when: string) => `Starts over ${when}.`,
     guestLabel: 'Questions in the demo today',
     guestLeft: (left: number, total: number) => `${left} of ${total} left today`,
     guestResets: (when: string) => `The allowance resets ${when}.`,
@@ -84,12 +102,61 @@ export const strings = {
     storage: 'Storage',
     storageRow: (used: string, total: string) => `${used} of ${total} for uploaded books`,
     sources: (n: number) => (n === 1 ? '1 source' : `${n} sources`),
+    loading: 'Loading usage',
   },
   settings: {
     title: 'Settings',
     theme: 'Theme',
     themes: { system: 'Same as the system', light: 'Light', dark: 'Dark' },
     shortcuts: 'Keyboard shortcuts',
+    shortcutRows: {
+      command: 'Search and commands',
+      help: 'Show these shortcuts',
+      composer: 'Focus the message box',
+      close: 'Close the viewer or a dialog',
+      pages: 'Previous and next page in the viewer',
+      find: 'Find in the viewer',
+      cards: 'Previous and next flashcard',
+      know: 'Flashcard: I know it, I don’t know it',
+      quiz: 'Pick a quiz answer, then go on',
+    },
+    reading: {
+      title: 'Reading',
+      hint: 'For answers and pages of text. Kept in this browser.',
+      size: 'Text size',
+      sizes: { s: 'Small', m: 'Medium', l: 'Large' },
+      measure: 'Line length',
+      measures: {
+        narrow: ['Narrow', 'About 65 characters a line, the easiest to follow.'],
+        wide: ['Wide', 'About 80 characters, for a big screen.'],
+      },
+      sample:
+        'Self-attention lets every token look at every earlier one. In nanoGPT the mask is a ' +
+        'lower-triangular matrix, so a position can never read the tokens that come after it, ' +
+        'which is what makes the model causal.',
+      sampleLabel: 'How answers will look',
+    },
+    data: {
+      title: 'Your data',
+      hint:
+        'One JSON file with your workspaces, conversations and their messages, highlights and ' +
+        'memories. Uploaded books and repositories are not in it.',
+      download: 'Download everything',
+      cancel: 'Stop',
+      progress: {
+        workspaces: 'Listing your workspaces…',
+        conversations: (w: Place) => `${w.name} (${w.n} of ${w.total}): listing conversations…`,
+        messages: (w: Place, n: number, total: number) =>
+          `${w.name} (${w.n} of ${w.total}): conversation ${n} of ${total}`,
+        highlights: (w: Place) => `${w.name} (${w.n} of ${w.total}): highlights…`,
+        memories: 'Reading your memories…',
+      },
+      done: (file: string, c: Counts) =>
+        `Saved ${file}: ${plural(c.workspaces, 'workspace')}, ${plural(c.conversations, 'conversation')}, ` +
+        `${plural(c.messages, 'message')}, ${plural(c.highlights, 'highlight')} and ${plural(c.memories, 'memory', 'memories')}.`,
+      failed: 'The download stopped part way. Nothing was saved.',
+      fileName: (date: string) => `codebook-${date}.json`,
+    },
     account: 'Account',
     email: 'Email',
     name: 'Name',
