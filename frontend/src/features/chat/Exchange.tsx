@@ -1,6 +1,7 @@
 import { memo, useMemo, useState, type ReactNode } from 'react';
+import { BookOpenText } from '@phosphor-icons/react';
 import type { Citation, Message } from '@/api/types';
-import { Button } from '@/ui';
+import { Button, VisuallyHidden } from '@/ui';
 import { Notes } from '@/features/citations/Notes';
 import { numberCitations } from '@/features/citations/numbering';
 import { Answer } from './Answer';
@@ -147,8 +148,9 @@ function metaLine(meta: AnswerMeta) {
 }
 
 /**
- * The question as a serif paragraph, then the answer as prose under it, then what it rests on:
- * the notes, and a colophon of what was consulted. Not chat bubbles; it reads like a transcript.
+ * One turn of the conversation. The question sits on the right in a tinted card, in the sans,
+ * as the reader's own words; the answer follows at full width in the serif under a small
+ * CodeBook heading, then what it rests on: the notes, and a colophon of what was consulted.
  */
 export const Exchange = memo(function Exchange({
   view,
@@ -172,33 +174,34 @@ export const Exchange = memo(function Exchange({
   const meta = showMeta && view.meta ? metaLine(view.meta) : '';
 
   return (
-    <article
-      className="border-t border-rule py-8 first:border-t-0 first:pt-4"
-      aria-busy={streaming || undefined}
-    >
-      <p className="font-serif text-lg font-semibold break-words whitespace-pre-wrap text-ink">
-        {view.question}
-      </p>
+    <article className="pt-10 pb-2 first:pt-4" aria-busy={streaming || undefined}>
+      <div className="flex justify-end">
+        <p className="max-w-[min(85%,36rem)] rounded-xl rounded-br-xs border border-rule bg-paper-3 px-4 py-2.5 font-sans text-base/relaxed break-words whitespace-pre-wrap text-ink">
+          <VisuallyHidden>{chat.youAsked} </VisuallyHidden>
+          {view.question}
+        </p>
+      </div>
 
-      <div className="mt-4">
+      <section className="mt-6" aria-label={chat.answerLabel}>
+        <AnswerHeading />
+
+        {streaming && <LiveSteps steps={view.steps} />}
+
         {view.text && (
           <Arriving live={streaming}>
-            <Answer
-              text={view.text}
-              citations={view.citations}
-              messageId={view.messageId}
-              streaming={streaming}
-              margin={complete}
-            />
+            <div className="mt-3">
+              <Answer
+                text={view.text}
+                citations={view.citations}
+                messageId={view.messageId}
+                streaming={streaming}
+                margin={complete}
+              />
+            </div>
           </Arriving>
         )}
 
-        {streaming && (
-          <>
-            <LiveSteps steps={view.steps} />
-            <TurnStatusLine steps={view.steps} writing={view.text.length > 0} />
-          </>
-        )}
+        {streaming && <TurnStatusLine steps={view.steps} writing={view.text.length > 0} />}
 
         {ended && <ReplyNote view={view} onRetry={onRetry} />}
 
@@ -214,7 +217,7 @@ export const Exchange = memo(function Exchange({
         )}
 
         {complete && (
-          <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1">
+          <div className="mt-3 -ml-2.5 flex flex-wrap max-sm:-ml-3 items-center gap-x-2 gap-y-1">
             <CopyAnswer text={view.text} citations={view.citations} />
             {view.messageId && (
               <Feedback
@@ -226,10 +229,24 @@ export const Exchange = memo(function Exchange({
           </div>
         )}
         {complete && meta && <p className="mt-1 text-xs text-ink-3 tabular-nums">{meta}</p>}
-      </div>
+      </section>
     </article>
   );
 });
+
+/** Who is speaking: the book mark and the name, small, above every answer. */
+function AnswerHeading() {
+  return (
+    <p className="flex items-center gap-2 text-sm text-ink-2" aria-hidden>
+      <span className="grid size-6 place-items-center rounded-md bg-accent-wash text-accent">
+        <BookOpenText size={15} weight="bold" />
+      </span>
+      <span className="font-serif font-semibold text-ink">
+        Code<span className="font-normal text-accent italic">Book</span>
+      </span>
+    </p>
+  );
+}
 
 /**
  * Plays the arrival once, when the first words of a live answer appear. The choice is made on

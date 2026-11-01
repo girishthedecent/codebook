@@ -23,6 +23,8 @@ export const chat = {
   thinking: 'Putting the answer together',
   writing: 'Writing the answer',
   stepsLabel: 'Steps taken',
+  youAsked: 'You asked:',
+  answerLabel: 'Answer',
   stepRunning: 'In progress',
   stepDone: 'Done',
   stepFailed: 'Failed',
