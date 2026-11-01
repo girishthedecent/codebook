@@ -7,8 +7,14 @@
   },
   {
     "name": "css",
-    "path": "dist/assets/*.css",
+    "path": "dist/assets/index-*.css",
     "limit": "17 KB",
+    "gzip": true
+  },
+  {
+    "name": "page css",
+    "path": ["dist/assets/*.css", "!dist/assets/index-*.css"],
+    "limit": "6 KB",
     "gzip": true
   }
 ]
