@@ -10,6 +10,7 @@ import { en } from '@/i18n/en';
 import { GuestBar } from './GuestBar';
 import { PhoneTabs } from './PhoneTabs';
 import { Library, Sidebar } from './Sidebar';
+import { ShortcutsDialog } from './ShortcutsDialog';
 import { ViewerLayout } from '@/features/viewer/ViewerLayout';
 import { ViewerFallback } from './ViewerFallback';
 
@@ -64,6 +65,7 @@ export function ShellFrame({
         </main>
         <PhoneTabs workspaceId={workspaceId} />
         <CommandMenu />
+        <ShortcutsDialog />
         {target && (
           <Suspense fallback={<ViewerFallback presentation="sheet" />}>
             <ViewerPane target={target} presentation="sheet" />
@@ -77,6 +79,7 @@ export function ShellFrame({
     <div className="flex min-h-dvh flex-col">
       <GuestBar />
       <CommandMenu />
+      <ShortcutsDialog />
       <div className="flex flex-1">
         <Sidebar workspaceId={workspaceId} collapsed={bp === 'tablet'} />
         <ViewerLayout

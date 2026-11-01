@@ -2,6 +2,7 @@ import { useEffect, useMemo } from 'react';
 import { useInfiniteQuery, type QueryClient } from '@tanstack/react-query';
 import { api, unwrap } from '@/api/client';
 import { keys } from '@/api/queries/keys';
+import type { ConversationDetailWithExtras } from '@/api/queries/conversations';
 import type { ConversationDetail } from '@/api/types';
 
 // Under the conversation's own key, so every invalidation of the conversation reaches it.
@@ -15,7 +16,7 @@ export const messagesKey = (conversationId: string) =>
 export function useMessages(conversationId: string, enabled = true) {
   const query = useInfiniteQuery({
     queryKey: messagesKey(conversationId),
-    queryFn: ({ pageParam, signal }) =>
+    queryFn: ({ pageParam, signal }): Promise<ConversationDetailWithExtras> =>
       unwrap(
         api.GET('/api/v1/conversations/{conversationId}', {
           params: { path: { conversationId }, query: { cursor: pageParam, limit: 100 } },

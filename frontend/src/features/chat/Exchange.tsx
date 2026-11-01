@@ -1,4 +1,4 @@
-import { memo, useMemo } from 'react';
+import { memo, useMemo, useState, type ReactNode } from 'react';
 import type { Citation, Message } from '@/api/types';
 import { Button } from '@/ui';
 import { Notes } from '@/features/citations/Notes';
@@ -7,6 +7,7 @@ import { Answer } from './Answer';
 import { CopyAnswer, Feedback } from './Feedback';
 import { Consulted, LiveSteps, TurnStatusLine } from './Steps';
 import { chat } from './strings';
+import './chat.css';
 import { formatMs } from './toolLabels';
 import type { StepView, TurnState } from './useTurn';
 
@@ -181,13 +182,15 @@ export const Exchange = memo(function Exchange({
 
       <div className="mt-4">
         {view.text && (
-          <Answer
-            text={view.text}
-            citations={view.citations}
-            messageId={view.messageId}
-            streaming={streaming}
-            margin={complete}
-          />
+          <Arriving live={streaming}>
+            <Answer
+              text={view.text}
+              citations={view.citations}
+              messageId={view.messageId}
+              streaming={streaming}
+              margin={complete}
+            />
+          </Arriving>
         )}
 
         {streaming && (
@@ -227,6 +230,15 @@ export const Exchange = memo(function Exchange({
     </article>
   );
 });
+
+/**
+ * Plays the arrival once, when the first words of a live answer appear. The choice is made on
+ * mount, so a quick answer that finishes mid-animation isn't cut short.
+ */
+function Arriving({ live, children }: { live: boolean; children: ReactNode }) {
+  const [animate] = useState(live);
+  return <div className={animate ? 'answer-arrive' : undefined}>{children}</div>;
+}
 
 /** Why an answer ended early, in a calm sentence, with the way to ask again where there is one. */
 function ReplyNote({

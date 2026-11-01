@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link } from '@tanstack/react-router';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Link, useRouter } from '@tanstack/react-router';
 import { isApiError } from '@/api/client';
 import type { Message } from '@/api/types';
 import { useMe } from '@/auth/useMe';
 import { useBreakpoint } from '@/lib/breakpoints';
+import { downloadText, fileSlug } from '@/lib/download';
+import { viewerSearchFor, type ViewerTarget } from '@/lib/viewerParams';
 import { Button, Callout, ChipButton, EmptyState, PageLoading } from '@/ui';
 import { strings as accountStrings } from '@/features/account/strings';
 import { Composer } from './Composer';
@@ -18,6 +20,9 @@ import { useMessages } from './useMessages';
 import { useStickToBottom } from './useStickToBottom';
 import { useTurn } from './useTurn';
 import { useWorkspaceSources } from './useWorkspaceSources';
+
+// Height of the sticky conversation bar: the first question counts as gone once it is under it.
+const BAR = 48;
 
 const FAILED = new Set<ExchangeView['state']>(['error', 'aborted']);
 
@@ -74,7 +79,10 @@ export function ConversationView({
   const { sources } = useWorkspaceSources(workspaceId);
   const { limit, block, expired } = useAskLimit();
   const phone = useBreakpoint() === 'phone';
+  const router = useRouter();
   const baseline = turn.baseline;
+  const list = useRef<HTMLDivElement>(null);
+  const [pastFirst, setPastFirst] = useState(false);
 
   // `replace` is the failed exchange a retry stands in for: the server drops its messages.
   const ask = useCallback(
@@ -153,6 +161,43 @@ export function ConversationView({
     ready: query.isSuccess && complete,
   });
 
+  // The bar shows the title once the first question, which heads the page, has scrolled away.
+  const firstKey = rows[0]?.key;
+  useEffect(() => {
+    const question = list.current?.querySelector('article > p');
+    if (!question) return;
+    const io = new IntersectionObserver(
+      ([entry]) => {
+        if (entry) setPastFirst(!entry.isIntersecting && entry.boundingClientRect.top < BAR);
+      },
+      { rootMargin: `-${BAR}px 0px 0px 0px` },
+    );
+    io.observe(question);
+    return () => io.disconnect();
+  }, [firstKey]);
+
+  const title = titleOf(conversation?.title, rows[0]?.view.question);
+
+  const exportTranscript = async () => {
+    const { transcriptMarkdown } = await import('./exportMarkdown');
+    const name = title ?? chat.untitled;
+    const linkFor = (target: ViewerTarget, cite: number, from?: string) => {
+      const { href } = router.buildLocation({
+        to: '/w/$workspaceId/c/$conversationId',
+        params: { workspaceId, conversationId },
+        search: viewerSearchFor(target, cite, from),
+      });
+      return new URL(href, window.location.origin).href;
+    };
+    const text = transcriptMarkdown({
+      title: name,
+      startedAt: conversation?.createdAt ?? new Date().toISOString(),
+      exchanges: exchanges(messages),
+      linkFor,
+    });
+    downloadText(`${fileSlug(name, 'conversation')}.md`, text, 'text/markdown;charset=utf-8');
+  };
+
   const retry = useCallback(
     (view: ExchangeView) => {
       // Only a saved failure has messages to replace; a live one that never reached the
@@ -195,7 +240,10 @@ export function ConversationView({
       <ConversationHeader
         workspaceId={workspaceId}
         conversationId={conversationId}
-        title={titleOf(conversation?.title, rows[0]?.view.question)}
+        title={title}
+        pinned={Boolean(conversation?.pinnedAt)}
+        titleShown={rows.length === 0 || pastFirst}
+        onExport={messages.length > 0 && complete ? exportTranscript : undefined}
       />
 
       {/* The container the answers' margin notes measure their room against. */}
@@ -208,7 +256,7 @@ export function ConversationView({
           ) : query.isPending && !pending ? (
             <PageLoading label={chat.loading} rows={2} className="py-8" />
           ) : (
-            <div>
+            <div ref={list}>
               {rows.map(({ view, key }) => (
                 <Exchange
                   key={key}
