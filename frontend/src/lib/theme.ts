@@ -6,7 +6,7 @@ const KEY = 'codebook.theme';
 
 // The paper colour of each theme, as the browser chrome should show it. Keep in step with
 // --paper in styles/tokens.css and the theme-color tags in index.html.
-const CHROME = { light: '#f6f3ec', dark: '#0f0e0c' } as const;
+const CHROME = { light: '#f6f3ec', dark: '#000000' } as const;
 const listeners = new Set<() => void>();
 
 export function getTheme(): Theme {

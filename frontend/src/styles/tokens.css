@@ -112,9 +112,9 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
     color-scheme: dark;
-    --paper: #0f0e0c;
-    --paper-2: #151412;
-    --paper-3: #1e1c19;
+    --paper: #000000;
+    --paper-2: #0d0c0b;
+    --paper-3: #191816;
     --ink: #ece7dc;
     --ink-2: #b8b1a4;
     --ink-3: #9a9285;
@@ -147,9 +147,9 @@
 :root[data-theme='dark'],
 [data-theme='dark'] {
   color-scheme: dark;
-  --paper: #0f0e0c;
-  --paper-2: #151412;
-  --paper-3: #1e1c19;
+  --paper: #000000;
+  --paper-2: #0d0c0b;
+  --paper-3: #191816;
   --ink: #ece7dc;
   --ink-2: #b8b1a4;
   --ink-3: #9a9285;

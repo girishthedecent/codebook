@@ -49,8 +49,8 @@ const dark: Palette = {
   number: '#d9786b',
   attribute: '#bdb764',
   invalid: '#d9786b',
-  paper: '#0f0e0c',
-  rule: '#1e1c19',
+  paper: '#000000',
+  rule: '#191816',
 };
 
 function build(name: string, c: Palette): ThemeRegistration {

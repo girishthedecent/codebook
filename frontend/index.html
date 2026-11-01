@@ -33,7 +33,7 @@
     <meta name="twitter:image" content="https://codebook.girishthedecent.space/og.png" />
     <meta name="color-scheme" content="light dark" />
     <meta name="theme-color" content="#f6f3ec" media="(prefers-color-scheme: light)" />
-    <meta name="theme-color" content="#0f0e0c" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <script>
@@ -43,7 +43,7 @@
         if (t === 'light' || t === 'dark') {
           document.documentElement.dataset.theme = t;
           // A manual choice also decides the browser chrome colour (see lib/theme.ts).
-          var c = t === 'dark' ? '#0f0e0c' : '#f6f3ec';
+          var c = t === 'dark' ? '#000000' : '#f6f3ec';
           document.querySelectorAll('meta[name="theme-color"]').forEach(function (m) {
             m.content = c;
           });
