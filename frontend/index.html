@@ -37,10 +37,12 @@
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <script>
-      // Theme before first paint so there is no flash. Stored value wins, else the system.
+      // Theme before first paint so there is no flash. Dark unless light or the system was
+      // chosen (see lib/theme.ts).
       try {
         var t = localStorage.getItem('codebook.theme');
-        if (t === 'light' || t === 'dark') {
+        if (t !== 'light' && t !== 'system') t = 'dark';
+        if (t !== 'system') {
           document.documentElement.dataset.theme = t;
           // A manual choice also decides the browser chrome colour (see lib/theme.ts).
           var c = t === 'dark' ? '#000000' : '#f6f3ec';
@@ -48,7 +50,9 @@
             m.content = c;
           });
         }
-      } catch (e) {}
+      } catch (e) {
+        document.documentElement.dataset.theme = 'dark';
+      }
       // Reading preferences (see lib/prefs.ts), for the same reason: text must not reflow.
       try {
         var s = localStorage.getItem('codebook.textSize');

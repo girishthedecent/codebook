@@ -1,8 +1,8 @@
 import type { ThemeRegistration } from 'shiki/core';
 
 /**
- * Code colours drawn from the app's own palette: ink for plain text, the accent green for
- * keywords, and the source-kind hues and signal colours for the rest. Every colour clears
+ * Code colours drawn from the app's own palette: ink for plain text, the accent (green in
+ * light, ember in dark) for keywords, and the source-kind hues and signal colours for the rest. Every colour clears
  * 4.5:1 on both paper and paper-2 in its own theme.
  */
 type Palette = {
@@ -39,18 +39,18 @@ const light: Palette = {
 
 const dark: Palette = {
   type: 'dark',
-  ink: '#ece7dc',
-  muted: '#b8b1a4',
-  quiet: '#9a9285',
-  keyword: '#7fb59c',
-  string: '#d2a24c',
-  fn: '#8fb0d8',
-  typeName: '#c598b4',
-  number: '#d9786b',
-  attribute: '#bdb764',
-  invalid: '#d9786b',
+  ink: '#f2efe9',
+  muted: '#c4beb4',
+  quiet: '#9c968c',
+  keyword: '#ff8a4c',
+  string: '#a8d5a2',
+  fn: '#8fb6ec',
+  typeName: '#e7a0c0',
+  number: '#f2c14e',
+  attribute: '#c9c26a',
+  invalid: '#f47174',
   paper: '#000000',
-  rule: '#191816',
+  rule: '#18181a',
 };
 
 function build(name: string, c: Palette): ThemeRegistration {

@@ -9,21 +9,23 @@ const KEY = 'codebook.theme';
 const CHROME = { light: '#f6f3ec', dark: '#000000' } as const;
 const listeners = new Set<() => void>();
 
+// Dark until someone picks otherwise; "system" is remembered as a choice of its own.
+const DEFAULT_THEME: Theme = 'dark';
+
 export function getTheme(): Theme {
   try {
     const v = localStorage.getItem(KEY);
-    if (v === 'light' || v === 'dark') return v;
+    if (v === 'light' || v === 'dark' || v === 'system') return v;
   } catch {
-    // storage blocked: behave as system
+    // storage blocked: the default applies
   }
-  return 'system';
+  return DEFAULT_THEME;
 }
 
 /** Applies the choice at once and remembers it. The inline script in index.html replays it on load. */
 export function setTheme(theme: Theme) {
   try {
-    if (theme === 'system') localStorage.removeItem(KEY);
-    else localStorage.setItem(KEY, theme);
+    localStorage.setItem(KEY, theme);
   } catch {
     // storage blocked: the choice applies for this visit only
   }
@@ -54,6 +56,6 @@ function subscribe(l: () => void) {
 }
 
 export function useTheme(): [Theme, (t: Theme) => void] {
-  const theme = useSyncExternalStore(subscribe, getTheme, () => 'system' as const);
+  const theme = useSyncExternalStore(subscribe, getTheme, () => DEFAULT_THEME);
   return [theme, setTheme];
 }

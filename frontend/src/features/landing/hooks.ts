@@ -40,7 +40,7 @@ function currentlyDark() {
 
 /** Whether the page is dark now (the stored choice, else the system's), and a way to flip it. */
 export function useDarkTheme(): [boolean, () => void] {
-  const dark = useSyncExternalStore(subscribeTheme, currentlyDark, () => false);
+  const dark = useSyncExternalStore(subscribeTheme, currentlyDark, () => true);
   const toggle = () => {
     setTheme(dark ? 'light' : 'dark');
     for (const listener of themeListeners) listener();
