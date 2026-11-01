@@ -1,0 +1,70 @@
+/* Printing a study set. Loaded with the study chunk, and kept once loaded, so every print rule
+   applies only while a set is on the page (`.study-print`); other pages print as they always did.
+
+   Everything outside the open set (sidebar, list, menus, the viewer) is dropped rather than
+   hidden, so it takes no room on paper. A printed set is always the light theme: ink on white,
+   whatever the screen shows. */
+
+.study-print-only {
+  display: none;
+}
+
+@media print {
+  @page {
+    margin: 18mm 16mm;
+  }
+
+  /* More specific than the dark theme's own rules in tokens.css, whichever way it was chosen. */
+  :root:not([data-theme='light']):has(.study-print),
+  :root[data-theme='light']:has(.study-print) {
+    color-scheme: light;
+    --paper: #fff;
+    --paper-2: #fff;
+    --paper-3: #fff;
+    --ink: #111;
+    --ink-2: #333;
+    --ink-3: #555;
+    --rule: rgb(0 0 0 / 0.15);
+    --rule-2: rgb(0 0 0 / 0.35);
+    --edge: #777;
+    --accent: #2e5d4b;
+    --accent-wash: transparent;
+    --error-wash: transparent;
+    --highlight: transparent;
+  }
+
+  body:has(.study-print) :not(.study-print, .study-print *, :has(.study-print)) {
+    display: none !important;
+  }
+
+  /* The page's own frames would otherwise indent and border the printout. */
+  :has(.study-print) {
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    min-height: 0 !important;
+    width: auto !important;
+    max-width: none !important;
+  }
+
+  .study-print .study-screen-only {
+    display: none !important;
+  }
+
+  .study-print .study-print-only {
+    display: block;
+  }
+
+  .study-page-break {
+    break-before: page;
+  }
+
+  .study-keep-together {
+    break-inside: avoid;
+  }
+
+  .study-print h2,
+  .study-print h3 {
+    break-after: avoid;
+  }
+}

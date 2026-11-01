@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState, type PointerEvent } from 'react';
+import { useRecordAttempt, type AttemptMark } from '@/api/queries/study';
 import type { Citation } from '@/api/types';
 import { Button, Kbd, TextButton } from '@/ui';
 import { cn } from '@/lib/cn';
 import { useBreakpoint } from '@/lib/breakpoints';
 import { useShortcut } from '@/lib/keyboard';
+import { RecentAttempts } from './AttemptHistory';
 import { Cites } from './Cites';
 import { citationsOf, type FlashcardsData } from './data';
 import { idCsv, idSet, type StudySearch } from './search';
@@ -16,17 +18,35 @@ type Props = {
   index: Map<number, Citation>;
   search: StudySearch;
   setSearch: (patch: Partial<StudySearch>) => void;
+  workspaceId: string;
+  studyId: string;
+  /** The requester's last finished pass, as the server had it when the set loaded. */
+  lastAttempt: AttemptMark | null;
 };
 
 /**
- * A card at a time: tap or Space flips it, arrows or a swipe move between cards, and "Know it" /
- * "Again" sort it into a pile and move on. Piles and position are URL state (see search.ts).
+ * A card at a time: tap or Space flips it, arrows or a swipe move between cards, and "Know" /
+ * "Don't know" sort it into a pile and move on. Piles and position are URL state (see
+ * search.ts); the `again` pile is the cards not known yet. Reaching the end of a pass through
+ * the whole deck saves the piles as an attempt.
  */
-export function Flashcards({ deck, index, search, setSearch }: Props) {
+export function Flashcards({
+  deck,
+  index,
+  search,
+  setSearch,
+  workspaceId,
+  studyId,
+  lastAttempt,
+}: Props) {
   const keyboard = useBreakpoint() !== 'phone';
   const [flipped, setFlipped] = useState(false);
   const know = idSet(search.know);
   const again = idSet(search.again);
+  const record = useRecordAttempt(workspaceId, studyId);
+  const [previous, setPrevious] = useState<AttemptMark | null>();
+  // Going back to the last card and on again ends the same pass; it is saved once.
+  const savedPass = useRef<string | undefined>(undefined);
 
   const cards = search.pile === 'again' ? deck.cards.filter((c) => again.has(c.id)) : deck.cards;
   const total = cards.length;
@@ -34,9 +54,23 @@ export function Flashcards({ deck, index, search, setSearch }: Props) {
   const at = Math.min(Math.max((search.card ?? 1) - 1, 0), total);
   const card = cards[at];
 
+  // Only a pass through the whole deck counts; going over the unknown pile is practice.
+  const endPass = (known: Set<string>) => {
+    if (search.pile === 'again') return;
+    const items = deck.cards.map((c, i) => ({ index: i, ok: known.has(c.id) }));
+    const signature = items.map((item) => (item.ok ? 1 : 0)).join('');
+    if (savedPass.current === signature) return;
+    savedPass.current = signature;
+    setPrevious(lastAttempt);
+    const score = items.filter((item) => item.ok).length;
+    record.mutate({ score, total: deck.cards.length, items });
+  };
+
   const go = (to: number) => {
     setFlipped(false);
-    setSearch({ card: Math.min(Math.max(to, 0), total) + 1 });
+    const next = Math.min(Math.max(to, 0), total);
+    if (next === total && at < total) endPass(know);
+    setSearch({ card: next + 1 });
   };
   const sort = (pile: 'know' | 'again') => {
     if (!card) return;
@@ -47,6 +81,7 @@ export function Flashcards({ deck, index, search, setSearch }: Props) {
     setFlipped(false);
     // Marking a card known inside the again pile removes it, so the next card slides into this slot.
     const leavesPile = pile === 'know' && search.pile === 'again';
+    if (at === total - 1) endPass(k);
     setSearch({ know: idCsv(k), again: idCsv(a), card: leavesPile ? at + 1 : at + 2 });
   };
 
@@ -68,7 +103,7 @@ export function Flashcards({ deck, index, search, setSearch }: Props) {
   useShortcut('arrowright', () => go(at + 1), { enabled: Boolean(card) });
   useShortcut('arrowleft', () => go(at - 1), { enabled: at > 0 });
   useShortcut('k', () => sort('know'), { enabled: Boolean(card) });
-  useShortcut('a', () => sort('again'), { enabled: Boolean(card) });
+  useShortcut('d', () => sort('again'), { enabled: Boolean(card) });
 
   // Tap flips; a horizontal drag past the threshold moves instead.
   const start = useRef<{ x: number; y: number } | null>(null);
@@ -103,6 +138,23 @@ export function Flashcards({ deck, index, search, setSearch }: Props) {
         <p className="font-serif text-lg">
           {s.cards.done(deck.cards.filter((c) => know.has(c.id)).length, deck.cards.length)}
         </p>
+        {previous && search.pile !== 'again' && (
+          <p className="mt-1 text-sm text-ink-3">
+            {s.cards.lastTime(previous.score, previous.total)}
+          </p>
+        )}
+        {record.isError && record.variables && (
+          <p role="alert" className="mt-2 text-xs text-ink-3">
+            {s.cards.notSaved}{' '}
+            <TextButton
+              className="inline-flex min-h-10 items-center"
+              onClick={() => record.variables && record.mutate(record.variables)}
+            >
+              {s.retry}
+            </TextButton>
+          </p>
+        )}
+        {search.pile !== 'again' && <RecentAttempts studyId={studyId} className="mt-5" />}
         <div className="mt-6 flex flex-wrap gap-2">
           {total > 0 && (
             <Button variant="ghost" onClick={() => go(total - 1)}>
@@ -135,7 +187,7 @@ export function Flashcards({ deck, index, search, setSearch }: Props) {
           {at + 1} / {total}
         </span>
         <span>
-          {s.cards.know.toLowerCase()} {know.size} · {s.cards.again.toLowerCase()} {again.size}
+          {s.cards.knowCount(know.size)} · {s.cards.dontKnowCount(again.size)}
         </span>
       </div>
       {search.pile === 'again' && (
@@ -206,7 +258,7 @@ export function Flashcards({ deck, index, search, setSearch }: Props) {
             onClick={() => sort('again')}
             aria-pressed={again.has(card.id)}
           >
-            {s.cards.again}
+            {s.cards.dontKnow}
           </Button>
           <Button variant="primary" onClick={() => sort('know')} aria-pressed={know.has(card.id)}>
             {s.cards.know}
@@ -215,8 +267,8 @@ export function Flashcards({ deck, index, search, setSearch }: Props) {
       </div>
       {keyboard && (
         <p className="mt-4 text-xs text-ink-3">
-          <Kbd>Space</Kbd> flip · <Kbd>←</Kbd> <Kbd>→</Kbd> move · <Kbd>K</Kbd> know it ·{' '}
-          <Kbd>A</Kbd> again
+          <Kbd>Space</Kbd> {s.cards.keyFlip} · <Kbd>←</Kbd> <Kbd>→</Kbd> {s.cards.keyMove} ·{' '}
+          <Kbd>K</Kbd> {s.cards.keyKnow} · <Kbd>D</Kbd> {s.cards.keyDontKnow}
         </p>
       )}
     </div>

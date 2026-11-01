@@ -7,7 +7,7 @@ import {
   useQueryClient,
 } from '@tanstack/react-query';
 import { api, isApiError, unwrap } from '../client';
-import type { CreateStudyBody, Study, StudyType } from '../types';
+import type { CreateStudyBody, Page, Study, StudyDetail, StudyType } from '../types';
 import { keys } from './keys';
 
 const POLL_MS = 3000;
@@ -106,6 +106,85 @@ export function useDeleteStudy(workspaceId: string) {
       ),
     onSuccess: (_data, studyId) => {
       client.removeQueries({ queryKey: keys.study(studyId) });
+      void client.invalidateQueries({ queryKey: ['studies', workspaceId] });
+    },
+  });
+}
+
+// Attempts: a quiz taken or a flashcard pass, kept per person and set. The generated client
+// doesn't know these routes yet, so their shapes are written out here from the API contract.
+
+export type AttemptItem = { index: number; ok: boolean };
+
+export type StudyAttempt = {
+  id: string;
+  score: number;
+  total: number;
+  items: AttemptItem[];
+  createdAt: string;
+};
+
+export type AttemptMark = { score: number; total: number; createdAt: string };
+
+export type StudyAttemptFields = { lastAttempt: AttemptMark | null; attemptCount: number };
+
+export type RecordAttemptBody = { score: number; total: number; items: AttemptItem[] };
+
+/** The requester's last attempt and how many there are, on a set from the list or the detail. */
+export function attemptsOf(study: Study | StudyDetail): StudyAttemptFields {
+  const fields = study as Partial<StudyAttemptFields>;
+  return { lastAttempt: fields.lastAttempt ?? null, attemptCount: fields.attemptCount ?? 0 };
+}
+
+const ATTEMPTS_SHOWN = 20;
+
+// Under the set's own key, so whatever refreshes the set refreshes its attempts too.
+const attemptsKey = (studyId: string) => [...keys.study(studyId), 'attempts'] as const;
+
+/** The same envelope and errors as the generated client, for the attempts routes. */
+function attemptsRequest<T>(studyId: string, init: RequestInit = {}, query = '') {
+  return unwrap<T>(
+    fetch(`/api/v1/study/${encodeURIComponent(studyId)}/attempts${query}`, {
+      ...init,
+      credentials: 'include',
+      headers: { Accept: 'application/json', ...init.headers },
+    }).then(async (response) => {
+      const body: unknown = await response.json().catch(() => undefined);
+      return response.ok
+        ? { data: body as { data: T }, response }
+        : { error: body ?? {}, response };
+    }),
+  );
+}
+
+/** The requester's recent attempts at a set, newest first. */
+export function useStudyAttempts(studyId: string, enabled = true) {
+  return useQuery({
+    queryKey: attemptsKey(studyId),
+    queryFn: ({ signal }) =>
+      attemptsRequest<StudyAttempt[] | Page<StudyAttempt>>(
+        studyId,
+        { signal },
+        `?limit=${ATTEMPTS_SHOWN}`,
+      ),
+    // The contract fixes the fields and the order but not the envelope; take either.
+    select: (data) => (Array.isArray(data) ? data : data.items),
+    enabled,
+  });
+}
+
+/** Saves an attempt; the set and the list then show the new last score. */
+export function useRecordAttempt(workspaceId: string, studyId: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (body: RecordAttemptBody) =>
+      attemptsRequest<StudyAttempt>(studyId, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      }),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: keys.study(studyId) });
       void client.invalidateQueries({ queryKey: ['studies', workspaceId] });
     },
   });
