@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { isTyping } from '@/lib/keyboard';
 import { Button, Callout, ProgressRule } from '@/ui';
+import { pageLabelsOptions } from './pageLabels';
 import { pdfDocumentOptions, readAsText } from './pdf';
 import { PdfPage } from './PdfPage';
 import { PageBar, type Zoom } from './PageBar';
@@ -10,11 +12,16 @@ import { s } from './strings';
 
 type Props = BookViewProps & { onUnavailable: () => void };
 
+const ZOOM_STEPS: Zoom[] = ['fit', 1, 1.5];
+
 /** The real page from the original PDF. Says so when the file can't be had, so the text shows. */
 export default function PdfBook({ sourceId, page, snippet, onPage, onUnavailable }: Props) {
   const pdf = useQuery(pdfDocumentOptions(sourceId));
+  // Read by the header, which shows the printed number beside the physical one.
+  useQuery({ ...pageLabelsOptions(sourceId, pdf.data), enabled: Boolean(pdf.data) });
   const [zoom, setZoom] = useState<Zoom>('fit');
   const scroller = useRef<HTMLDivElement>(null);
+  const root = useRef<HTMLDivElement>(null);
   // The skeleton stands in until the first page has been drawn; after that the page being
   // left stays on screen until the next one is ready.
   const [drawn, setDrawn] = useState(false);
@@ -37,8 +44,47 @@ export default function PdfBook({ sourceId, page, snippet, onPage, onUnavailable
     if (clamped !== page) onPage(clamped);
   };
 
+  // Turning pages and zooming from the keyboard, unless the reader is typing somewhere.
+  const onKey = useEffectEvent((event: KeyboardEvent) => {
+    if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
+    if (isTyping(event.target) || inOtherControl(event.target)) return;
+    // Keys pressed in the conversation or anywhere else on the page are theirs.
+    const inBook = event.target instanceof Node && root.current?.contains(event.target);
+    if (event.target !== document.body && !inBook) return;
+    const el = scroller.current;
+    const pans = el !== null && el.scrollWidth > el.clientWidth;
+    switch (event.key) {
+      case 'ArrowLeft':
+      case 'ArrowRight':
+        // A zoomed page wider than the pane keeps the arrows for panning.
+        if (pans) return;
+        go(page + (event.key === 'ArrowRight' ? 1 : -1));
+        break;
+      case 'PageUp':
+      case 'PageDown':
+        go(page + (event.key === 'PageDown' ? 1 : -1));
+        break;
+      case '+':
+      case '=':
+      case '-': {
+        const at = ZOOM_STEPS.indexOf(zoom);
+        const next = ZOOM_STEPS[at + (event.key === '-' ? -1 : 1)];
+        if (next !== undefined) setZoom(next);
+        break;
+      }
+      default:
+        return;
+    }
+    event.preventDefault();
+  });
+  useEffect(() => {
+    const listener = (event: KeyboardEvent) => onKey(event);
+    window.addEventListener('keydown', listener);
+    return () => window.removeEventListener('keydown', listener);
+  }, []);
+
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div ref={root} className="flex h-full min-h-0 flex-col">
       <PageBar page={page} pageCount={pageCount} onGo={go} zoom={zoom} onZoom={setZoom} />
       {pdf.isPending && <ProgressRule label={s.loading} />}
       <div
@@ -76,6 +122,16 @@ export default function PdfBook({ sourceId, page, snippet, onPage, onUnavailable
         )}
       </div>
     </div>
+  );
+}
+
+/** Menus, sliders, tab lists, trees and grids keep the arrow keys for themselves. */
+function inOtherControl(target: EventTarget | null) {
+  return (
+    target instanceof Element &&
+    target.closest(
+      '[role="menu"], [role="listbox"], [role="slider"], [role="tablist"], [role="tree"], [role="radiogroup"], [role="grid"], [role="toolbar"]',
+    ) !== null
   );
 }
 

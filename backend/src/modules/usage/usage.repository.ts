@@ -38,6 +38,39 @@ export async function usageWindows(userId: string, starts: Record<string, Date>)
   return new Map(rows.map(({ name, ...window }) => [name, window]));
 }
 
+export type UsageDay = { day: string; answers: number; tokens: number; costUsd: string };
+
+/**
+ * One row per UTC day from `firstDay` (YYYY-MM-DD) through `lastDay`, days without activity
+ * included as zeros. Counted like the windows above: questions are the user's own messages,
+ * tokens are LLM calls', cost covers every call.
+ */
+export async function usageByDay(userId: string, firstDay: string, lastDay: string) {
+  return prismaClient.$queryRaw<UsageDay[]>`
+    SELECT to_char(d.day, 'YYYY-MM-DD') AS day,
+      coalesce(q.answers, 0)::int AS answers,
+      coalesce(e.tokens, 0)::int AS tokens,
+      trim_scale(coalesce(e.cost, 0))::text AS "costUsd"
+    FROM generate_series(${firstDay}::date, ${lastDay}::date, interval '1 day') AS d(day)
+    LEFT JOIN (
+      SELECT m."createdAt"::date AS day, count(*) AS answers
+      FROM "Message" m
+      JOIN "Conversation" c ON c.id = m."conversationId"
+      WHERE c."userId" = ${userId} AND m.role = 'USER' AND m."createdAt" >= ${firstDay}::date
+      GROUP BY 1
+    ) q ON q.day = d.day
+    LEFT JOIN (
+      SELECT u."createdAt"::date AS day,
+        sum(u."tokensIn" + u."tokensOut") FILTER (WHERE u.type = 'LLM') AS tokens,
+        sum(u."costUsd") AS cost
+      FROM "UsageEvent" u
+      WHERE u."userId" = ${userId} AND u."createdAt" >= ${firstDay}::date
+      GROUP BY 1
+    ) e ON e.day = d.day
+    ORDER BY d.day
+  `;
+}
+
 /** Sources in the user's own workspaces, and the bytes their uploaded PDFs take. */
 export async function sourceTotals(userId: string) {
   const [row] = await prismaClient.$queryRaw<{ sources: number; pdfBytes: bigint }[]>`

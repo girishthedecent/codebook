@@ -56,7 +56,12 @@ export function Toaster() {
     <div
       aria-live="polite"
       aria-atomic="false"
-      className="pointer-events-none fixed bottom-4 left-4 z-[60] max-sm:bottom-[calc(4.5rem+env(safe-area-inset-bottom))] flex w-[min(360px,calc(100vw-2rem))] flex-col gap-2"
+      className={cn(
+        'pointer-events-none fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] left-4 z-[60] flex w-[min(360px,calc(100vw-2rem))] flex-col gap-2',
+        // Lift clear of the bottom tabs, on the pages that have them.
+        'max-sm:[body:has(nav[aria-label=Sections])_&]:bottom-[calc(4.5rem+env(safe-area-inset-bottom))]',
+        'max-sm:[body:has(nav[aria-label=Sections])_&]:[@media(max-height:480px)]:bottom-[calc(3.75rem+env(safe-area-inset-bottom))]',
+      )}
     >
       {list.map((t) => (
         <ToastCard key={t.id} item={t} />

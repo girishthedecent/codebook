@@ -186,6 +186,7 @@ export const Exchange = memo(function Exchange({
             citations={view.citations}
             messageId={view.messageId}
             streaming={streaming}
+            margin={complete}
           />
         )}
 
@@ -211,7 +212,7 @@ export const Exchange = memo(function Exchange({
 
         {complete && (
           <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1">
-            <CopyAnswer text={view.text} />
+            <CopyAnswer text={view.text} citations={view.citations} />
             {view.messageId && (
               <Feedback
                 conversationId={conversationId}

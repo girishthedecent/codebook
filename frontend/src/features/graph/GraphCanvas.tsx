@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useState, type KeyboardEvent } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import {
   Handle,
   MarkerType,
@@ -18,7 +18,14 @@ import { Button, Kbd } from '@/ui';
 import { cn } from '@/lib/cn';
 import { useBreakpoint } from '@/lib/breakpoints';
 import { prefersReducedMotion } from './hooks';
-import { NODE_HEIGHT, NODE_WIDTH, layoutSize, type Layout, type LaidNode } from './layout';
+import {
+  NODE_HEIGHT,
+  NODE_WIDTH,
+  layoutSize,
+  type Layout,
+  type LaidNode,
+  type MoreMarker,
+} from './layout';
 import { graphStrings as t, kindLabel } from './strings';
 
 type SymbolNodeData = {
@@ -28,6 +35,7 @@ type SymbolNodeData = {
   selected: boolean;
 };
 type SymbolNode = Node<SymbolNodeData, 'symbol'>;
+type MoreNode = Node<{ count: number; side: MoreMarker['side'] }, 'more'>;
 
 const SymbolNodeView = memo(function SymbolNodeView({ data }: NodeProps<SymbolNode>) {
   const { symbol, role, highlighted, selected } = data;
@@ -65,12 +73,43 @@ const SymbolNodeView = memo(function SymbolNodeView({ data }: NodeProps<SymbolNo
   );
 });
 
-const nodeTypes = { symbol: SymbolNodeView };
+const MoreNodeView = memo(function MoreNodeView({ data }: NodeProps<MoreNode>) {
+  return (
+    <div
+      style={{ width: NODE_WIDTH, height: NODE_HEIGHT }}
+      className="flex cursor-pointer flex-col justify-center rounded-sm border border-dashed border-ink-3 bg-paper px-2.5 text-xs hover:border-accent"
+    >
+      <Handle
+        type="target"
+        position={Position.Left}
+        isConnectable={false}
+        className="!size-px !min-h-0 !min-w-0 !border-0 !bg-transparent"
+      />
+      <span className="font-mono text-sm text-ink">
+        {t.moreNode(data.count, data.side === 'caller')}
+      </span>
+      <span className="text-ink-3">{t.moreNodeHint}</span>
+      <Handle
+        type="source"
+        position={Position.Right}
+        isConnectable={false}
+        className="!size-px !min-h-0 !min-w-0 !border-0 !bg-transparent"
+      />
+    </div>
+  );
+});
+
+const nodeTypes = { symbol: SymbolNodeView, more: MoreNodeView };
 
 // Room above and below the nodes, and the least and most height the box takes.
 const FRAME = 72;
 const MIN_HEIGHT = 200;
 const MAX_HEIGHT = 640;
+
+// Below this zoom the labels stop being readable. A map that would need less is framed on the
+// symbol and its nearest hop instead of being shrunk to fit.
+const MIN_FIT_ZOOM = 0.55;
+const FIT = { padding: 0.12, minZoom: MIN_FIT_ZOOM, maxZoom: 1.1 };
 
 export type GraphCanvasProps = {
   layout: Layout;
@@ -79,20 +118,31 @@ export type GraphCanvasProps = {
   showMinimap: boolean;
   onOpen: (symbol: GraphSymbol) => void;
   onFocus?: (symbol: GraphSymbol) => void;
+  /** Asked for by the "+N more" nodes; the caller shows the full list. */
+  onMore?: () => void;
   label: string;
 };
 
-function Canvas({ layout, highlight, showMinimap, onOpen, onFocus, label }: GraphCanvasProps) {
+function Canvas({
+  layout,
+  highlight,
+  showMinimap,
+  onOpen,
+  onFocus,
+  onMore,
+  label,
+}: GraphCanvasProps) {
   const flow = useReactFlow();
   const phone = useBreakpoint() === 'phone';
   const duration = prefersReducedMotion() ? 0 : 160;
+  const frame = useRef<HTMLDivElement>(null);
   const [selectedId, setSelectedId] = useState<string>();
   const selected = layout.nodes.find((n) => n.id === selectedId);
   const height = Math.min(MAX_HEIGHT, Math.max(MIN_HEIGHT, layoutSize(layout).height + FRAME));
 
-  const nodes = useMemo<SymbolNode[]>(
-    () =>
-      layout.nodes.map((n) => ({
+  const nodes = useMemo<(SymbolNode | MoreNode)[]>(
+    () => [
+      ...layout.nodes.map((n): SymbolNode => ({
         id: n.id,
         type: 'symbol',
         position: { x: n.x, y: n.y },
@@ -106,6 +156,17 @@ function Canvas({ layout, highlight, showMinimap, onOpen, onFocus, label }: Grap
         connectable: false,
         ariaLabel: `${kindLabel(n.symbol.kind)} ${n.symbol.name}, ${n.symbol.filePath} line ${n.symbol.lineStart}`,
       })),
+      ...(layout.more ?? []).map((m): MoreNode => ({
+        id: m.id,
+        type: 'more',
+        position: { x: m.x, y: m.y },
+        data: { count: m.count, side: m.side },
+        draggable: false,
+        connectable: false,
+        ariaRole: 'button',
+        ariaLabel: `${t.moreNode(m.count, m.side === 'caller')}. ${t.moreNodeHint}`,
+      })),
+    ],
     [layout, highlight, selectedId],
   );
 
@@ -121,19 +182,37 @@ function Canvas({ layout, highlight, showMinimap, onOpen, onFocus, label }: Grap
           focusable: false,
           // The arrow ends at the symbol that is called.
           markerEnd: { type: MarkerType.ArrowClosed, color, width: 14, height: 14 },
-          style: { stroke: color, strokeWidth: lit ? 1.5 : 1 },
+          style: {
+            stroke: color,
+            strokeWidth: lit ? 1.5 : 1,
+            strokeDasharray: e.muted ? '4 4' : undefined,
+          },
         };
       }),
     [layout, highlight],
   );
 
+  const fit = useCallback(() => {
+    const width = frame.current?.clientWidth ?? 0;
+    const size = layoutSize(layout);
+    const pad = 1 + FIT.padding * 2;
+    const whole = Math.min(width / (size.width * pad), height / (size.height * pad));
+    // Too wide to read all at once: frame the symbol and what touches it, the rest is a pan away.
+    const near =
+      width > 0 && whole < MIN_FIT_ZOOM
+        ? [
+            ...layout.nodes.filter((n) => n.depth <= 1).map((n) => ({ id: n.id })),
+            ...(layout.more ?? []).map((m) => ({ id: m.id })),
+          ]
+        : undefined;
+    void flow.fitView({ ...FIT, duration, nodes: near });
+  }, [flow, layout, height, duration]);
+
   // A new neighbourhood re-frames itself; panning within one stays where the user left it.
   useEffect(() => {
-    const id = requestAnimationFrame(
-      () => void flow.fitView({ padding: 0.12, duration, minZoom: 0.55, maxZoom: 1.1 }),
-    );
+    const id = requestAnimationFrame(fit);
     return () => cancelAnimationFrame(id);
-  }, [layout, flow, duration]);
+  }, [fit]);
 
   // Enter and Space on a focused node only select it; the keys for what to do next are here
   // and in the bar above, so nothing depends on a double click.
@@ -143,7 +222,8 @@ function Canvas({ layout, highlight, showMinimap, onOpen, onFocus, label }: Grap
     if (e.key === 'Enter' || e.key === ' ') {
       if (!id) return;
       e.preventDefault();
-      setSelectedId(id);
+      if (id.startsWith('more:')) onMore?.();
+      else setSelectedId(id);
       return;
     }
     if (!selected || e.metaKey || e.ctrlKey || e.altKey) return;
@@ -186,6 +266,7 @@ function Canvas({ layout, highlight, showMinimap, onOpen, onFocus, label }: Grap
       {/* Keys bubble up from the focused node or the canvas; the wrapper only listens. */}
       {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions */}
       <div
+        ref={frame}
         role="group"
         aria-label={label}
         style={{ height }}
@@ -201,24 +282,24 @@ function Canvas({ layout, highlight, showMinimap, onOpen, onFocus, label }: Grap
           nodesConnectable={false}
           elementsSelectable={false}
           zoomOnDoubleClick={false}
-          minZoom={0.2}
+          minZoom={0.4}
           maxZoom={1.6}
           proOptions={{ hideAttribution: true }}
-          onNodeClick={(_, node) => setSelectedId(node.id)}
-          onNodeDoubleClick={(_, node) => onFocus?.(node.data.symbol)}
+          fitViewOptions={FIT}
+          onNodeClick={(_, node) => {
+            if (node.type === 'more') onMore?.();
+            else setSelectedId(node.id);
+          }}
+          onNodeDoubleClick={(_, node) => {
+            if (node.type === 'symbol') onFocus?.(node.data.symbol);
+          }}
           onPaneClick={() => setSelectedId(undefined)}
           onNodesChange={() => {}}
           fitView
           className="text-ink [&_.react-flow__node:focus-visible]:outline-2 [&_.react-flow__node:focus-visible]:outline-offset-2 [&_.react-flow__node:focus-visible]:outline-accent"
         >
           <Panel position="top-right">
-            <Button
-              size="sm"
-              className="bg-paper"
-              onClick={() =>
-                void flow.fitView({ padding: 0.12, duration, minZoom: 0.55, maxZoom: 1.1 })
-              }
-            >
+            <Button size="sm" className="bg-paper" onClick={fit}>
               {t.fitView}
             </Button>
           </Panel>

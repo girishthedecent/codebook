@@ -5360,6 +5360,12 @@ export interface components {
             event: "error";
         };
         Usage: {
+            daily: {
+                answers: number;
+                costUsd: string;
+                day: string;
+                tokens: number;
+            }[];
             guest: {
                 limit: number;
                 /** Format: date-time */

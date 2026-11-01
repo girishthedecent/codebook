@@ -14,6 +14,7 @@ import {
   TR,
   TextLink,
 } from '@/ui';
+import { DailyTrends } from './DailyTrends';
 import { ListLoading } from '@/features/account/ListLoading';
 import { formatBytes, formatCost, formatCount, formatReset } from '@/features/account/format';
 import { strings } from '@/features/account/strings';
@@ -130,6 +131,7 @@ function Totals({ usage }: { usage: Usage }) {
           ))}
         </TBody>
       </DataTable>
+      <DailyTrends daily={usage.daily} />
     </section>
   );
 }

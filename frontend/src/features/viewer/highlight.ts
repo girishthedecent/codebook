@@ -60,15 +60,31 @@ const byExtension: Record<string, string> = {
   cpp: 'cpp',
   hpp: 'cpp',
   rb: 'ruby',
+  kt: 'kotlin',
+  kts: 'kotlin',
+  swift: 'swift',
+  php: 'php',
+  cs: 'csharp',
+  dockerfile: 'dockerfile',
   toml: 'toml',
+};
+
+// Other names the backend may use for a language.
+const aliases: Record<string, string> = {
+  bash: 'shellscript',
+  shell: 'shellscript',
+  'c#': 'csharp',
+  docker: 'dockerfile',
 };
 
 /** The backend's language name when it has one we know, else the file extension. */
 export function languageFor(path: string, language: string | null | undefined) {
   const named = language?.toLowerCase();
   if (named && Object.values(byExtension).includes(named)) return named;
-  if (named === 'bash' || named === 'shell') return 'shellscript';
-  const ext = path.split('.').pop()?.toLowerCase() ?? '';
+  if (named && aliases[named]) return aliases[named];
+  const file = path.split('/').pop()?.toLowerCase() ?? '';
+  if (file === 'dockerfile' || file.startsWith('dockerfile.')) return 'dockerfile';
+  const ext = file.split('.').pop() ?? '';
   return byExtension[ext] ?? 'text';
 }
 

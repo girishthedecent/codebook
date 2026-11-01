@@ -65,6 +65,8 @@ describe('GET /usage/me', () => {
   it('returns the windows, totals and limits', async () => {
     const res = await alice.agent.get('/api/v1/usage/me');
     expect(res.status).toBe(200);
+    expect(res.body.data.daily).toHaveLength(14);
+    expect(res.body.data.daily.at(-1)).toMatchObject({ answers: 0, tokens: 0, costUsd: '0' });
     expect(res.body.data).toMatchObject({
       today: { messages: 0, tokensIn: 0, tokensOut: 0, costUsd: '0' },
       sources: 0,
@@ -134,6 +136,40 @@ describe('myUsageService', () => {
       costUsd: '0.0037',
     });
     expect(usage.limits.tokensToday.remaining).toBe(appConfig.limits.dailyTokensPerUser - 165);
+  });
+
+  it('lists the last 14 UTC days, zero-filled, summed like the totals', async () => {
+    await seedQuestions(alice.userId, workspaceId, [
+      hoursAgo(1),
+      hoursAgo(2),
+      daysAgo(3),
+      daysAgo(13),
+      daysAgo(14),
+    ]);
+    await prismaClient.usageEvent.createMany({
+      data: [
+        usageEvent(alice.userId, hoursAgo(1)),
+        usageEvent(alice.userId, hoursAgo(2), {
+          type: 'EMBEDDING',
+          tokensIn: 999,
+          tokensOut: 0,
+          costUsd: '0.0002',
+        }),
+        usageEvent(alice.userId, daysAgo(3)),
+        usageEvent(alice.userId, daysAgo(13), { tokensIn: 7, tokensOut: 3, costUsd: '0.5' }),
+        // Just outside the 14 days.
+        usageEvent(alice.userId, daysAgo(14)),
+      ],
+    });
+
+    const { daily } = await myUsageService(alice.userId, ANY_LIMIT_KEY, NOW.getTime());
+    expect(daily).toHaveLength(14);
+    expect(daily[0]).toEqual({ day: '2026-10-07', answers: 1, tokens: 10, costUsd: '0.5' });
+    expect(daily[10]).toEqual({ day: '2026-10-17', answers: 1, tokens: 110, costUsd: '0.001' });
+    expect(daily[13]).toEqual({ day: '2026-10-20', answers: 2, tokens: 110, costUsd: '0.0012' });
+    expect(daily[1]).toEqual({ day: '2026-10-08', answers: 0, tokens: 0, costUsd: '0' });
+    // The question from 14 days ago is left out.
+    expect(daily.reduce((sum, d) => sum + d.answers, 0)).toBe(4);
   });
 
   it('starts "today" at UTC midnight', async () => {

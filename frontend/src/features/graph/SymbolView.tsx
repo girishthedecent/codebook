@@ -185,7 +185,7 @@ function MapPanel({ repo, center }: { repo: string; center: GraphSymbol }) {
     [n.center, n.callers, n.dependencies],
   );
 
-  const set = (patch: Partial<{ dir: Direction; depth: number }>) =>
+  const set = (patch: Partial<{ dir: Direction; depth: number; view: 'list' | 'map' }>) =>
     void navigate({ search: (prev) => ({ ...prev, ...patch }) });
 
   const truncated = n.callers?.truncated || n.dependencies?.truncated;
@@ -232,6 +232,7 @@ function MapPanel({ repo, center }: { repo: string; center: GraphSymbol }) {
               showMinimap={bp === 'desktop' && layout.nodes.length > LIST_ALWAYS}
               onOpen={openInViewer}
               onFocus={focus}
+              onMore={() => set({ view: 'list' })}
               label={`${t.title}: ${center.name}`}
             />
           </Suspense>

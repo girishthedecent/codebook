@@ -552,6 +552,15 @@ const usageWindowSchema = z.object({
   costUsd: z.string(),
 });
 
+const usageDaySchema = z.object({
+  // UTC calendar day, YYYY-MM-DD.
+  day: z.string(),
+  answers: z.int(),
+  // Tokens of model calls, in plus out.
+  tokens: z.int(),
+  costUsd: z.string(),
+});
+
 const remainingSchema = z.object({ limit: z.int(), remaining: z.int() });
 
 export const usageSchema = z
@@ -559,6 +568,8 @@ export const usageSchema = z
     today: usageWindowSchema,
     last7Days: usageWindowSchema,
     last30Days: usageWindowSchema,
+    // The last 14 UTC days, oldest first, today last; days without activity are zeros.
+    daily: z.array(usageDaySchema),
     sources: z.int(),
     storage: z.object({ pdfBytes: z.int(), limitBytes: z.int() }),
     limits: z.object({

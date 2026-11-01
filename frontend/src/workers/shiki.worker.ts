@@ -1,6 +1,7 @@
 /// <reference lib="webworker" />
 import { createHighlighterCore, type HighlighterCore, type LanguageInput } from 'shiki/core';
 import { createJavaScriptRegexEngine } from 'shiki/engine/javascript';
+import { codebookDark, codebookLight } from './codebookThemes';
 
 /**
  * Syntax highlighting off the main thread. Grammars load on first use, so a TypeScript
@@ -30,6 +31,11 @@ const grammars: Record<string, () => LanguageInput> = {
   c: () => import('shiki/langs/c.mjs'),
   cpp: () => import('shiki/langs/cpp.mjs'),
   ruby: () => import('shiki/langs/ruby.mjs'),
+  kotlin: () => import('shiki/langs/kotlin.mjs'),
+  swift: () => import('shiki/langs/swift.mjs'),
+  php: () => import('shiki/langs/php.mjs'),
+  csharp: () => import('shiki/langs/csharp.mjs'),
+  dockerfile: () => import('shiki/langs/dockerfile.mjs'),
   toml: () => import('shiki/langs/toml.mjs'),
 };
 
@@ -38,12 +44,10 @@ const loaded = new Set<string>();
 
 function getHighlighter() {
   highlighter ??= createHighlighterCore({
-    themes: [
-      import('shiki/themes/github-light.mjs'),
-      import('shiki/themes/github-dark-dimmed.mjs'),
-    ],
+    themes: [codebookLight, codebookDark],
     langs: [],
-    engine: createJavaScriptRegexEngine(),
+    // A pattern the JS engine can't express is skipped rather than failing the whole file.
+    engine: createJavaScriptRegexEngine({ forgiving: true }),
   });
   return highlighter;
 }
@@ -58,7 +62,7 @@ async function highlight({ code, lang }: HighlightRequest): Promise<Token[][]> {
   return h
     .codeToTokensWithThemes(code, {
       lang,
-      themes: { light: 'github-light', dark: 'github-dark-dimmed' },
+      themes: { light: 'codebook-light', dark: 'codebook-dark' },
     })
     .map((line) =>
       line.map((t) => [

@@ -5,7 +5,6 @@ import { BackLink, LinkTab, LinkTabs, Wordmark } from '@/ui';
 import { cn } from '@/lib/cn';
 import { CommandMenu } from '@/features/command/CommandMenu';
 import { ShellFrame } from '@/features/shell/ShellFrame';
-import { shellStrings } from '@/features/shell/strings';
 import { strings } from './strings';
 
 /**
@@ -21,7 +20,7 @@ export function AccountLayout() {
   const page = (
     <div
       className={cn(
-        'mx-auto w-full px-4 py-6 sm:px-8 sm:py-10',
+        'mx-auto w-full py-6 pr-[max(1rem,env(safe-area-inset-right))] pl-[max(1rem,env(safe-area-inset-left))] sm:px-8 sm:py-10',
         wide ? 'max-w-wide' : 'max-w-narrow',
       )}
     >
@@ -36,16 +35,18 @@ export function AccountLayout() {
 function PlainFrame({ children }: { children: ReactNode }) {
   const { isAdmin, isGuest } = useMe();
   return (
-    <div className="min-h-dvh">
-      <header className="flex min-h-14 items-center justify-between gap-4 border-b border-rule px-4 sm:px-8">
+    <div className="min-h-dvh pb-[env(safe-area-inset-bottom)]">
+      <header className="flex min-h-14 items-center justify-between gap-4 border-b border-rule pt-[env(safe-area-inset-top)] pr-[max(1rem,env(safe-area-inset-right))] pl-[max(1rem,env(safe-area-inset-left))] sm:px-8">
         <Link to="/w" aria-label="CodeBook" className="flex min-h-11 items-center">
           <Wordmark />
         </Link>
-        <BackLink to="/w">
-          {isGuest ? shellStrings.backToDemo : strings.layout.backFallback}
-        </BackLink>
+        {isGuest ? (
+          <BackLink to="/demo">{strings.layout.backDemo}</BackLink>
+        ) : (
+          <BackLink to="/w">{strings.layout.backFallback}</BackLink>
+        )}
       </header>
-      <div className="mx-auto w-full max-w-wide px-4 pt-4 sm:px-8">
+      <div className="mx-auto w-full max-w-wide pt-4 pr-[max(1rem,env(safe-area-inset-right))] pl-[max(1rem,env(safe-area-inset-left))] sm:px-8">
         <LinkTabs label={strings.layout.nav}>
           {!isGuest && <LinkTab to="/memory">{strings.nav.memory}</LinkTab>}
           <LinkTab to="/usage">{strings.nav.usage}</LinkTab>

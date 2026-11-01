@@ -1,0 +1,17 @@
+/* Shiki's two-theme token colours, for code in the viewer and in answers. */
+
+.cb-code .t {
+  color: var(--l, var(--ink));
+}
+:root[data-theme='dark'] .cb-code .t,
+[data-theme='dark'] .cb-code .t {
+  color: var(--d, var(--ink));
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .cb-code .t {
+    color: var(--d, var(--ink));
+  }
+}
+.cb-code .t[data-i] {
+  font-style: italic;
+}

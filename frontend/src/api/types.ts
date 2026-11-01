@@ -66,6 +66,7 @@ export type Study = Schemas['Study'];
 export type StudyDetail = Schemas['StudyDetail'];
 export type StudyType = Study['type'];
 export type Usage = Schemas['Usage'];
+export type UsageDay = Usage['daily'][number];
 export type Demo = Schemas['Demo'];
 export type GraphOverview = Schemas['GraphOverview'];
 export type EvalDataset = Schemas['EvalDataset'];

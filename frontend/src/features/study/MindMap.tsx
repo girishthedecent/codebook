@@ -3,6 +3,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type KeyboardEvent,
   type PointerEvent as ReactPointerEvent,
 } from 'react';
 import { CaretRight } from '@phosphor-icons/react';
@@ -13,6 +14,7 @@ import { useBreakpoint } from '@/lib/breakpoints';
 import { Cites } from './Cites';
 import { citationsOf, type MindmapData, type MindmapNode } from './data';
 import { s } from './strings';
+import { treeKey, type TreeEntry, type TreeMove } from './treeNav';
 
 type Props = { map: MindmapData; index: Map<number, Citation> };
 
@@ -76,13 +78,61 @@ type TreeProps = {
   index: Map<number, Citation>;
 };
 
+/** The visible nodes in reading order, with the facts the keyboard handler needs. */
+function visibleEntries(root: MindmapNode, folded: Set<string>): TreeEntry[] {
+  const list: TreeEntry[] = [];
+  const walk = (node: MindmapNode, depth: number, parent?: string) => {
+    const expandable = node.children.length > 0;
+    const open = expandable && !folded.has(node.id);
+    list.push({ id: node.id, depth, parent, expandable, open });
+    if (open) for (const child of node.children) walk(child, depth + 1, node.id);
+  };
+  walk(root, 0);
+  return list;
+}
+
 function Outline({ root, folded, toggle, index }: TreeProps) {
+  const entries = useMemo(() => visibleEntries(root, folded), [root, folded]);
+  // Only one row is a tab stop; the arrow keys move it.
+  const [stop, setStop] = useState(root.id);
+  const items = useRef(new Map<string, HTMLElement>());
+  const tab = entries.some((e) => e.id === stop) ? stop : root.id;
+
+  const onKeyDown = (e: KeyboardEvent<HTMLElement>, id: string) => {
+    if (e.target !== e.currentTarget || e.metaKey || e.ctrlKey || e.altKey) return;
+    const move = treeKey(e.key, id, entries, 'list');
+    if (!move) return;
+    e.preventDefault();
+    if (move.toggle) toggle(move.toggle);
+    if (move.focus) items.current.get(move.focus)?.focus();
+  };
+
   return (
     <ul role="tree" aria-label={root.label} className="text-sm">
-      <OutlineItem node={root} depth={0} folded={folded} toggle={toggle} index={index} />
+      <OutlineItem
+        node={root}
+        depth={0}
+        folded={folded}
+        toggle={toggle}
+        index={index}
+        tab={tab}
+        onStop={setStop}
+        onKeyDown={onKeyDown}
+        register={(id, el) => {
+          if (el) items.current.set(id, el);
+          else items.current.delete(id);
+        }}
+      />
     </ul>
   );
 }
+
+type ItemProps = {
+  tab: string;
+  onStop: (id: string) => void;
+  onKeyDown: (e: KeyboardEvent<HTMLElement>, id: string) => void;
+  register: (id: string, el: HTMLElement | null) => void;
+};
 
 function OutlineItem({
   node,
@@ -90,11 +140,27 @@ function OutlineItem({
   folded,
   toggle,
   index,
-}: { node: MindmapNode; depth: number } & Omit<TreeProps, 'root'>) {
+  tab,
+  onStop,
+  onKeyDown,
+  register,
+}: { node: MindmapNode; depth: number } & Omit<TreeProps, 'root'> & ItemProps) {
   const hasChildren = node.children.length > 0;
   const open = hasChildren && !folded.has(node.id);
   return (
-    <li role="treeitem" aria-expanded={hasChildren ? open : undefined} aria-selected={false}>
+    <li
+      role="treeitem"
+      ref={(el) => register(node.id, el)}
+      tabIndex={tab === node.id ? 0 : -1}
+      aria-selected={tab === node.id}
+      aria-expanded={hasChildren ? open : undefined}
+      aria-level={depth + 1}
+      onFocus={(e) => {
+        if (e.target === e.currentTarget) onStop(node.id);
+      }}
+      onKeyDown={(e) => onKeyDown(e, node.id)}
+      className="outline-none [&:focus-visible>div:first-child]:bg-accent-wash"
+    >
       <div
         className={cn(
           'flex min-h-10 items-start gap-1 border-b border-rule',
@@ -104,6 +170,7 @@ function OutlineItem({
         {hasChildren ? (
           <button
             type="button"
+            tabIndex={-1}
             onClick={() => toggle(node.id)}
             aria-label={open ? `${s.map.collapse} ${node.label}` : `${s.map.expand} ${node.label}`}
             className="-ml-2 flex size-10 shrink-0 items-center justify-center rounded-xs text-ink-3 hover:bg-paper-2 hover:text-ink"
@@ -133,6 +200,10 @@ function OutlineItem({
               folded={folded}
               toggle={toggle}
               index={index}
+              tab={tab}
+              onStop={onStop}
+              onKeyDown={onKeyDown}
+              register={register}
             />
           ))}
         </ul>
@@ -157,7 +228,9 @@ type Placed = {
   y: number;
   label: string;
   width: number;
+  depth: number;
   parent?: Placed;
+  kids: Placed[];
   folded: boolean;
 };
 
@@ -190,9 +263,20 @@ function layout(root: MindmapNode, folded: Set<string>): Placed[] {
     const font = depth === 0 ? ROOT_FONT : FONT;
     const { label, width } = fit(node.label, font);
     const isFolded = folded.has(node.id) && node.children.length > 0;
-    const me: Placed = { node, x: depth * COL, y: 0, label, width, parent, folded: isFolded };
+    const me: Placed = {
+      node,
+      x: depth * COL,
+      y: 0,
+      label,
+      width,
+      depth,
+      parent,
+      kids: [],
+      folded: isFolded,
+    };
     placed.push(me);
     const kids = isFolded ? [] : node.children.map((child) => walk(child, depth + 1, me));
+    me.kids = kids;
     if (kids.length === 0) me.y = row++ * ROW;
     else me.y = (kids[0]!.y + kids[kids.length - 1]!.y) / 2;
     return me;
@@ -208,6 +292,21 @@ function MapCanvas({ root, folded, toggle, index }: TreeProps) {
   const box = useRef<HTMLDivElement>(null);
   const [view, setView] = useState<View>({ x: PAD, y: PAD, k: 1 });
   const [selected, setSelected] = useState<string | null>(null);
+  // Only one node is a tab stop; the arrow keys move it.
+  const [stop, setStop] = useState(root.id);
+  const items = useRef(new Map<string, SVGGElement>());
+  const entries = useMemo<TreeEntry[]>(
+    () =>
+      nodes.map((n) => ({
+        id: n.node.id,
+        depth: n.depth,
+        parent: n.parent?.node.id,
+        expandable: n.node.children.length > 0,
+        open: n.node.children.length > 0 && !n.folded,
+      })),
+    [nodes],
+  );
+  const tab = entries.some((e) => e.id === stop) ? stop : root.id;
 
   const bounds = useMemo(() => {
     let w = 0;
@@ -301,6 +400,38 @@ function MapCanvas({ root, folded, toggle, index }: TreeProps) {
     if (n.node.children.length) toggle(n.node.id);
   };
 
+  // Pans just enough to bring a node the keyboard reached into view.
+  const reveal = (n: Placed) => {
+    const rect = box.current?.getBoundingClientRect();
+    if (!rect) return;
+    const edge = 40;
+    setView((v) => {
+      const left = v.x + n.x * v.k;
+      const right = left + (n.width + 30) * v.k;
+      const y = v.y + n.y * v.k;
+      let dx = 0;
+      let dy = 0;
+      if (left < edge) dx = edge - left;
+      else if (right > rect.width - edge) dx = Math.max(rect.width - edge - right, edge - left);
+      if (y < edge) dy = edge - y;
+      else if (y > rect.height - edge) dy = rect.height - edge - y;
+      return dx || dy ? { ...v, x: v.x + dx, y: v.y + dy } : v;
+    });
+  };
+
+  const onKeyDown = (e: KeyboardEvent<SVGGElement>, n: Placed) => {
+    if (e.target !== e.currentTarget || e.metaKey || e.ctrlKey || e.altKey) return;
+    const move: TreeMove | undefined = treeKey(e.key, n.node.id, entries, 'columns');
+    if (!move) return;
+    e.preventDefault();
+    if (move.toggle) toggle(move.toggle);
+    const to = move.focus && nodes.find((m) => m.node.id === move.focus);
+    if (to) {
+      items.current.get(to.node.id)?.focus({ preventScroll: true });
+      reveal(to);
+    }
+  };
+
   const current = nodes.find((n) => n.node.id === selected);
   const cites = current ? citationsOf(current.node, index) : [];
 
@@ -322,27 +453,36 @@ function MapCanvas({ root, folded, toggle, index }: TreeProps) {
           className="block select-none"
         >
           <g transform={`translate(${view.x} ${view.y}) scale(${view.k})`}>
-            {nodes.map((n) =>
-              n.parent ? (
-                <path
-                  key={`edge-${n.node.id}`}
-                  d={edge(n.parent, n)}
-                  fill="none"
-                  stroke="var(--edge)"
-                  strokeWidth={1 / view.k}
-                />
-              ) : null,
-            )}
-            {nodes.map((n) => (
-              <MapNode
-                key={n.node.id}
-                n={n}
-                selected={n.node.id === selected}
-                onActivate={() => {
-                  if (moved.current <= 4) activate(n);
-                }}
-              />
-            ))}
+            <g aria-hidden>
+              {nodes.map((n) =>
+                n.parent ? (
+                  <path
+                    key={`edge-${n.node.id}`}
+                    d={edge(n.parent, n)}
+                    fill="none"
+                    stroke="var(--edge)"
+                    strokeWidth={1 / view.k}
+                  />
+                ) : null,
+              )}
+            </g>
+            <MapNode
+              n={nodes[0]!}
+              selected={selected}
+              tab={tab}
+              register={(id, el) => {
+                if (el) items.current.set(id, el);
+                else items.current.delete(id);
+              }}
+              onFocusNode={(n) => {
+                setStop(n.node.id);
+                setSelected(n.node.id);
+              }}
+              onKeyDown={onKeyDown}
+              onActivate={(n) => {
+                if (moved.current <= 4) activate(n);
+              }}
+            />
           </g>
         </svg>
         <div className="absolute right-2 bottom-2 flex gap-1 rounded-sm border border-rule bg-paper p-0.5">
@@ -383,58 +523,74 @@ function MapCanvas({ root, folded, toggle, index }: TreeProps) {
   );
 }
 
-function MapNode({
-  n,
-  selected,
-  onActivate,
-}: {
+type MapNodeProps = {
   n: Placed;
-  selected: boolean;
-  onActivate: () => void;
-}) {
+  selected: string | null;
+  tab: string;
+  register: (id: string, el: SVGGElement | null) => void;
+  onFocusNode: (n: Placed) => void;
+  onKeyDown: (e: KeyboardEvent<SVGGElement>, n: Placed) => void;
+  onActivate: (n: Placed) => void;
+};
+
+/** A topic and, nested inside it, the group of its visible children. */
+function MapNode(props: MapNodeProps) {
+  const { n, selected, tab, register, onFocusNode, onKeyDown, onActivate } = props;
   const isRoot = !n.parent;
   const hasChildren = n.node.children.length > 0;
+  const isSelected = n.node.id === selected;
   return (
     <g
-      transform={`translate(${n.x} ${n.y})`}
+      ref={(el) => register(n.node.id, el)}
       role="treeitem"
       aria-label={n.node.label}
+      aria-level={n.depth + 1}
       aria-expanded={hasChildren ? !n.folded : undefined}
-      aria-selected={selected}
-      tabIndex={0}
-      onClick={onActivate}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          onActivate();
-        }
+      aria-selected={isSelected}
+      tabIndex={tab === n.node.id ? 0 : -1}
+      onFocus={(e) => {
+        if (e.target === e.currentTarget) onFocusNode(n);
       }}
-      className="cursor-pointer outline-none [&:focus-visible>rect]:stroke-accent"
+      onKeyDown={(e) => onKeyDown(e, n)}
+      className="outline-none [&:focus-visible>g:first-child>rect]:stroke-accent"
     >
-      <title>{n.node.label}</title>
-      <rect
-        x={-6}
-        y={-12}
-        width={n.width + 20 + (n.folded ? 28 : 0)}
-        height={24}
-        rx={4}
-        fill={selected ? 'var(--accent-wash)' : 'transparent'}
-        stroke="transparent"
-        strokeWidth={2}
-      />
-      <circle
-        r={isRoot ? 3.5 : 2.5}
-        cx={0}
-        cy={0}
-        fill={hasChildren ? 'var(--accent)' : 'var(--ink-3)'}
-      />
-      <text x={9} y={4.5} fill="var(--ink)" style={{ font: isRoot ? ROOT_FONT : FONT }}>
-        {n.label}
-      </text>
-      {n.folded && (
-        <text x={n.width + 16} y={4.5} fill="var(--ink-3)" style={{ font: FONT }}>
-          +{n.node.children.length}
+      <g
+        transform={`translate(${n.x} ${n.y})`}
+        onClick={() => onActivate(n)}
+        className="cursor-pointer"
+      >
+        <title>{n.node.label}</title>
+        <rect
+          x={-6}
+          y={-12}
+          width={n.width + 20 + (n.folded ? 28 : 0)}
+          height={24}
+          rx={4}
+          fill={isSelected ? 'var(--accent-wash)' : 'transparent'}
+          stroke="transparent"
+          strokeWidth={2}
+        />
+        <circle
+          r={isRoot ? 3.5 : 2.5}
+          cx={0}
+          cy={0}
+          fill={hasChildren ? 'var(--accent)' : 'var(--ink-3)'}
+        />
+        <text x={9} y={4.5} fill="var(--ink)" style={{ font: isRoot ? ROOT_FONT : FONT }}>
+          {n.label}
         </text>
+        {n.folded && (
+          <text x={n.width + 16} y={4.5} fill="var(--ink-3)" style={{ font: FONT }}>
+            +{n.node.children.length}
+          </text>
+        )}
+      </g>
+      {n.kids.length > 0 && (
+        <g role="group">
+          {n.kids.map((kid) => (
+            <MapNode key={kid.node.id} {...props} n={kid} />
+          ))}
+        </g>
       )}
     </g>
   );

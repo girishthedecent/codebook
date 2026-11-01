@@ -1,8 +1,12 @@
 import { useState } from 'react';
-import type { Message } from '@/api/types';
+import type { Citation, Message } from '@/api/types';
 import { useMessageFeedback } from '@/api/queries/conversations';
 import { Button } from '@/ui';
 import { cn } from '@/lib/cn';
+import { citationCaption } from '@/features/citations/citationTarget';
+import { numberCitations } from '@/features/citations/numbering';
+import { citationStrings } from '@/features/citations/strings';
+import { renumberMarkers } from './markers';
 import { chat } from './strings';
 import { useCopy } from './useCopy';
 
@@ -60,9 +64,18 @@ export function Feedback({
   );
 }
 
-/** Copies an answer's text. Says so in place for a moment instead of a toast. */
-export function CopyAnswer({ text }: { text: string }) {
-  const { copy, label, announced } = useCopy(text);
+/** The answer with its markers numbered as the reader sees them, then the notes they point to. */
+function withNotes(text: string, citations: Citation[]) {
+  const { numbers, notes } = numberCitations(text, citations);
+  const body = renumberMarkers(text, numbers).trimEnd();
+  if (notes.length === 0) return body;
+  const lines = notes.map(({ citation, shown }) => `[${shown}] ${citationCaption(citation)}`);
+  return `${body}\n\n${citationStrings.notes}\n${lines.join('\n')}`;
+}
+
+/** Copies an answer's text and its notes. Says so in place for a moment instead of a toast. */
+export function CopyAnswer({ text, citations }: { text: string; citations: Citation[] }) {
+  const { copy, label, announced } = useCopy(withNotes(text, citations));
   return (
     <>
       <Button variant="ghost" size="sm" onClick={copy}>

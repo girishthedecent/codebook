@@ -6,7 +6,7 @@ import { routeTree } from './routeTree.gen';
 import { queryClient } from './api/queryClient';
 import { NotFound } from './ui/NotFound';
 import { RouteError } from './ui/RouteError';
-import { Toaster, TooltipProvider } from './ui';
+import { Toaster } from './ui/Toast';
 import { PendingScreen } from './features/shell/PendingScreen';
 import './styles/base.css';
 
@@ -34,10 +34,8 @@ declare module '@tanstack/react-router' {
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <RouterProvider router={router} />
-        <Toaster />
-      </TooltipProvider>
+      <RouterProvider router={router} />
+      <Toaster />
     </QueryClientProvider>
   </StrictMode>,
 );

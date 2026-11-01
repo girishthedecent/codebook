@@ -24,33 +24,80 @@ export function SkipLink() {
   );
 }
 
+function setTitleFromHeading() {
+  const h1 = document.querySelector('main h1')?.textContent?.trim();
+  const title = h1 ? `${h1} · CodeBook` : 'CodeBook';
+  if (document.title !== title) document.title = title;
+}
+
 /**
- * After a page change, sets the tab title from the page heading and moves focus to the main
- * area so keyboard and screen reader users start at the top of the new page. Changes that only
- * touch the query string (opening the viewer, paging) are left alone, and so is a page that
- * already put focus somewhere inside itself.
+ * Keeps the tab title in step with the page heading for as long as the app runs. A heading
+ * often arrives after the route settles (data loads, a conversation is renamed), so this
+ * watches `<main>` rather than reading the heading once. Until a `<main>` exists it watches
+ * the body, and moves to `<main>` as soon as there is one.
+ */
+function watchTitle() {
+  let frame = 0;
+  let watched: Element | null = null;
+  const observer = new MutationObserver(() => {
+    if (frame) return;
+    frame = requestAnimationFrame(() => {
+      frame = 0;
+      attach();
+      setTitleFromHeading();
+    });
+  });
+  function attach() {
+    const main = document.querySelector('main');
+    if (main && main === watched) return;
+    observer.disconnect();
+    watched = main;
+    observer.observe(main ?? document.body, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+    });
+  }
+  attach();
+  return {
+    attach,
+    stop() {
+      observer.disconnect();
+      if (frame) cancelAnimationFrame(frame);
+    },
+  };
+}
+
+/**
+ * After a page change, moves focus to the main area so keyboard and screen reader users start
+ * at the top of the new page, and keeps the tab title in step with the page heading. Changes
+ * that only touch the query string (opening the viewer, paging) leave focus alone, and so does
+ * a page that already put focus somewhere inside itself.
  */
 export function useRouteFocus() {
   const router = useRouter();
   const last = useRef<string | null>(null);
-  useEffect(
-    () =>
-      router.subscribe('onResolved', ({ toLocation }) => {
-        const path = toLocation.pathname;
-        const first = last.current === null;
-        const moved = path !== last.current;
-        last.current = path;
-        if (!moved) return;
-        requestAnimationFrame(() => {
-          const h1 = document.querySelector('main h1')?.textContent?.trim();
-          document.title = h1 ? `${h1} · CodeBook` : 'CodeBook';
-          if (first) return;
-          const main = document.querySelector('main');
-          const active = document.activeElement;
-          if (active && active !== document.body && main?.contains(active)) return;
-          focusMain();
-        });
-      }),
-    [router],
-  );
+  useEffect(() => {
+    const title = watchTitle();
+    const stopRouter = router.subscribe('onResolved', ({ toLocation }) => {
+      const path = toLocation.pathname;
+      const first = last.current === null;
+      const moved = path !== last.current;
+      last.current = path;
+      if (!moved) return;
+      requestAnimationFrame(() => {
+        title.attach();
+        setTitleFromHeading();
+        if (first) return;
+        const main = document.querySelector('main');
+        const active = document.activeElement;
+        if (active && active !== document.body && main?.contains(active)) return;
+        focusMain();
+      });
+    });
+    return () => {
+      stopRouter();
+      title.stop();
+    };
+  }, [router]);
 }

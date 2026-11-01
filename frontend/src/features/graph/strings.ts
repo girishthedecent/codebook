@@ -40,7 +40,9 @@ export const graphStrings = {
   noFileSymbols: 'No symbols were found in this file.',
   truncated: 'Showing the nearest results only; there are more.',
   capped: (shown: number, total: number) =>
-    `Showing the ${shown} nearest of ${total} symbols. Use depth 1 or one direction to see the rest.`,
+    `Showing the ${shown} nearest of ${total} symbols. The Connections tab lists the rest.`,
+  moreNode: (n: number, callers: boolean) => `+${n} more ${callers ? 'callers' : 'calls'}`,
+  moreNodeHint: 'Show them in the list',
   retry: 'Try again',
   offline: 'You seem to be offline.',
   sourcesError: "The repositories couldn't be loaded.",

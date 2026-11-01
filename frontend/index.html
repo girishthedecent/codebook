@@ -40,7 +40,14 @@
       // Theme before first paint so there is no flash. Stored value wins, else the system.
       try {
         var t = localStorage.getItem('codebook.theme');
-        if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
+        if (t === 'light' || t === 'dark') {
+          document.documentElement.dataset.theme = t;
+          // A manual choice also decides the browser chrome colour (see lib/theme.ts).
+          var c = t === 'dark' ? '#0f0e0c' : '#f6f3ec';
+          document.querySelectorAll('meta[name="theme-color"]').forEach(function (m) {
+            m.content = c;
+          });
+        }
       } catch (e) {}
     </script>
   </head>

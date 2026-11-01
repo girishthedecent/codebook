@@ -12,9 +12,11 @@ import { Button, ProgressRule, Tooltip, type ButtonProps } from '@/ui';
 import { BookView } from './BookView';
 import { CodeView } from './CodeView';
 import { WebView } from './WebView';
+import { usePrintedLabel } from './pageLabels';
 import { useCitationNav, type CitationStop } from './useCitationNav';
 import { ViewError } from './ViewError';
 import { s } from './strings';
+import './code.css';
 import './viewer.css';
 
 export type ViewerPresentation = 'pane' | 'panel' | 'sheet';
@@ -72,7 +74,8 @@ export default function ViewerPane({
 
   const shown = source.data ? displayTitle(source.data) : undefined;
   const title = shown?.name ?? (source.isError ? s.unavailable : '');
-  const where = locationOf(target);
+  const printed = usePrintedLabel(target.sourceId, target.kind === 'page' ? target.page : 0);
+  const where = locationOf(target, printed);
   const snippet = nav.current?.citation.snippet;
 
   const body = (
@@ -308,8 +311,10 @@ function NavButton({
 }
 
 /** "p. 157", "lib/router/index.js:42–61", "Routing". Paths are set in mono. */
-function locationOf(target: ViewerTarget): { text: string; mono: boolean } {
-  if (target.kind === 'page') return { text: `p. ${target.page}`, mono: false };
+function locationOf(target: ViewerTarget, printed?: string): { text: string; mono: boolean } {
+  if (target.kind === 'page') {
+    return { text: printed ? `p. ${target.page} (${printed})` : `p. ${target.page}`, mono: false };
+  }
   if (target.heading) return { text: target.heading, mono: false };
   if (target.lineStart === undefined) return { text: target.path, mono: true };
   const lines =

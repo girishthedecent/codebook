@@ -5,7 +5,7 @@ import type { Message } from '@/api/types';
 import { useMe } from '@/auth/useMe';
 import { useBreakpoint } from '@/lib/breakpoints';
 import { Button, Callout, ChipButton, EmptyState, PageLoading } from '@/ui';
-import { shellStrings } from '@/features/shell/strings';
+import { strings as accountStrings } from '@/features/account/strings';
 import { Composer } from './Composer';
 import { ConversationHeader } from './ConversationHeader';
 import { saveDraft } from './drafts';
@@ -172,9 +172,13 @@ export function ConversationView({
         <EmptyState
           action={
             <Button asChild variant="secondary">
-              <Link to="/w/$workspaceId" params={{ workspaceId }}>
-                {isGuest ? shellStrings.backToDemo : chat.newInstead}
-              </Link>
+              {isGuest ? (
+                <Link to="/demo">{accountStrings.layout.backDemo}</Link>
+              ) : (
+                <Link to="/w/$workspaceId" params={{ workspaceId }}>
+                  {chat.newInstead}
+                </Link>
+              )}
             </Button>
           }
         >
@@ -194,26 +198,29 @@ export function ConversationView({
         title={titleOf(conversation?.title, rows[0]?.view.question)}
       />
 
-      <div className="mx-auto w-full max-w-narrow flex-1 px-4 sm:px-6">
-        {loadFailed ? (
-          <Callout error={query.error} onRetry={() => void query.refetch()} className="my-8">
-            {chat.loadFailed}
-          </Callout>
-        ) : query.isPending && !pending ? (
-          <PageLoading label={chat.loading} rows={2} className="py-8" />
-        ) : (
-          <div>
-            {rows.map(({ view, key }) => (
-              <Exchange
-                key={key}
-                view={view}
-                conversationId={conversationId}
-                showMeta={!isGuest}
-                onRetry={view === newest && !streaming ? retry : undefined}
-              />
-            ))}
-          </div>
-        )}
+      {/* The container the answers' margin notes measure their room against. */}
+      <div className="@container w-full flex-1">
+        <div className="mx-auto w-full max-w-narrow px-4 sm:px-6">
+          {loadFailed ? (
+            <Callout error={query.error} onRetry={() => void query.refetch()} className="my-8">
+              {chat.loadFailed}
+            </Callout>
+          ) : query.isPending && !pending ? (
+            <PageLoading label={chat.loading} rows={2} className="py-8" />
+          ) : (
+            <div>
+              {rows.map(({ view, key }) => (
+                <Exchange
+                  key={key}
+                  view={view}
+                  conversationId={conversationId}
+                  showMeta={!isGuest}
+                  onRetry={view === newest && !streaming ? retry : undefined}
+                />
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {!atBottom && streaming && (

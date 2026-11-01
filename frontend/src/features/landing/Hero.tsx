@@ -5,13 +5,28 @@ import { textLinkClass } from '@/ui/textLinkClass';
 import { CodeListing } from './CodeListing';
 import { fixtures } from './fixtures';
 import { landing } from './strings';
-import type { Visitor } from './hooks';
+import { useInterval, useReducedMotion, type Visitor } from './hooks';
 
 const t = landing.hero;
+const ROTATE_MS = 6000;
 
 export function Hero({ visitor }: { visitor: Visitor }) {
   const questions = fixtures.demo?.starterQuestions ?? [];
   const [question, setQuestion] = useState(questions[0] ?? '');
+  // The suggestion walks through the starters until the visitor touches the form: hover or
+  // focus holds it, and typing or picking one ends it for good. Reduced motion never starts it.
+  const [held, setHeld] = useState(false);
+  const [chosen, setChosen] = useState(false);
+  const reduced = useReducedMotion();
+  useInterval(
+    () => setQuestion((current) => questions[(questions.indexOf(current) + 1) % questions.length]!),
+    ROTATE_MS,
+    !reduced && !held && !chosen && questions.length > 1,
+  );
+  const pick = (q: string) => {
+    setChosen(true);
+    setQuestion(q);
+  };
 
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
@@ -32,7 +47,15 @@ export function Hero({ visitor }: { visitor: Visitor }) {
         <p className="prose mt-5 max-w-[34em] text-ink-2">{t.lede}</p>
 
         {questions.length > 0 && (
-          <form action="/demo" method="get" className="mt-8 max-w-[40rem]">
+          <form
+            action="/demo"
+            method="get"
+            className="mt-8 max-w-[40rem]"
+            onMouseEnter={() => setHeld(true)}
+            onMouseLeave={() => setHeld(false)}
+            onFocus={() => setHeld(true)}
+            onBlur={() => setHeld(false)}
+          >
             <div className="rounded-md border border-edge bg-paper-2 transition-colors focus-within:border-accent">
               <label htmlFor="hero-question" className="sr-only">
                 {t.label}
@@ -43,7 +66,10 @@ export function Hero({ visitor }: { visitor: Visitor }) {
                 rows={3}
                 maxLength={1000}
                 value={question}
-                onChange={(e) => setQuestion(e.target.value)}
+                onChange={(e) => {
+                  setChosen(true);
+                  setQuestion(e.target.value);
+                }}
                 onKeyDown={onKeyDown}
                 className="block w-full resize-none bg-transparent px-4 pt-3.5 pb-1 font-serif text-base leading-snug text-ink outline-none"
               />
@@ -62,7 +88,7 @@ export function Hero({ visitor }: { visitor: Visitor }) {
                   <li key={q}>
                     <button
                       type="button"
-                      onClick={() => setQuestion(q)}
+                      onClick={() => pick(q)}
                       aria-pressed={q === question}
                       className={cn(
                         'w-full border-l-2 py-1.5 pl-3 text-left font-serif text-base text-balance transition-colors max-sm:min-h-11',

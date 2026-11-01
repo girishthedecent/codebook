@@ -15,13 +15,13 @@ import {
   RadioGroup,
   Select,
   SourceBadge,
-  Textarea,
   TextButton,
   TextLink,
   Sheet,
 } from '@/ui';
 import { displayTitle } from '@/lib/displayTitle';
 import { useBreakpoint } from '@/lib/breakpoints';
+import { ScopeFields, effectiveKind, type ScopeValue } from './Scope';
 import { s, typeDescription, typeLabel } from './strings';
 
 // Mirrors appConfig.study in the backend; the server checks again.
@@ -73,7 +73,12 @@ function CreateStudyForm({ workspaceId, onDone }: { workspaceId: string; onDone:
   const [type, setType] = useState<StudyType>('QUIZ');
   // undefined = the ready sources, up to the most one set can use; a set once the user picks.
   const [picked, setPicked] = useState<Set<string> | undefined>();
-  const [topic, setTopic] = useState('');
+  const [scope, setScope] = useState<ScopeValue>({
+    kind: 'none',
+    topic: '',
+    tocNodeId: '',
+    pathPrefix: '',
+  });
   const [count, setCount] = useState<number | undefined>();
   const [difficulty, setDifficulty] = useState<(typeof difficulties)[number]>('medium');
 
@@ -86,7 +91,21 @@ function CreateStudyForm({ workspaceId, onDone }: { workspaceId: string; onDone:
     range !== undefined &&
     chosenCount !== undefined &&
     (!Number.isInteger(chosenCount) || chosenCount < range.min || chosenCount > range.max);
-  const canSubmit = sourceIds.length > 0 && !tooMany && !badCount && !create.isPending;
+
+  // Chapters come from the picked books, folders from the picked repositories.
+  const picks = ready.filter((src) => sourceIds.includes(src.id));
+  const books = picks.filter((src) => src.type === 'PDF');
+  const repos = picks.filter((src) => src.type === 'GITHUB_REPO');
+  const kind = effectiveKind(scope, books, repos);
+  const scopeSource = (kind === 'chapter' ? books : repos).find((src) => src.id === scope.sourceId);
+  const scopeSourceId = (scopeSource ?? (kind === 'chapter' ? books[0] : repos[0]))?.id;
+  // A chapter or folder picked from a source that has since been unticked doesn't count.
+  const stale = Boolean(scope.sourceId) && !scopeSource;
+  const scopeMissing =
+    (kind === 'chapter' && (!scope.tocNodeId || stale)) ||
+    (kind === 'folder' && (!scope.pathPrefix || stale));
+  const canSubmit =
+    sourceIds.length > 0 && !tooMany && !badCount && !scopeMissing && !create.isPending;
 
   const toggle = (id: string) => {
     const next = new Set(picked ?? preselected);
@@ -98,10 +117,13 @@ function CreateStudyForm({ workspaceId, onDone }: { workspaceId: string; onDone:
   const submit = (e: FormEvent) => {
     e.preventDefault();
     if (!canSubmit) return;
+    const narrowed = kind === 'chapter' || kind === 'folder';
     const body: CreateStudyBody = {
       type,
-      sourceIds,
-      topic: topic.trim() || undefined,
+      sourceIds: narrowed && scopeSourceId ? [scopeSourceId] : sourceIds,
+      topic: kind === 'topic' ? scope.topic.trim() || undefined : undefined,
+      tocNodeId: kind === 'chapter' ? scope.tocNodeId : undefined,
+      pathPrefix: kind === 'folder' ? scope.pathPrefix : undefined,
       count: chosenCount,
       difficulty: type === 'QUIZ' ? difficulty : undefined,
     };
@@ -229,19 +251,7 @@ function CreateStudyForm({ workspaceId, onDone }: { workspaceId: string; onDone:
         )}
       </div>
 
-      <Field
-        label={s.create.topic}
-        hint={topic.trim() ? undefined : s.create.sampled}
-        note={s.create.optional}
-      >
-        <Textarea
-          rows={2}
-          maxLength={500}
-          value={topic}
-          placeholder={s.create.topicHint}
-          onChange={(e) => setTopic(e.target.value)}
-        />
-      </Field>
+      <ScopeFields value={{ ...scope, kind }} onChange={setScope} books={books} repos={repos} />
 
       {create.isError && <CreateError error={create.error} />}
 

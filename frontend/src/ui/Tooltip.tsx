@@ -1,13 +1,27 @@
-import type { ReactNode } from 'react';
+import { createContext, use, type ReactNode } from 'react';
 import { Tooltip as RadixTooltip } from 'radix-ui';
 import { cn } from '@/lib/cn';
 
-/** Mount once near the root; tooltips below share its delay. */
-export function TooltipProvider({ children }: { children: ReactNode }) {
+const Grouped = createContext(false);
+
+function Delays({ children }: { children: ReactNode }) {
   return (
     <RadixTooltip.Provider delayDuration={400} skipDelayDuration={200}>
       {children}
     </RadixTooltip.Provider>
+  );
+}
+
+/**
+ * Optional: tooltips below share one delay, so moving between neighbours opens the next at once.
+ * Without it each tooltip brings its own, which keeps the Radix tooltip code out of the first
+ * load of pages that have none.
+ */
+export function TooltipProvider({ children }: { children: ReactNode }) {
+  return (
+    <Grouped value>
+      <Delays>{children}</Delays>
+    </Grouped>
   );
 }
 
@@ -19,7 +33,8 @@ export type TooltipProps = {
 };
 
 export function Tooltip({ content, children, side = 'top', className }: TooltipProps) {
-  return (
+  const grouped = use(Grouped);
+  const tip = (
     <RadixTooltip.Root>
       <RadixTooltip.Trigger asChild>{children}</RadixTooltip.Trigger>
       <RadixTooltip.Portal>
@@ -38,4 +53,5 @@ export function Tooltip({ content, children, side = 'top', className }: TooltipP
       </RadixTooltip.Portal>
     </RadixTooltip.Root>
   );
+  return grouped ? tip : <Delays>{tip}</Delays>;
 }
