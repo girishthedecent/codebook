@@ -28,6 +28,7 @@ import {
   toast,
 } from '@/ui';
 import { formatBytes, nameOf } from './sourceInfo';
+import { enqueuePdfs } from './uploadQueue';
 import { findDuplicate, isHttpUrl, parseRepoInput } from './sourceMeta';
 import { SOURCE_LIMIT, strings } from './strings';
 
@@ -92,6 +93,18 @@ export function AddSourceDialog({
     onAdded?.(source);
   };
 
+  // Several books at once go up one after another in the background, and the dialog closes.
+  const queue = (files: File[]) => {
+    const openLibrary = () =>
+      void navigate({ to: '/w/$workspaceId/sources', params: { workspaceId } });
+    enqueuePdfs(workspaceId, files, openLibrary);
+    onOpenChange(false);
+    toast({
+      title: s.queued(files.length),
+      action: { label: s.queuedOpen, onClick: openLibrary },
+    });
+  };
+
   const shared = { workspaceId, sources, full, onAdded: added };
   const body = (
     <Tabs
@@ -105,7 +118,7 @@ export function AddSourceDialog({
       ]}
     >
       <TabPanel value="book">
-        <BookForm {...shared} onBusy={setUploading} />
+        <BookForm {...shared} onBusy={setUploading} onMany={queue} />
       </TabPanel>
       <TabPanel value="repo">
         <RepoForm {...shared} />
@@ -141,7 +154,8 @@ function BookForm({
   full,
   onAdded,
   onBusy,
-}: FormProps & { onBusy: (busy: boolean) => void }) {
+  onMany,
+}: FormProps & { onBusy: (busy: boolean) => void; onMany: (files: File[]) => void }) {
   const upload = useUploadPdf(workspaceId);
   const [file, setFile] = useState<File | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
@@ -169,10 +183,15 @@ function BookForm({
     setFile(picked);
   };
 
+  const pick = (files: File[]) => {
+    if (files.length > 1) onMany(files);
+    else void choose(files[0]);
+  };
+
   const onDrop = (event: DragEvent) => {
     event.preventDefault();
     setDragging(false);
-    void choose(event.dataTransfer.files[0]);
+    pick([...event.dataTransfer.files]);
   };
 
   const submit = (event: FormEvent) => {
@@ -231,11 +250,12 @@ function BookForm({
           ref={input}
           type="file"
           accept="application/pdf,.pdf"
+          multiple
           className="sr-only"
           tabIndex={-1}
           aria-hidden
           onChange={(e) => {
-            void choose(e.target.files?.[0]);
+            pick([...(e.target.files ?? [])]);
             // Lets the same file be picked again after fixing it.
             e.target.value = '';
           }}

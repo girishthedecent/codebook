@@ -1,0 +1,26 @@
+/* The reader's own marks: a rose marker for highlights, so they never read as the yellow of a
+   cited passage, and a cool blue for find hits. Shared by the viewer and the highlight lists. */
+
+:root {
+  --mark: rgb(214 112 142 / 0.26);
+  --mark-edge: #a84d70;
+  --find: rgb(58 95 138 / 0.18);
+  --find-now: rgb(58 95 138 / 0.42);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --mark: rgb(226 140 168 / 0.24);
+    --mark-edge: #d98aa6;
+    --find: rgb(143 176 216 / 0.2);
+    --find-now: rgb(143 176 216 / 0.42);
+  }
+}
+
+:root[data-theme='dark'],
+[data-theme='dark'] {
+  --mark: rgb(226 140 168 / 0.24);
+  --mark-edge: #d98aa6;
+  --find: rgb(143 176 216 / 0.2);
+  --find-now: rgb(143 176 216 / 0.42);
+}

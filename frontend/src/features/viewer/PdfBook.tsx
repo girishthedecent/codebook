@@ -5,27 +5,68 @@ import { Button, Callout, ProgressRule } from '@/ui';
 import { pageLabelsOptions } from './pageLabels';
 import { pdfDocumentOptions, readAsText } from './pdf';
 import { PdfPage } from './PdfPage';
-import { PageBar, type Zoom } from './PageBar';
+import { PageBar, zooms, type Zoom } from './PageBar';
+import { useTextMarks } from './useTextMarks';
+import { useViewerContext } from './viewerContext';
 import { ViewError } from './ViewError';
 import type { BookViewProps } from './BookView';
 import { s } from './strings';
 
 type Props = BookViewProps & { onUnavailable: () => void };
 
-const ZOOM_STEPS: Zoom[] = ['fit', 1, 1.5];
+const ZOOM_STEPS = zooms.map((z) => z.value);
+const ZOOM_KEY = 'codebook-pdf-zoom';
+
+// The reader's last zoom, so a book opens the way they left the last one.
+function savedZoom(): Zoom {
+  try {
+    const saved = localStorage.getItem(ZOOM_KEY);
+    return ZOOM_STEPS.find((z) => String(z) === saved) ?? 'fit';
+  } catch {
+    return 'fit';
+  }
+}
 
 /** The real page from the original PDF. Says so when the file can't be had, so the text shows. */
 export default function PdfBook({ sourceId, page, snippet, onPage, onUnavailable }: Props) {
   const pdf = useQuery(pdfDocumentOptions(sourceId));
   // Read by the header, which shows the printed number beside the physical one.
   useQuery({ ...pageLabelsOptions(sourceId, pdf.data), enabled: Boolean(pdf.data) });
-  const [zoom, setZoom] = useState<Zoom>('fit');
+  const [zoom, setZoomState] = useState<Zoom>(savedZoom);
+  const setZoom = (next: Zoom) => {
+    setZoomState(next);
+    try {
+      localStorage.setItem(ZOOM_KEY, String(next));
+    } catch {
+      // Private windows may refuse storage; the zoom still applies to this book.
+    }
+  };
   const scroller = useRef<HTMLDivElement>(null);
   const root = useRef<HTMLDivElement>(null);
+  const [height, setHeight] = useState(0);
   // The skeleton stands in until the first page has been drawn; after that the page being
   // left stays on screen until the next one is ready.
   const [drawn, setDrawn] = useState(false);
-  const onRendered = useCallback(() => setDrawn(true), []);
+  const [text, setText] = useState<{ layer: HTMLElement; version: number }>();
+  const onRendered = useCallback((layer: HTMLElement) => {
+    setDrawn(true);
+    setText((prev) => ({ layer, version: (prev?.version ?? 0) + 1 }));
+  }, []);
+
+  const { highlights } = useViewerContext();
+  const passages = highlights.filter((h) => h.page === page).map((h) => h.text);
+  useTextMarks(text?.layer ?? null, text?.version, passages);
+
+  // "Fit page" needs the height the page can take: the scroller's, inside its padding.
+  useEffect(() => {
+    const el = scroller.current;
+    if (!el) return;
+    const observer = new ResizeObserver(([entry]) => {
+      setHeight(Math.floor(entry!.contentRect.height));
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   const fallback = pdf.isError && readAsText(pdf.error);
   useEffect(() => {
@@ -48,9 +89,11 @@ export default function PdfBook({ sourceId, page, snippet, onPage, onUnavailable
   const onKey = useEffectEvent((event: KeyboardEvent) => {
     if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
     if (isTyping(event.target) || inOtherControl(event.target)) return;
-    // Keys pressed in the conversation or anywhere else on the page are theirs.
+    // Keys pressed in the conversation or anywhere else on the page are theirs. The viewer's
+    // own frame takes focus when the reader clicks the page, so it counts as the book.
     const inBook = event.target instanceof Node && root.current?.contains(event.target);
-    if (event.target !== document.body && !inBook) return;
+    const onFrame = event.target instanceof Element && event.target.matches('[data-viewer]');
+    if (event.target !== document.body && !inBook && !onFrame) return;
     const el = scroller.current;
     const pans = el !== null && el.scrollWidth > el.clientWidth;
     switch (event.key) {
@@ -116,6 +159,7 @@ export default function PdfBook({ sourceId, page, snippet, onPage, onUnavailable
               page={page}
               zoom={zoom}
               snippet={snippet}
+              fitHeight={zoom === 'page' ? height : undefined}
               onRendered={onRendered}
             />
           </div>

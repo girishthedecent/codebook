@@ -3,6 +3,8 @@ import { useSourceContent } from '@/api/queries';
 import { ProgressRule } from '@/ui';
 import { PageBar } from './PageBar';
 import { Highlighted } from './Highlighted';
+import { useTextMarks } from './useTextMarks';
+import { useViewerContext } from './viewerContext';
 import { ViewError } from './ViewError';
 import { s } from './strings';
 
@@ -52,6 +54,10 @@ export function BookView(props: BookViewProps) {
 function TextPage({ sourceId, page, snippet }: Omit<BookViewProps, 'onPage'>) {
   const content = useSourceContent(sourceId, { page });
   const data = content.data && 'page' in content.data ? content.data : undefined;
+  const [body, setBody] = useState<HTMLDivElement | null>(null);
+  const { highlights } = useViewerContext();
+  const passages = highlights.filter((h) => h.page === page).map((h) => h.text);
+  useTextMarks(body, data?.text, passages);
 
   if (content.isError) return <ViewError error={content.error} onRetry={() => content.refetch()} />;
   return (
@@ -61,7 +67,9 @@ function TextPage({ sourceId, page, snippet }: Omit<BookViewProps, 'onPage'>) {
         {data?.excerpt && <p className="mb-4 text-xs text-ink-3">{s.excerpt}</p>}
         {data &&
           (data.text.trim() ? (
-            <Highlighted text={data.text} snippet={snippet} className="prose" />
+            <div ref={setBody} data-selectable>
+              <Highlighted text={data.text} snippet={snippet} className="prose" />
+            </div>
           ) : (
             <p className="text-ink-3">{s.noText}</p>
           ))}

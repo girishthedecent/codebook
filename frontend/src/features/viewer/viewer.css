@@ -12,10 +12,44 @@
   }
 }
 
-/* The cited passage of a web page, drawn by the CSS Custom Highlight API. */
+/* Passages painted by the CSS Custom Highlight API: the cited one, the reader's highlights,
+   and find hits, the current hit strongest. */
 ::highlight(cb-cited) {
   background-color: var(--highlight);
   color: inherit;
+}
+::highlight(cb-mark) {
+  background-color: var(--mark);
+  color: inherit;
+}
+::highlight(cb-find) {
+  background-color: var(--find);
+  color: inherit;
+}
+::highlight(cb-find-now) {
+  background-color: var(--find-now);
+  color: inherit;
+}
+
+/* A book page stays white paper in both themes, so its marks keep their daylight tones. */
+.textLayer ::highlight(cb-mark) {
+  background-color: rgb(214 112 142 / 0.32);
+}
+.textLayer ::highlight(cb-find) {
+  background-color: rgb(58 95 138 / 0.22);
+}
+.textLayer ::highlight(cb-find-now) {
+  background-color: rgb(58 95 138 / 0.48);
+}
+
+/* Web page text size, chosen in the viewer's bar; the default follows the reading settings. */
+.cb-web[data-size='s'] .prose {
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+}
+.cb-web[data-size='l'] .prose {
+  font-size: 1.1875rem;
+  line-height: 1.6;
 }
 
 /* The page box pdf.js sizes its text layer against. */

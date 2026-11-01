@@ -5,7 +5,9 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { sourceContentQueryOptions } from '@/api/queries';
 import { Button, EmptyState, ProgressRule } from '@/ui';
 import { cn } from '@/lib/cn';
+import { findAll } from './findSnippet';
 import { languageFor, useHighlight, type Token } from './highlight';
+import { useViewerContext } from './viewerContext';
 import { ViewError } from './ViewError';
 import { s } from './strings';
 
@@ -82,6 +84,30 @@ export function CodeView({ sourceId, path, lineStart, lineEnd }: Props) {
   const loading = results.some((r) => r.isPending);
   const error = results.find((r) => r.isError);
 
+  // Find works on the lines loaded; a long file says so in the find bar.
+  const { find, setFindCount, setFindPartial, highlights } = useViewerContext();
+  const query = find?.query ?? '';
+  const hits = useMemo(
+    () => (query ? lines.flatMap((line) => findAll(line.text, query).map(() => line.n)) : []),
+    [lines, query],
+  );
+  const partial = lineCount !== undefined && lines.length < lineCount;
+  useEffect(() => {
+    setFindCount(hits.length);
+    setFindPartial(partial);
+    return () => setFindPartial(false);
+  }, [hits.length, partial, setFindCount, setFindPartial]);
+  const hitLines = useMemo(() => new Set(hits), [hits]);
+  const currentHit = hits.length && find ? hits[find.index % hits.length] : undefined;
+  const marked = useMemo(() => {
+    const set = new Set<number>();
+    for (const h of highlights) {
+      if (h.path !== path || h.lineStart === null) continue;
+      for (let n = h.lineStart; n <= (h.lineEnd ?? h.lineStart); n++) set.add(n);
+    }
+    return set;
+  }, [highlights, path]);
+
   const add = (w: number) =>
     setExtra((prev) => ({
       key,
@@ -111,6 +137,10 @@ export function CodeView({ sourceId, path, lineStart, lineEnd }: Props) {
           lineStart={lineStart}
           lineEnd={lineEnd ?? lineStart}
           scrollKey={`${key}:${lineStart ?? ''}-${lineEnd ?? ''}`}
+          marked={marked}
+          hitLines={hitLines}
+          currentHit={currentHit}
+          findKey={`${query}:${find?.index ?? 0}`}
           before={
             firstShown !== undefined && firstShown > 1 ? (
               <MoreButton onClick={() => add(windowOf(firstShown) - 1)}>{s.earlier}</MoreButton>
@@ -208,6 +238,10 @@ function Lines({
   lineStart,
   lineEnd,
   scrollKey,
+  marked,
+  hitLines,
+  currentHit,
+  findKey,
   before,
   after,
 }: {
@@ -217,6 +251,13 @@ function Lines({
   lineEnd?: number;
   /** Changes with the cited lines or the file; the view scrolls to the citation each time. */
   scrollKey: string;
+  /** Lines inside one of the reader's highlights. */
+  marked: Set<number>;
+  /** Lines with a find hit, and the line of the current one. */
+  hitLines: Set<number>;
+  currentHit?: number;
+  /** Changes with each step through the hits, which brings the current one into view. */
+  findKey: string;
   before: ReactNode;
   after: ReactNode;
 }) {
@@ -253,21 +294,41 @@ function Lines({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [target, scrollKey]);
 
+  const hitIndex = currentHit !== undefined ? lines.findIndex((l) => l.n === currentHit) : -1;
+  const hasHit = hitIndex >= 0;
+  useEffect(() => {
+    if (!hasHit) return;
+    if (virtual) {
+      virtualizer.scrollToIndex(hitIndex, { align: 'center' });
+    } else {
+      scrollRef.current
+        ?.querySelector<HTMLElement>(`[data-line="${lines[hitIndex]!.n}"]`)
+        ?.scrollIntoView({ block: 'center' });
+    }
+    // Only a step through the hits scrolls; lines loading around them don't.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [findKey, hasHit]);
+
   const row = (i: number, style?: CSSProperties) => {
     const line = lines[i]!;
+    const isCited = cited(line.n);
     return (
       <div
         key={line.n}
         data-line={line.n}
+        data-cited={isCited || undefined}
+        data-mark={marked.has(line.n) || undefined}
+        data-find={line.n === currentHit ? 'now' : hitLines.has(line.n) ? '' : undefined}
         style={style}
         className={cn(
           'flex',
           // A bar in the margin as well as the tint, so the lines read without colour.
-          cited(line.n) && 'bg-highlight shadow-[inset_3px_0_0_0_var(--accent)]',
+          isCited && 'bg-highlight shadow-[inset_3px_0_0_0_var(--accent)]',
         )}
       >
         <span
           aria-hidden
+          data-gutter
           style={{ width: gutter }}
           className="shrink-0 pr-3 text-right text-ink-3 select-none"
         >
@@ -287,6 +348,7 @@ function Lines({
         className="cb-code min-w-fit py-2 font-mono text-xs leading-5 text-ink"
         role="region"
         aria-label="Code"
+        data-selectable
       >
         {virtual ? (
           <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>

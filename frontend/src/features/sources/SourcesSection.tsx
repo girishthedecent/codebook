@@ -7,6 +7,7 @@ import { AddSourceDialog } from './AddSourceDialog';
 import { nameOf, stuckMinutes } from './sourceInfo';
 import { isIndexing } from './sourceMeta';
 import { strings } from './strings';
+import { useIndexingNotices } from './useIndexingNotices';
 import { useNow, useSourceList } from './useSourceList';
 import { useSourceAccess } from './useSourceAccess';
 
@@ -28,6 +29,7 @@ export function SourcesSection({
   const [adding, setAdding] = useState(false);
   const { sources } = query;
   const now = useNow(sources.some((s) => isIndexing(s.status)));
+  useIndexingNotices(workspaceId, sources);
   if (collapsed) return null;
 
   const shown = sources.slice(0, SHOWN);
@@ -81,6 +83,15 @@ export function SourcesSection({
           className="block px-2 py-1.5 text-xs text-ink-3 hover:text-accent max-sm:py-3"
         >
           {sources.length === 0 && canManage ? strings.add : strings.all}
+        </Link>
+      )}
+      {canManage && (
+        <Link
+          to="/w/$workspaceId/highlights"
+          params={{ workspaceId }}
+          className="block px-2 py-1.5 text-xs text-ink-3 hover:text-accent max-sm:py-3 [&.active]:text-ink"
+        >
+          {strings.library.highlights}
         </Link>
       )}
       {canManage && (

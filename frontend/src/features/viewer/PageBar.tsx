@@ -4,12 +4,14 @@ import { cn } from '@/lib/cn';
 import { Button } from '@/ui';
 import { s } from './strings';
 
-export type Zoom = 'fit' | 1 | 1.5;
+/** `fit` fills the pane's width, `page` shows the whole page; the numbers are print sizes. */
+export type Zoom = 'fit' | 'page' | 1 | 1.5;
 
-const zooms: Array<{ value: Zoom; label: string }> = [
-  { value: 'fit', label: s.fitWidth },
-  { value: 1, label: '100%' },
-  { value: 1.5, label: '150%' },
+export const zooms: Array<{ value: Zoom; label: string; short: string }> = [
+  { value: 'page', label: s.fitPage, short: s.fitPageShort },
+  { value: 'fit', label: s.fitWidth, short: s.fitWidthShort },
+  { value: 1, label: '100%', short: '100%' },
+  { value: 1.5, label: '150%', short: '150%' },
 ];
 
 /**
@@ -109,7 +111,7 @@ export function PageBar({
             onClick={() => onZoom(zooms[(current + 1) % zooms.length]!.value)}
           >
             <MagnifyingGlassPlus size={16} aria-hidden />
-            {zooms[current]?.label === s.fitWidth ? 'Fit' : zooms[current]?.label}
+            {zooms[current]?.short}
           </Button>
         </>
       )}
