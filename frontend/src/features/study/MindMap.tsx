@@ -130,6 +130,14 @@ function Outline(props: TreeProps) {
     if (move.focus) items.current.get(move.focus)?.focus();
   };
 
+  // A closed menu hands focus back to its row rather than the button that opened it, which is
+  // out of the tab order and deaf to the arrow keys. Unless the reader clicked somewhere else.
+  const menuClosed = (e: Event, id: string) => {
+    e.preventDefault();
+    const active = document.activeElement;
+    if (!active || active === document.body) items.current.get(id)?.focus();
+  };
+
   return (
     <ul role="tree" aria-label={root.label} className="text-sm">
       <OutlineItem
@@ -142,6 +150,7 @@ function Outline(props: TreeProps) {
         onMenu={setMenuFor}
         onStop={setStop}
         onKeyDown={onKeyDown}
+        onMenuClosed={menuClosed}
         register={(id, el) => {
           if (el) items.current.set(id, el);
           else items.current.delete(id);
@@ -158,6 +167,7 @@ type ItemProps = {
   onMenu: (id: string | null) => void;
   onStop: (id: string) => void;
   onKeyDown: (e: KeyboardEvent<HTMLElement>, id: string) => void;
+  onMenuClosed: (e: Event, id: string) => void;
   register: (id: string, el: HTMLElement | null) => void;
 };
 
@@ -167,7 +177,7 @@ function OutlineItem(
 ) {
   const { node, depth, trail, folded, toggle, index, tab, menuFor, onMenu, onStop, onKeyDown } =
     props;
-  const { register, workspaceId, title } = props;
+  const { register, onMenuClosed, workspaceId, title } = props;
   const hasChildren = node.children.length > 0;
   const open = hasChildren && !folded.has(node.id);
   return (
@@ -220,6 +230,7 @@ function OutlineItem(
           title={title}
           open={menuFor === node.id}
           onOpenChange={(next) => onMenu(next ? node.id : null)}
+          onCloseAutoFocus={(e) => onMenuClosed(e, node.id)}
           trigger={
             <button
               type="button"

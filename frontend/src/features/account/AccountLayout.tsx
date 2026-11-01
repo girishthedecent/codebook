@@ -5,6 +5,7 @@ import { BackLink, LinkTab, LinkTabs, Wordmark } from '@/ui';
 import { cn } from '@/lib/cn';
 import { CommandMenu } from '@/features/command/CommandMenu';
 import { ShellFrame } from '@/features/shell/ShellFrame';
+import { ShortcutsDialog } from '@/features/shell/ShortcutsDialog';
 import { strings } from './strings';
 
 /**
@@ -56,6 +57,7 @@ function PlainFrame({ children }: { children: ReactNode }) {
       </div>
       <main id="main">{children}</main>
       <CommandMenu />
+      <ShortcutsDialog />
     </div>
   );
 }

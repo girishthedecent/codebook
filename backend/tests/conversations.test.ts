@@ -191,6 +191,7 @@ describe('conversations API', () => {
       expect(pinned.status).toBe(200);
       const body = (pinned.body as { data: ConversationBody & { pinnedAt: string | null } }).data;
       expect(body.pinnedAt).toEqual(expect.any(String));
+      expect(Math.abs(Date.parse(body.pinnedAt!) - Date.now())).toBeLessThan(60_000);
       expect(body.title).toBe('New conversation');
       expect((await loadConversation(id)).updatedAt).toEqual(before.updatedAt);
 
@@ -205,12 +206,18 @@ describe('conversations API', () => {
 
     it('renames and pins in one request', async () => {
       const { id } = await startConversation();
+      const lastActive = new Date('2026-01-01T00:00:00Z');
+      await prismaClient.conversation.update({ where: { id }, data: { updatedAt: lastActive } });
       const res = await patch(id, { title: 'Salts', pinned: true });
       expect(res.status).toBe(200);
       expect((res.body as { data: object }).data).toMatchObject({
         title: 'Salts',
         pinnedAt: expect.any(String),
       });
+      // A new title is activity.
+      expect((await loadConversation(id)).updatedAt.getTime()).toBeGreaterThan(
+        lastActive.getTime(),
+      );
       expect((await patch(id, { pinned: 'yes' })).status).toBe(400);
       expect((await patch(id, { pinned: true }, bob)).status).toBe(404);
       expect((await loadConversation(id)).pinnedAt).not.toBeNull();

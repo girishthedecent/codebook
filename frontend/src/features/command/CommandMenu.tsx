@@ -169,7 +169,6 @@ function Menu({ close, showShortcuts }: { close: () => void; showShortcuts: () =
     .filter((conv) => match(conv.title))
     .slice(0, 8);
 
-  // `go` takes a plain address, so a page another part of the app adds later needs no import here.
   const actions: Action[] = [
     ...when(Boolean(workspaceId), [s.newConversation, () => inWorkspace('')]),
     [c.switchTheme, toggleTheme],

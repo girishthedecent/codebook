@@ -197,13 +197,23 @@ export default function ViewerPane({
   // The message box is on the conversation pages, and a new conversation has one. On phones
   // and tablets the viewer covers it, so the viewer steps aside once the question is set up.
   const onChat = /^\/w\/[^/]+\/?$/.test(pathname) || /\/c\/[^/]+\/?$/.test(pathname);
+  const asked = useRef(false);
   const afterAsk = () => {
     const covering = presentation !== 'pane';
     if (onChat && !covering) return;
+    asked.current = covering;
     const keep = (prev: Record<string, unknown>) =>
       covering ? { ...prev, ...closedViewerSearch } : prev;
     if (onChat || !workspaceId) void navigate({ to: '.', search: keep });
     else void navigate({ to: '/w/$workspaceId', params: { workspaceId }, search: keep });
+  };
+  // Closing on an ask leaves focus to the message box instead of returning it to whatever
+  // opened the viewer. The box tries on its own a frame after taking the passage; this catches
+  // the case where the viewer was still holding focus then.
+  const onCloseAutoFocus = (event: Event) => {
+    if (!asked.current) return;
+    event.preventDefault();
+    document.querySelector<HTMLElement>('[data-composer]')?.focus();
   };
 
   const sourceType = source.data?.type;
@@ -323,6 +333,7 @@ export default function ViewerPane({
             ref={setFrame}
             data-viewer
             onEscapeKeyDown={onEscape}
+            onCloseAutoFocus={onCloseAutoFocus}
             className="fixed inset-x-0 bottom-0 z-50 flex h-[calc(100dvh-2rem)] flex-col rounded-t-md border-t border-rule bg-paper outline-none"
           >
             <Drawer.Handle className="mx-auto mt-2 h-1 w-9 rounded-full bg-rule-2" />
@@ -347,6 +358,7 @@ export default function ViewerPane({
             ref={setFrame}
             data-viewer
             onEscapeKeyDown={onEscape}
+            onCloseAutoFocus={onCloseAutoFocus}
             aria-describedby={undefined}
             className="fixed inset-y-0 right-0 z-50 flex w-[min(520px,calc(100vw-4rem))] flex-col border-l border-rule bg-paper shadow-float outline-none data-[state=open]:animate-[fade-in_150ms_ease-out]"
           >

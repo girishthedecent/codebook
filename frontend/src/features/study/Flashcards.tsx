@@ -27,7 +27,7 @@ type Props = {
 /**
  * A card at a time: tap or Space flips it, arrows or a swipe move between cards, and "Know" /
  * "Don't know" sort it into a pile and move on. Piles and position are URL state (see
- * search.ts); the `again` pile is the cards not known yet. Reaching the end of a pass through
+ * search.ts); the `again` pile is the cards not known yet. Sorting the last unsorted card of
  * the whole deck saves the piles as an attempt.
  */
 export function Flashcards({
@@ -45,8 +45,6 @@ export function Flashcards({
   const again = idSet(search.again);
   const record = useRecordAttempt(workspaceId, studyId);
   const [previous, setPrevious] = useState<Study['lastAttempt']>();
-  // Going back to the last card and on again ends the same pass; it is saved once.
-  const savedPass = useRef<string | undefined>(undefined);
 
   const cards = search.pile === 'again' ? deck.cards.filter((c) => again.has(c.id)) : deck.cards;
   const total = cards.length;
@@ -54,13 +52,13 @@ export function Flashcards({
   const at = Math.min(Math.max((search.card ?? 1) - 1, 0), total);
   const card = cards[at];
 
-  // Only a pass through the whole deck counts; going over the unknown pile is practice.
-  const endPass = (known: Set<string>) => {
-    if (search.pile === 'again') return;
+  // A pass is over once every card of the deck is in a pile, in whatever order they were
+  // sorted. Moving a card between piles afterwards isn't a new attempt, and going over the
+  // unknown pile is practice.
+  const allSorted = (k: Set<string>, a: Set<string>) =>
+    deck.cards.every((c) => k.has(c.id) || a.has(c.id));
+  const savePass = (known: Set<string>) => {
     const items = deck.cards.map((c, i) => ({ index: i, ok: known.has(c.id) }));
-    const signature = items.map((item) => (item.ok ? 1 : 0)).join('');
-    if (savedPass.current === signature) return;
-    savedPass.current = signature;
     setPrevious(lastAttempt);
     const score = items.filter((item) => item.ok).length;
     record.mutate({ score, total: deck.cards.length, items });
@@ -68,9 +66,7 @@ export function Flashcards({
 
   const go = (to: number) => {
     setFlipped(false);
-    const next = Math.min(Math.max(to, 0), total);
-    if (next === total && at < total) endPass(know);
-    setSearch({ card: next + 1 });
+    setSearch({ card: Math.min(Math.max(to, 0), total) + 1 });
   };
   const sort = (pile: 'know' | 'again') => {
     if (!card) return;
@@ -81,7 +77,7 @@ export function Flashcards({
     setFlipped(false);
     // Marking a card known inside the again pile removes it, so the next card slides into this slot.
     const leavesPile = pile === 'know' && search.pile === 'again';
-    if (at === total - 1) endPass(k);
+    if (search.pile !== 'again' && allSorted(k, a) && !allSorted(know, again)) savePass(k);
     setSearch({ know: idCsv(k), again: idCsv(a), card: leavesPile ? at + 1 : at + 2 });
   };
 

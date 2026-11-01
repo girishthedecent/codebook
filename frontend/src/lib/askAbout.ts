@@ -4,7 +4,7 @@ import type { ViewerTarget } from './viewerParams';
 /**
  * A passage the user wants to ask about: selected text in the viewer, a flashcard, a graph
  * symbol. Whoever has it calls `askAbout`; the composer on the page picks it up, quotes it and
- * takes focus. One at a time, and it is dropped once the question is sent or dismissed.
+ * takes focus. One at a time; it waits here until a message box takes it.
  */
 export type AskAbout = {
   quote: string;
@@ -22,8 +22,19 @@ function emit() {
   for (const fn of listeners) fn();
 }
 
+// Code keeps its lines and indentation; only trailing spaces, long runs of blank lines and
+// blank lines at either end go. Prose arrives already flattened by whoever sent it.
+function tidy(text: string) {
+  return text
+    .split(/\r\n?|\n/)
+    .map((line) => line.trimEnd())
+    .join('\n')
+    .replace(/\n{4,}/g, '\n\n')
+    .replace(/^\n+|\n+$/g, '');
+}
+
 export function askAbout(next: AskAbout) {
-  const quote = next.quote.replace(/\s+/g, ' ').trim();
+  const quote = tidy(next.quote);
   if (!quote) return;
   current = {
     ...next,

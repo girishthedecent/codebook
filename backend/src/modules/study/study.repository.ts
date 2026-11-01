@@ -89,6 +89,10 @@ export async function requeueArtifact(artifactId: string, staleBefore: Date) {
 /** Saves the attempt and drops the user's oldest on this set beyond the newest `keep`. */
 export async function createAttempt(data: Prisma.StudyAttemptUncheckedCreateInput, keep: number) {
   return prismaClient.$transaction(async (tx) => {
+    // Lock the user row so two saves at once can't both trim the same oldest attempt and
+    // leave one over the limit.
+    await tx.$queryRaw`SELECT 1 FROM "user" WHERE id = ${data.userId} FOR UPDATE`;
+
     const attempt = await tx.studyAttempt.create({ data });
     const older = await tx.studyAttempt.findMany({
       where: { artifactId: data.artifactId, userId: data.userId },

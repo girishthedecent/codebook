@@ -127,31 +127,38 @@ export async function firstQuestion(conversationId: string) {
 }
 
 /**
- * Renames and pins or unpins. Pinning is not activity: without a new title, updatedAt is
- * written back as it was, so the conversation keeps its place among the unpinned ones, and
- * pinning a pinned one keeps its pin time. Null when the conversation isn't this user's.
+ * Renames and pins or unpins. Pinning a pinned one keeps its pin time. Null when the
+ * conversation isn't this user's.
  */
 export async function updateConversation(
   userId: string,
   conversationId: string,
   { title, pinned }: { title?: string; pinned?: boolean },
 ) {
-  const current = await prismaClient.conversation.findFirst({
-    where: { id: conversationId, ...visibleTo(userId) },
-    select: { pinnedAt: true, updatedAt: true },
-  });
-  if (!current) return null;
+  const where = { id: conversationId, ...visibleTo(userId) };
+  if (!(await prismaClient.conversation.findFirst({ where, select: { id: true } }))) return null;
 
-  const data: Prisma.ConversationUpdateManyMutationInput = {};
-  if (title !== undefined) data.title = title;
-  else data.updatedAt = current.updatedAt;
-  if (pinned !== undefined) data.pinnedAt = pinned ? (current.pinnedAt ?? new Date()) : null;
+  if (pinned !== undefined) await setPinned(conversationId, pinned);
+  if (title !== undefined) {
+    const [updated] = await prismaClient.conversation.updateManyAndReturn({
+      where,
+      data: { title },
+    });
+    return updated ?? null;
+  }
+  return prismaClient.conversation.findUnique({ where: { id: conversationId } });
+}
 
-  const [updated] = await prismaClient.conversation.updateManyAndReturn({
-    where: { id: conversationId, ...visibleTo(userId) },
-    data,
-  });
-  return updated ?? null;
+// Pinning is not activity, so it goes around Prisma, which would bump updatedAt. One statement
+// leaves updatedAt alone: the conversation keeps its place among the unpinned ones, and an
+// answer saved at the same moment keeps the time it set.
+async function setPinned(conversationId: string, pinned: boolean) {
+  await (pinned
+    ? prismaClient.$executeRaw`
+        UPDATE "Conversation" SET "pinnedAt" = COALESCE("pinnedAt", ${new Date()})
+        WHERE id = ${conversationId}`
+    : prismaClient.$executeRaw`
+        UPDATE "Conversation" SET "pinnedAt" = NULL WHERE id = ${conversationId}`);
 }
 
 /** Returns false when there was nothing of this user's to delete. */

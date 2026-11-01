@@ -12,6 +12,8 @@ export type MenuProps = {
   side?: 'top' | 'bottom' | 'left' | 'right';
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+  /** Called as the menu closes; prevent its default to keep focus off the trigger. */
+  onCloseAutoFocus?: (event: Event) => void;
   className?: string;
 };
 
@@ -22,6 +24,7 @@ export function Menu({
   side = 'bottom',
   open,
   onOpenChange,
+  onCloseAutoFocus,
   className,
 }: MenuProps) {
   return (
@@ -33,6 +36,7 @@ export function Menu({
           side={side}
           sideOffset={6}
           collisionPadding={8}
+          onCloseAutoFocus={onCloseAutoFocus}
           className={cn(floatingClass, 'min-w-[180px]', className)}
         >
           {children}

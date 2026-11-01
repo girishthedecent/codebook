@@ -115,8 +115,12 @@ async function send(workspaceId: string, queue: Queue, id: number, file: File) {
   queue.current = controller;
   if (file.size === 0) return patch(queue, id, { status: 'failed', error: s.empty });
   if (file.size > PDF_MAX_BYTES) return patch(queue, id, { status: 'failed', error: s.tooBig });
-  if (!(await looksLikePdf(file))) return patch(queue, id, { status: 'failed', error: s.notPdf });
-  if (controller.signal.aborted) return patch(queue, id, { status: 'cancelled' });
+  const pdf = await looksLikePdf(file);
+  if (controller.signal.aborted) {
+    queue.batch.total -= 1;
+    return patch(queue, id, { status: 'cancelled' });
+  }
+  if (!pdf) return patch(queue, id, { status: 'failed', error: s.notPdf });
 
   patch(queue, id, { status: 'uploading' });
   try {

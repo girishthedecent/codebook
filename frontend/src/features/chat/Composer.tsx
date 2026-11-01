@@ -53,7 +53,8 @@ function readMemoryPref() {
  *
  * A passage sent from elsewhere (the viewer, a flashcard, the graph) is quoted at the top of
  * the draft with a line saying where it is from, until the question is sent or the line is
- * dismissed.
+ * dismissed. The first box to take a passage keeps it, so it doesn't follow the reader into
+ * other conversations.
  */
 export function Composer({
   draftScope,
@@ -88,11 +89,18 @@ export function Composer({
 
   useEffect(() => {
     if (!placed) return;
-    const el = box.current;
-    if (!el) return;
-    el.focus();
-    el.setSelectionRange(el.value.length, el.value.length);
-    el.scrollTop = el.scrollHeight;
+    if (about === placed) clearAskAbout();
+    // A frame later, so a viewer that closes on asking has let go of focus first.
+    const frame = requestAnimationFrame(() => {
+      const el = box.current;
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(el.value.length, el.value.length);
+      el.scrollTop = el.scrollHeight;
+    });
+    return () => cancelAnimationFrame(frame);
+    // Only for a newly placed passage; `about` turning null after the clear doesn't count.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [placed]);
 
   useShortcut('/', () => box.current?.focus());
@@ -132,7 +140,6 @@ export function Composer({
       setText((t) => (t.startsWith(quote) ? t.slice(quote.length) : t));
     }
     setPlaced(null);
-    clearAskAbout();
     box.current?.focus();
   };
 
@@ -145,7 +152,6 @@ export function Composer({
     setText('');
     clearDraft(draftScope);
     setPlaced(null);
-    clearAskAbout();
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -165,11 +171,11 @@ export function Composer({
     <ComposerDock>
       <form onSubmit={submit} className="mx-auto w-full max-w-[720px]">
         <div className="rounded-md border border-edge bg-paper transition-colors duration-150 focus-within:border-accent">
-          {about && (
+          {placed && (
             <div className="flex items-center gap-2 border-b border-rule py-0.5 pr-1 pl-3.5 text-xs text-ink-3">
               <p className="min-w-0 flex-1 truncate">
                 {chat.about}{' '}
-                <span className="font-serif text-sm text-ink-2 italic">{about.label}</span>
+                <span className="font-serif text-sm text-ink-2 italic">{placed.label}</span>
               </p>
               <button
                 type="button"
@@ -188,6 +194,7 @@ export function Composer({
           <textarea
             id={`composer-${draftScope}`}
             ref={box}
+            data-composer
             rows={1}
             value={text}
             onChange={(e) => setText(e.target.value)}

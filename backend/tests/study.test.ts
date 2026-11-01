@@ -941,6 +941,14 @@ describe('attempts', () => {
       lastAttempt: { score: 4 },
       attemptCount: attemptsKept,
     });
+
+    // Several at once at the limit (two rarely overlap enough to show a race): all are saved
+    // and as many old ones go.
+    const statuses = await Promise.all(
+      Array.from({ length: 6 }, async (_, i) => (await post(id, attempt(i % 5))).status),
+    );
+    expect(statuses).toEqual(Array(6).fill(201));
+    expect(await prismaClient.studyAttempt.count({ where: { artifactId: id } })).toBe(attemptsKept);
   });
 
   it('lets guests and other readers of the demo keep their own', async () => {

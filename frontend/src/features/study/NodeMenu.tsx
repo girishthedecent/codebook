@@ -19,6 +19,7 @@ type Props = {
   trigger: ReactNode;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+  onCloseAutoFocus?: (event: Event) => void;
 };
 
 /** What can be done with one topic: ask about it in a new conversation, or read where it comes from. */
@@ -31,6 +32,7 @@ export function NodeMenu({
   trigger,
   open,
   onOpenChange,
+  onCloseAutoFocus,
 }: Props) {
   const navigate = useNavigate();
   const openCitation = useOpenCitation();
@@ -47,7 +49,13 @@ export function NodeMenu({
   };
 
   return (
-    <Menu align="end" trigger={trigger} open={open} onOpenChange={onOpenChange}>
+    <Menu
+      align="end"
+      trigger={trigger}
+      open={open}
+      onOpenChange={onOpenChange}
+      onCloseAutoFocus={onCloseAutoFocus}
+    >
       <MenuItem onSelect={ask}>{s.map.ask}</MenuItem>
       <MenuItem disabled={!cited} onSelect={() => cited && openCitation(cited)}>
         {cited ? s.map.openSource : s.map.noSource}
