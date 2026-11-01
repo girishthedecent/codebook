@@ -5,24 +5,26 @@ import { textLinkClass } from '@/ui/textLinkClass';
 import { CodeListing } from './CodeListing';
 import { fixtures } from './fixtures';
 import { landing } from './strings';
-import { useInterval, useReducedMotion, type Visitor } from './hooks';
+import { useReducedMotion, type Visitor } from './hooks';
 
 const t = landing.hero;
-const ROTATE_MS = 6000;
 
 export function Hero({ visitor }: { visitor: Visitor }) {
   const questions = fixtures.demo?.starterQuestions ?? [];
   const [question, setQuestion] = useState(questions[0] ?? '');
   // The suggestion walks through the starters until the visitor touches the form: hover or
   // focus holds it, and typing or picking one ends it for good. Reduced motion never starts it.
+  // The pace is set by the line filling beside the current starter, so the two never drift and
+  // holding is just pausing that animation.
   const [held, setHeld] = useState(false);
   const [chosen, setChosen] = useState(false);
   const reduced = useReducedMotion();
-  useInterval(
-    () => setQuestion((current) => questions[(questions.indexOf(current) + 1) % questions.length]!),
-    ROTATE_MS,
-    !reduced && !held && !chosen && questions.length > 1,
-  );
+  const rotating = !reduced && !chosen && questions.length > 1;
+  const next = () => {
+    if (rotating) {
+      setQuestion((current) => questions[(questions.indexOf(current) + 1) % questions.length]!);
+    }
+  };
   const pick = (q: string) => {
     setChosen(true);
     setQuestion(q);
@@ -84,23 +86,39 @@ export function Hero({ visitor }: { visitor: Visitor }) {
             <div className="mt-6">
               <p className="text-xs text-ink-3">{t.others}</p>
               <ol className="mt-1 list-none p-0">
-                {questions.map((q) => (
-                  <li key={q}>
-                    <button
-                      type="button"
-                      onClick={() => pick(q)}
-                      aria-pressed={q === question}
-                      className={cn(
-                        'w-full border-l-2 py-1.5 pl-3 text-left font-serif text-base text-balance transition-colors max-sm:min-h-11',
-                        q === question
-                          ? 'border-accent text-ink'
-                          : 'border-transparent text-ink-2 hover:text-ink',
-                      )}
-                    >
-                      {q}
-                    </button>
-                  </li>
-                ))}
+                {questions.map((q) => {
+                  const current = q === question;
+                  return (
+                    <li key={q}>
+                      <button
+                        type="button"
+                        onClick={() => pick(q)}
+                        aria-pressed={current}
+                        className={cn(
+                          'relative w-full py-1.5 pl-3.5 text-left font-serif text-base text-balance transition-colors max-sm:min-h-11',
+                          current ? 'text-ink' : 'text-ink-2 hover:text-ink',
+                        )}
+                      >
+                        {current && (
+                          <span
+                            aria-hidden
+                            className="absolute inset-y-1 left-0 w-0.5 overflow-hidden rounded-full bg-rule-2"
+                          >
+                            <span
+                              onAnimationEnd={next}
+                              className={cn(
+                                'block size-full origin-top bg-accent',
+                                rotating && 'animate-[fill-down_6s_linear_both]',
+                                held && '[animation-play-state:paused]',
+                              )}
+                            />
+                          </span>
+                        )}
+                        {q}
+                      </button>
+                    </li>
+                  );
+                })}
               </ol>
             </div>
           </form>

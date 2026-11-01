@@ -1,4 +1,4 @@
-import { useId, useState, type FormEvent } from 'react';
+import { useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { keys } from '@/api/queries/keys';
 import { authClient, useMe, useSignOut } from '@/auth';
@@ -18,7 +18,7 @@ import { strings } from '@/features/account/strings';
 const s = strings.settings;
 const MIN_PASSWORD = 8;
 
-/** The signed-in person: picture, name, password, linked GitHub, sign-out and the account-deletion notice. */
+/** The signed-in person: picture, name, password, linked GitHub and sign-out. */
 export function AccountSection({ githubFailed }: { githubFailed: boolean }) {
   const { me } = useMe();
   const accounts = useQuery({
@@ -71,8 +71,6 @@ export function AccountSection({ githubFailed }: { githubFailed: boolean }) {
           {s.signOut}
         </Button>
       </div>
-
-      <DeleteBlock />
     </section>
   );
 }
@@ -220,21 +218,6 @@ function GitHubBlock({ linked, failed }: { linked: boolean; failed: boolean }) {
           {s.github.failed}
         </Callout>
       )}
-    </div>
-  );
-}
-
-function DeleteBlock() {
-  const reasonId = useId();
-  return (
-    <div>
-      <h3 className="heading-minor text-ink">{s.delete.title}</h3>
-      <p id={reasonId} className="mt-1 max-w-prose text-sm text-ink-2">
-        {s.delete.reason}
-      </p>
-      <Button variant="danger" className="mt-3" disabled aria-describedby={reasonId}>
-        {s.delete.button}
-      </Button>
     </div>
   );
 }

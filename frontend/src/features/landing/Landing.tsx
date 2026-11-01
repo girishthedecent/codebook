@@ -4,6 +4,7 @@
 import { useState } from 'react';
 import { CircleHalf, GithubLogo } from '@phosphor-icons/react';
 import type { SourceType } from '@/api/types';
+import { cn } from '@/lib/cn';
 import { Button } from '@/ui/Button';
 import { textLinkClass } from '@/ui/textLinkClass';
 import { Wordmark } from '@/ui/Wordmark';
@@ -34,7 +35,7 @@ export function Landing({ standalone = false }: { standalone?: boolean }) {
         <Shelf onHighlight={setHighlight} />
         <Proof />
       </main>
-      <Footer />
+      <Footer visitor={visitor} />
     </div>
   );
 }
@@ -81,20 +82,52 @@ function Header({ visitor }: { visitor: Visitor }) {
   );
 }
 
-function Footer() {
+function Footer({ visitor }: { visitor: Visitor }) {
   const t = landing.footer;
+  const link = 'inline-flex items-center text-sm text-ink-2 hover:text-ink max-sm:min-h-11';
   return (
-    <footer className="mx-auto w-full max-w-wide border-t border-rule px-4 py-10 sm:px-8">
-      <div className="flex flex-wrap items-baseline justify-between gap-x-8 gap-y-3">
-        <Wordmark size="sm" />
-        <p className="text-sm text-ink-2">
-          {t.line}{' '}
-          <a href={landing.github} className={textLinkClass}>
-            {t.source}
-          </a>
-        </p>
+    <footer className="mx-auto w-full max-w-wide px-4 pt-12 pb-[max(2.5rem,env(safe-area-inset-bottom))] sm:px-8">
+      <div className="grid gap-8 border-t border-rule pt-10 sm:grid-cols-[minmax(0,1fr)_auto] sm:gap-16">
+        <div className="max-w-[26rem]">
+          <Wordmark size="sm" />
+          <p className="mt-3 font-serif text-base text-pretty text-ink-2">{t.tagline}</p>
+        </div>
+        <nav aria-label={t.nav}>
+          <ul className="m-0 flex list-none flex-col gap-x-8 gap-y-2 p-0 max-sm:gap-y-0 sm:grid sm:grid-cols-2">
+            <li>
+              <a href={visitor === 'member' ? '/w' : '/demo'} className={link}>
+                {visitor === 'member' ? t.workspace : t.demo}
+              </a>
+            </li>
+            <li>
+              <a href={landing.github} className={link}>
+                {t.source}
+              </a>
+            </li>
+            {visitor !== 'member' && (
+              <li>
+                <a href="/sign-in" className={link}>
+                  {t.signIn}
+                </a>
+              </li>
+            )}
+            <li>
+              <a href={`${landing.github}#eval-results`} className={link}>
+                {t.evals}
+              </a>
+            </li>
+          </ul>
+        </nav>
       </div>
-      <p className="mt-4 max-w-[48rem] text-xs text-ink-3">{t.credits}</p>
+      <div className="mt-10 flex flex-wrap items-end justify-between gap-x-8 gap-y-3 text-xs text-ink-3">
+        <div className="max-w-[48rem]">
+          <p>{t.line}</p>
+          <p className="mt-1.5">{t.credits}</p>
+        </div>
+        <a href="#main" className={cn(textLinkClass, 'inline-flex items-center max-sm:min-h-11')}>
+          {t.top}
+        </a>
+      </div>
     </footer>
   );
 }

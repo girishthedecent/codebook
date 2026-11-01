@@ -49,6 +49,14 @@
           });
         }
       } catch (e) {}
+      // Reading preferences (see lib/prefs.ts), for the same reason: text must not reflow.
+      try {
+        var s = localStorage.getItem('codebook.textSize');
+        if (s === 's' || s === 'l') document.documentElement.dataset.textSize = s;
+        if (localStorage.getItem('codebook.measure') === 'wide') {
+          document.documentElement.dataset.measure = 'wide';
+        }
+      } catch (e) {}
     </script>
   </head>
   <body>
