@@ -15,12 +15,13 @@ import { displayTitle } from '@/lib/displayTitle';
 import { shortcutLabel, useShortcut } from '@/lib/keyboard';
 import { useBreakpoint } from '@/lib/breakpoints';
 import { viewerSearchFor } from '@/lib/viewerParams';
-import { Dialog, Kbd, SourceBadge, VisuallyHidden } from '@/ui';
+import { Kbd, SourceBadge, VisuallyHidden } from '@/ui';
 import { readLastWorkspaceId } from '@/features/account/lastWorkspaceId';
 import { en } from '@/i18n/en';
 import { strings } from '@/features/account/strings';
 import { Highlight, hitTarget, hitWhere, snippetAround } from './passages';
 import { commandStrings as c } from './strings';
+import { openShortcuts } from '@/features/shell/ShortcutsDialog';
 
 const s = strings.command;
 const OPEN_EVENT = 'codebook:open-command';
@@ -37,7 +38,6 @@ export function openCommandMenu() {
  */
 export function CommandMenu() {
   const [open, setOpen] = useState(false);
-  const [help, setHelp] = useState(false);
   useShortcut('mod+k', () => setOpen((o) => !o));
   useEffect(() => {
     const show = () => setOpen(true);
@@ -62,14 +62,13 @@ export function CommandMenu() {
                 close={() => setOpen(false)}
                 showShortcuts={() => {
                   setOpen(false);
-                  setHelp(true);
+                  openShortcuts();
                 }}
               />
             )}
           </RadixDialog.Content>
         </RadixDialog.Portal>
       </RadixDialog.Root>
-      <ShortcutsDialog open={help} onOpenChange={setHelp} />
     </>
   );
 }
@@ -351,37 +350,4 @@ function Item({
 
 function Hint({ children }: { children: ReactNode }) {
   return <span className="shrink-0 text-xs text-ink-3">{children}</span>;
-}
-
-const shortcutList: [string, string][] = [
-  [shortcutLabel('mod+k'), 'Search and commands'],
-  ['/', 'Focus the message box'],
-  ['Esc', 'Close the viewer or a dialog'],
-  ['[  ]', 'Previous and next page in the viewer'],
-  ['←  →', 'Previous and next flashcard'],
-  ['K  D', "Know a flashcard, or don't know it yet"],
-  ['1 to 6', 'Pick a quiz answer, Enter for next'],
-];
-
-function ShortcutsDialog({
-  open,
-  onOpenChange,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-}) {
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange} title={s.shortcuts} size="sm">
-      <dl className="space-y-2">
-        {shortcutList.map(([keys, what]) => (
-          <div key={what} className="flex items-baseline justify-between gap-4">
-            <dt className="text-ink-2">{what}</dt>
-            <dd className="shrink-0">
-              <Kbd>{keys}</Kbd>
-            </dd>
-          </div>
-        ))}
-      </dl>
-    </Dialog>
-  );
 }
