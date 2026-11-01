@@ -20,19 +20,20 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 const at = (path: string) => join(root, path);
 const fileUrl = (path: string) => pathToFileURL(at(path)).href;
 
-// Light theme values from src/styles/tokens.css.
+// Dark theme values from src/styles/tokens.css, the theme the site opens in; the code colours
+// follow the dark code theme in src/workers/codebookThemes.ts.
 const C = {
-  paper: '#f6f3ec',
-  paper2: '#efebe1',
-  ink: '#1f1c18',
-  ink2: '#4d4842',
-  ink3: '#666057',
-  rule: 'rgb(31 28 24 / 0.1)',
-  accent: '#2e5d4b',
-  kw: '#7a4466',
-  fn: '#3a5f8a',
-  num: '#8a5a12',
-  str: '#3b6e3b',
+  paper: '#000000',
+  paper2: '#0e0e0d',
+  ink: '#f2efe9',
+  ink2: '#c4beb4',
+  ink3: '#9c968c',
+  rule: 'rgb(242 239 233 / 0.12)',
+  accent: '#ff8a4c',
+  kw: '#ff8a4c',
+  fn: '#8fb6ec',
+  num: '#f2c14e',
+  str: '#a8d5a2',
 };
 
 // Playwright's headless shell first: the full browser's --screenshot mode can hang without a
@@ -145,13 +146,14 @@ function ogPage(book: BookFixture, code: CodeFixture) {
     .page {
       position: absolute; left: 742px; top: 56px; width: 300px; height: 300px; overflow: hidden;
       border: 1px solid ${C.rule}; border-radius: 6px; background: #fff;
-      box-shadow: 0 10px 30px -10px rgb(28 26 23 / 0.28), 0 0 0 1px rgb(28 26 23 / 0.05);
+      box-shadow: 0 10px 30px -10px rgb(0 0 0 / 0.6);
     }
-    .page img { display: block; width: 100%; }
+    /* Dimmed as the app dims book pages in the dark theme. */
+    .page img { display: block; width: 100%; filter: brightness(0.82) contrast(1.05); }
     .code {
       position: absolute; left: 812px; top: 250px; width: 420px; padding: 16px 0;
       border: 1px solid ${C.rule}; border-radius: 6px; background: ${C.paper2};
-      box-shadow: 0 10px 30px -10px rgb(28 26 23 / 0.28), 0 0 0 1px rgb(28 26 23 / 0.05);
+      box-shadow: 0 10px 30px -10px rgb(0 0 0 / 0.6);
       font-family: OgMono; font-size: 15px; line-height: 1.62; white-space: pre;
       -webkit-mask-image: linear-gradient(to right, #000 78%, transparent);
     }

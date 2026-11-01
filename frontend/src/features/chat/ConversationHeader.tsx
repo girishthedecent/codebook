@@ -149,7 +149,7 @@ export function ConversationHeader({
               ref={menuButton}
               variant="ghost"
               aria-label={chat.options}
-              className="w-9 shrink-0 max-sm:w-11"
+              className="w-9 shrink-0 px-0! max-sm:w-11"
             >
               <DotsThree size={18} weight="bold" />
             </Button>

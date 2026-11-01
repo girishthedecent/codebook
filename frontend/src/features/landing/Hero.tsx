@@ -156,7 +156,7 @@ function Specimen() {
             height={Math.round(page.height * 0.62)}
             alt=""
             decoding="async"
-            className="block w-full object-cover object-top"
+            className="page-scan block w-full object-cover object-top"
             style={{ aspectRatio: `${page.width} / ${page.height * 0.62}` }}
           />
         </div>

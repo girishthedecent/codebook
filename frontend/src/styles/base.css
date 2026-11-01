@@ -224,3 +224,14 @@
     }
   }
 }
+
+/* A scanned book page is white paper; in the dark theme it is dimmed so it doesn't glare. */
+:root[data-theme='dark'] .page-scan,
+[data-theme='dark'] .page-scan {
+  filter: brightness(0.82) contrast(1.05);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .page-scan {
+    filter: brightness(0.82) contrast(1.05);
+  }
+}

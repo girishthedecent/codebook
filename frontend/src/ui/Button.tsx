@@ -16,13 +16,16 @@ export type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
 
 const base =
   'inline-flex items-center justify-center gap-1.5 rounded-sm font-medium whitespace-nowrap select-none ' +
-  'transition-colors duration-150 ease-out disabled:opacity-50 disabled:pointer-events-none';
+  'transition-colors duration-150 ease-out disabled:pointer-events-none';
 
 const variants: Record<Variant, string> = {
-  primary: 'bg-accent text-paper hover:bg-accent-2 active:bg-accent-2',
-  secondary: 'border border-edge text-ink hover:bg-paper-2 active:bg-paper-3',
-  danger: 'border border-error text-error hover:bg-error-wash active:bg-error-wash',
-  ghost: 'text-ink-2 hover:bg-paper-2 hover:text-ink active:bg-paper-3',
+  // Its own colours when disabled: a faded accent turns muddy on the dark theme's black.
+  primary:
+    'bg-accent text-paper hover:bg-accent-2 active:bg-accent-2 disabled:bg-off disabled:text-off-ink',
+  secondary: 'border border-edge text-ink hover:bg-paper-2 active:bg-paper-3 disabled:opacity-50',
+  danger:
+    'border border-error text-error hover:bg-error-wash active:bg-error-wash disabled:opacity-50',
+  ghost: 'text-ink-2 hover:bg-paper-2 hover:text-ink active:bg-paper-3 disabled:opacity-50',
 };
 
 // Phones get a 44px target whatever the size, so call sites never override the height.

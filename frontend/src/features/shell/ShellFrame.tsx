@@ -43,14 +43,14 @@ export function ShellFrame({
             <WorkspaceSwitcher workspaceId={workspaceId} collapsed={false} />
           </div>
           <Library workspaceId={workspaceId} />
-          <Button asChild variant="ghost" className="w-11 shrink-0">
+          <Button asChild variant="ghost" className="w-11 shrink-0 px-0!">
             <Link to="/w/$workspaceId" params={{ workspaceId }} aria-label={en.nav.newChat}>
               <NotePencil size={22} aria-hidden />
             </Link>
           </Button>
           <Button
             variant="ghost"
-            className="w-11 shrink-0"
+            className="w-11 shrink-0 px-0!"
             onClick={openCommandMenu}
             aria-label={en.nav.search}
           >

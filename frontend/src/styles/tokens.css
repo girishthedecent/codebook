@@ -57,6 +57,8 @@
   --color-accent: var(--accent);
   --color-accent-2: var(--accent-2);
   --color-accent-wash: var(--accent-wash);
+  --color-off: var(--off);
+  --color-off-ink: var(--off-ink);
   --color-ok: var(--ok);
   --color-ok-wash: var(--ok-wash);
   --color-warn: var(--warn);
@@ -90,6 +92,9 @@
   --accent: #2e5d4b;
   --accent-2: #24493b;
   --accent-wash: rgb(46 93 75 / 0.1);
+  /* A primary button that can't be pressed. */
+  --off: rgb(46 93 75 / 0.5);
+  --off-ink: rgb(246 243 236 / 0.75);
   --ok: #3b6e3b;
   --ok-wash: rgb(59 110 59 / 0.1);
   --warn: #8a5a12;
@@ -125,13 +130,15 @@
     --accent: #ff8a4c;
     --accent-2: #ffa673;
     --accent-wash: rgb(255 138 76 / 0.14);
+    --off: #18181a;
+    --off-ink: #8a847a;
     --ok: #7fc48a;
     --ok-wash: rgb(127 196 138 / 0.13);
     --warn: #f2c14e;
     --warn-wash: rgb(242 193 78 / 0.13);
     --error: #f47174;
     --error-wash: rgb(244 113 116 / 0.12);
-    --highlight: rgb(255 196 87 / 0.28);
+    --highlight: rgb(255 138 76 / 0.2);
     --kind-book: #e7a0c0;
     --kind-book-wash: rgb(231 160 192 / 0.14);
     --kind-repo: #8fb6ec;
@@ -160,13 +167,15 @@
   --accent: #ff8a4c;
   --accent-2: #ffa673;
   --accent-wash: rgb(255 138 76 / 0.14);
+  --off: #18181a;
+  --off-ink: #8a847a;
   --ok: #7fc48a;
   --ok-wash: rgb(127 196 138 / 0.13);
   --warn: #f2c14e;
   --warn-wash: rgb(242 193 78 / 0.13);
   --error: #f47174;
   --error-wash: rgb(244 113 116 / 0.12);
-  --highlight: rgb(255 196 87 / 0.28);
+  --highlight: rgb(255 138 76 / 0.2);
   --kind-book: #e7a0c0;
   --kind-book-wash: rgb(231 160 192 / 0.14);
   --kind-repo: #8fb6ec;
