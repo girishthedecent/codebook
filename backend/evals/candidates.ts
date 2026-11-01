@@ -22,7 +22,7 @@ export const FAILURE_FILE = 'evals/datasets/failure-candidates.json';
 const EXCERPT_CHARS = 300;
 // Parents shorter than this are headings, tables of contents and license headers.
 const MIN_PARENT_TOKENS = 120;
-// A model call that keeps failing usually means the quota is gone for now.
+// A model call that keeps failing usually means the quota is used up.
 const MAX_FAILURES_IN_A_ROW = 3;
 
 /**

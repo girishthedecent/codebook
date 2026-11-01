@@ -138,7 +138,7 @@ export function declarations(root: Node, python: boolean) {
   }
 }
 
-// Assigned functions are named by their last part (`res.send` → `send` on `res`);
+// Assigned functions are named by their last part (`api.send` → `send` on `api`);
 // `module.exports = function createApp()` by the function's own name when it has one.
 function topLevelName(decl: Declaration) {
   if (!decl.name.includes('.')) return { name: decl.name, localName: decl.name, container: null };

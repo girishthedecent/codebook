@@ -1,10 +1,10 @@
-# Security review
+# Security
 
-What protects the backend against each risk below, how that was checked, and the result.
+What protects the backend against each risk below, how it is checked, and the result.
 Where a check says "test", that test fails if the protection is removed; the ones with no
 natural home elsewhere live in `backend/tests/security.test.ts`.
 
-Reviewed 2026-10-25; secrets and logs re-checked 2026-10-28 after the backup Gemini key.
+Checked 2026-10-25; secrets and logs re-checked 2026-10-28 after the backup Gemini key.
 
 ## Summary
 
@@ -43,7 +43,7 @@ Every route needs a session except health, auth, the demo, Inngest and the API d
   Repository functions that take a bare id (`findSource`, `updateSourceIfExists`,
   `deleteConversation` and the like) are only called after that check, or from Inngest
   functions working on ids the app wrote itself.
-- **Checked by:** a review of every `*.repository.ts` export and its callers, and the
+- **Checked by:** reading every `*.repository.ts` export and its callers, and the
   cross-user tests in the workspaces, sources, source content, conversations, chat, chat
   tools, retrieval, graph, study and memory suites.
 - **Note:** `findArtifact` in `study.repository.ts` takes a bare id; its only caller is
@@ -67,7 +67,7 @@ Every route needs a session except health, auth, the demo, Inngest and the API d
   - Repositories: the URL is reduced to owner and name, and only `api.github.com` is
     called; the tarball redirect must go to `https://codeload.github.com`.
   - Model and search providers (Gemini, Groq, Tavily) are fixed hosts.
-- **Checked by:** a review of every `fetch(` in `src`, and `httpFetch.test.ts`: loopback,
+- **Checked by:** reading every `fetch(` in `src`, and `httpFetch.test.ts`: loopback,
   the cloud metadata address, a private DNS answer, a redirect to a private address, and
   the size and content-type limits.
 
@@ -134,10 +134,10 @@ Every route needs a session except health, auth, the demo, Inngest and the API d
     production), so the per-IP limits see the address the nearest proxy saw.
   - The API serves the built web app (`web.ts`): static files with no directory listing and
     no dotfiles, and an index page whose policy allows scripts from the same origin and
-    exactly its two inline scripts, by hash, and images from the same origin, inline
-    `data:` URLs and GitHub's avatar host (the profile picture of a user who signed in
-    with GitHub). API and docs paths that match nothing stay JSON 404s. `web.test.ts`
-    covers each.
+    exactly its two inline scripts (the theme before first paint and the module loader), by
+    hash, and images from the same origin, inline `data:` URLs and GitHub's avatar host (the
+    profile picture of a user who signed in with GitHub). API and docs paths that match
+    nothing stay JSON 404s. `web.test.ts` covers each.
 - **Test:** `app.test.ts` (CORS), `auth.test.ts` (HttpOnly, SameSite), and
   `security.test.ts` in production mode (Secure cookie, HSTS, nosniff, CSP, no
   `x-powered-by`).
@@ -186,6 +186,6 @@ compressed body.
 
 ## Keeping this current
 
-Update this review when a dependency upgrade closes check 12, and whenever the backend gains
+Update this document when a dependency upgrade closes check 12, and whenever the backend gains
 a new kind of exposure: a new outbound fetch, a new public or unauthenticated route, a new
 upload type, or a new place secrets are read from.

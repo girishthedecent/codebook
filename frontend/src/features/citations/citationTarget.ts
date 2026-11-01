@@ -68,7 +68,7 @@ function lines(c: Citation) {
     : `line ${c.lineStart}`;
 }
 
-/** A caption as a printed listing has it: "Title, p. 157", "model.py, lines 42–61", "Title, Routing". */
+/** A caption as a printed listing has it: "Title, p. 157", "model.py, lines 42–61", "Title, Attention". */
 export function citationCaption(c: Citation): string {
   const place = pages(c) ?? lines(c) ?? c.heading;
   const what = c.path && c.sourceType === 'GITHUB_REPO' ? c.path : c.sourceTitle;

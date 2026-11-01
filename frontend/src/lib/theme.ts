@@ -25,7 +25,7 @@ export function setTheme(theme: Theme) {
     if (theme === 'system') localStorage.removeItem(KEY);
     else localStorage.setItem(KEY, theme);
   } catch {
-    // fine, it just won't persist
+    // storage blocked: the choice applies for this visit only
   }
   if (theme === 'system') delete document.documentElement.dataset.theme;
   else document.documentElement.dataset.theme = theme;

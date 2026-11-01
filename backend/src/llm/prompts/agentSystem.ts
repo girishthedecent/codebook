@@ -68,7 +68,7 @@ Summary of the earlier conversation:
 });
 
 // v3: v2 plus plan-first tool choice and a plain refusal when the sources don't cover the
-// question. An eval experiment (prompt-v3) until its numbers say otherwise.
+// question. Eval configs select it (prompt-v3); chat does not use it.
 export const agentSystemPromptV3 = definePrompt({
   name: 'agent-system',
   version: 3,

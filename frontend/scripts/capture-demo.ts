@@ -9,18 +9,20 @@
 //   turn.json   one real question: its steps with timings, the streamed answer, its citations
 //
 // The page hides any section whose file is missing, so run it again whenever the demo changes.
-// It signs in as a guest ONCE and asks AT MOST ONE question. A guest may ask ten questions a
+// It signs in as a guest once and asks at most one question. A guest may ask ten questions a
 // day per address (the allowance renews at 00:00 UTC), so `--skip-turn` leaves the question out.
 //
 //   node --import tsx scripts/capture-demo.ts [--skip-turn] [--question "…"] [--base URL]
 //                         [--page N] [--pdf FILE] [--class NAME] [--seeds A,B,C] [--cache DIR] [--out DIR]
 //
-// --cache keeps every reply (and the guest session) in DIR, so a second run while you adjust
-// this script asks the server for nothing it already gave; leave it out for a fresh capture.
+// --cache keeps every reply (and the guest session) in DIR, so a repeat run asks the server
+// for nothing it already gave; leave it out for a fresh capture.
 // --page picks the book page to show when there is no question (default: where the contents
 // say attention starts); --class and --seeds name the class shown as code and the symbols the
-// graph slice starts from (comma-separated, as Class.method or function); --pdf reads the book from a file instead of the server. --out writes under DIR instead of the source tree. --question is a number picking one of the
-// starter questions, or the question itself (default: the first starter question).
+// graph slice starts from (comma-separated, as Class.method or function); --pdf reads the
+// book from a file instead of the server; --out writes under DIR instead of the source tree.
+// --question is a number picking one of the starter questions, or the question itself
+// (default: the first starter question).
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { dirname, join } from 'node:path';
@@ -279,7 +281,7 @@ async function starterQuestions(demo: Demo): Promise<string[]> {
   if (Array.isArray(demo.starterQuestions) && demo.starterQuestions.length) {
     return demo.starterQuestions;
   }
-  // A server from before the field existed: the same list the seed reads.
+  // Servers that don't send the field: use the list the seed file holds.
   const file = new URL('../../backend/prisma/demo.json', import.meta.url);
   const seed = JSON.parse(await readFile(file, 'utf8')) as { starterQuestions: string[] };
   console.log(

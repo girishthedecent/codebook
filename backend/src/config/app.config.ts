@@ -5,7 +5,7 @@ const pkg = JSON.parse(readFileSync(new URL('../../package.json', import.meta.ur
   version: string;
 };
 
-// Tunables that don't need to change per environment. Each phase adds its own section.
+// Tunables that don't need to change per environment.
 export const appConfig = {
   version: pkg.version,
   http: {
@@ -130,7 +130,7 @@ export const appConfig = {
     maxTopK: 20,
     rrfK: 60,
     // Off by default: on the DEV evals MiniLM added a little recall@10 (0.960 → 0.984) but
-    // made the first result worse on code (MRR 0.946 → 0.839), for ~2s of CPU per search.
+    // made the first result worse on code (MRR 0.946 → 0.839), for seconds of CPU per search.
     rerankByDefault: false,
     // How much a keyword list counts in the fusion next to a vector list. From the DEV evals:
     // at 1 keyword matches on common words pulled hybrid below vector alone (see

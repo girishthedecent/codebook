@@ -15,7 +15,7 @@ export function hitTarget(hit: SearchHit): ViewerTarget {
   };
 }
 
-/** "p. 157", "lib/router.js:42–61", or the heading a passage sits under. */
+/** "p. 157", "model.py:42–61", or the heading a passage sits under. */
 export function hitWhere(hit: SearchHit): string {
   if (hit.pageStart) return `p. ${hit.pageStart}`;
   if (hit.lineStart) {

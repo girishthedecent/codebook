@@ -94,7 +94,7 @@ export function Composer({
     try {
       localStorage.setItem(MEMORY_KEY, on ? '1' : '0');
     } catch {
-      // ignore
+      // Storage can be blocked; the choice just won't be remembered.
     }
   };
 

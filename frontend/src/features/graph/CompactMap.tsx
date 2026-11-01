@@ -11,7 +11,7 @@ type Props = {
 
 /**
  * A neighbourhood small enough to read as a list: the callers nearest the symbol last, so the
- * page reads down towards it and on past it into what it calls. Replaces the canvas, which
+ * page reads down towards it and on past it into what it calls. Used in place of the canvas, which
  * would draw a handful of boxes in a large frame.
  */
 export function CompactMap({ layout, onOpen, onFocus }: Props) {

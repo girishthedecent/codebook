@@ -86,7 +86,7 @@ const components: Components = {
   img: ({ alt }) => <span>{alt}</span>,
 };
 
-/** The chain of headings leading to `heading`: "Guide › Routing › Route paths". */
+/** The chain of headings leading to `heading`: "Text generation › Decoding strategies". */
 function headingTrail(text: string, heading: string | undefined): Heading[] {
   if (!heading) return [];
   const wanted = squash(heading);

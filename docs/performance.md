@@ -1,8 +1,7 @@
-# Performance pass
+# Performance
 
 The main queries under `EXPLAIN (ANALYZE, BUFFERS)`, the HNSW `ef_search` setting, and the
-reranker batch size. Measured 2026-10-25 on the dev database with the
-indexed eval corpus.
+reranker batch size. Measured 2026-10-25 on a database with the indexed eval corpus.
 
 ## Setup and caveats
 
@@ -10,10 +9,8 @@ indexed eval corpus.
   and the express routing docs page), has 1,155 child chunks; DDIA alone 924; the gate
   corpus (repo and docs) 231. Code graph: 620 symbols, 3,480 edges.
 - Questions: the 60 questions of `evals/datasets/core.json` whose query embeddings are in
-  `EmbeddingCache`, so nothing called a model. Network access other than the reranker's
-  model hub check was blocked during the runs.
-- The scripts ran on two CPU cores at low priority while other jobs shared the machine;
-  absolute numbers are noisy and on the high side. Comparisons were run back to back
+  `EmbeddingCache`, so nothing called a model.
+- Absolute numbers are noisy and on the high side. Comparisons were run back to back
   (interleaved where it mattered).
 
 ## Queries
@@ -87,10 +84,9 @@ it loads on the first search that asks for it; turning `rerankByDefault` on also
 at boot (`warmUpReranker`).
 
 **Kept at 8.** One batch of 20 was about 10% faster at p50 and no faster at p95, inside
-the noise of a shared machine. Smaller batches keep the abort check between batches (a
-closed stream stops the rest of the work) and pad less. On two busy cores reranking costs
-about 5 s per search, which is why it stays off by default (`rerankByDefault: false`) and
-at most `concurrentReranks` run at once.
+the noise. Smaller batches keep the abort check between batches (a closed stream stops the
+rest of the work) and pad less. Reranking costs about 5 s per search, which is why it stays
+off by default (`rerankByDefault: false`) and at most `concurrentReranks` run at once.
 
 ## How to rerun
 

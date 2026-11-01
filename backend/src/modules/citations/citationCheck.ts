@@ -46,7 +46,7 @@ function supports(sentence: string, ref: CitationRef, minOverlap: number) {
   if (claim.length === 0) return true;
   const source = new Set(words(ref.text));
   const shared = claim.filter((word) => source.has(word));
-  // A shared code identifier (res.send, max_retries) is enough on its own.
+  // A shared code identifier (user.save, max_retries) is enough on its own.
   const identifier = shared.some((word) => /[._$]/.test(word));
   return identifier || shared.length / claim.length >= minOverlap;
 }

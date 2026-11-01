@@ -310,7 +310,7 @@ function NavButton({
   );
 }
 
-/** "p. 157", "lib/router/index.js:42–61", "Routing". Paths are set in mono. */
+/** "p. 157", "model.py:42–61", "Attention". Paths are set in mono. */
 function locationOf(target: ViewerTarget, printed?: string): { text: string; mono: boolean } {
   if (target.kind === 'page') {
     return { text: printed ? `p. ${target.page} (${printed})` : `p. ${target.page}`, mono: false };

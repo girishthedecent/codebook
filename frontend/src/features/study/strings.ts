@@ -34,9 +34,6 @@ export const s = {
   gone: 'This study set no longer exists. It may have been deleted.',
   unreadable: "This set's content could not be read. Making it again usually fixes it.",
   emptyFiltered: 'No sets of this kind yet.',
-  loadError: "The study sets couldn't be loaded.",
-  signInToSee: 'Sign in to see this study set.',
-  noAccess: "You don't have access to this study set.",
   offline: 'You seem to be offline.',
   queued: 'Waiting to start.',
   failed: "This set couldn't be made.",
@@ -54,13 +51,11 @@ export const s = {
   sourcesLink: 'Go to sources',
   sourcesIndexing:
     'Your sources are still being indexed. Study sets can be made once one of them is ready.',
-  sourcesFailed: "The sources couldn't be loaded.",
   create: {
     title: 'New study set',
     description: 'Made from your indexed sources, with references back to them.',
     type: 'Kind',
     sources: 'From',
-    allSources: 'All sources',
     topic: 'Topic',
     focus: 'Focus',
     focusNone: 'A spread of everything',
@@ -111,7 +106,6 @@ export const s = {
     allRight: 'You got every question.',
     again: 'Take it again',
     resumed: 'Picked up where you left off.',
-    keysHint: 'Press 1–4 to answer, Enter for the next question.',
   },
   cards: {
     front: 'Front',
@@ -127,7 +121,6 @@ export const s = {
     lastCard: 'Back to the last card',
     showingAgain: 'Showing the again pile.',
     showAll: 'Show all cards',
-    keysHint: 'Space flips, ← and → move.',
   },
   map: {
     view: 'View',

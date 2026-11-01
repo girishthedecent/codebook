@@ -7,7 +7,7 @@ import helmet from 'helmet';
 
 // The built web app (frontend/dist, copied here by `pnpm build:web`), served by the API itself:
 // one origin, so the session cookie stays first-party, and event streams reach the browser
-// as they are written (a proxy in front of the API held them back until the end). Absent in
+// as they are written (a separate proxy in front of the API can hold them back). Absent in
 // development, where Vite serves the app.
 const WEB_ROOT = fileURLToPath(new URL('../web/', import.meta.url));
 

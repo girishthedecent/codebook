@@ -61,7 +61,7 @@ jobs:
   lighthouse:
     runs-on: ubuntu-latest
     needs: check
-    # Budgets are reported but don't block merges until the first real pages land (F1).
+    # Budget misses are reported without failing the build.
     continue-on-error: true
     defaults:
       run:

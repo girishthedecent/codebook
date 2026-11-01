@@ -91,7 +91,7 @@ beforeEach(async () => {
 
 describe('rerank', () => {
   it('scores each doc with the sigmoid of its logit, in input order', async () => {
-    const scores = await rerank('leader follower log', ['nothing here', 'leader log', 'leader'], {
+    const scores = await rerank('cache eviction log', ['nothing here', 'cache log', 'cache'], {
       model: 'order-model',
     });
 
@@ -135,7 +135,7 @@ describe('rerank', () => {
     expect(await rerank('q', ['a'], { model: 'broken-model' })).toBeNull();
     expect(fake.state.loads).toBe(loads);
 
-    // The download works now, but only a call after the cooldown tries it.
+    // The model would load on a retry, but only a call after the cooldown tries it.
     fake.state.failLoad.clear();
     const now = Date.now();
     const clock = vi.spyOn(Date, 'now').mockReturnValue(now + 6 * 60 * 1000);

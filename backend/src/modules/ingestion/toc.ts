@@ -109,8 +109,8 @@ function toEntries(pages: string[], headings: Heading[]): TocEntry[] {
 
 /**
  * Offset of the line where `title` appears in `text`, or -1. Titles wrap, so up to three
- * lines are joined; "Chapter 1. Reliable…" in the outline matches "CHAPTER 1" followed by
- * "Reliable…" on the page.
+ * lines are joined; "Chapter 1. Getting started…" in the outline matches "CHAPTER 1" followed by
+ * "Getting started…" on the page.
  */
 export function findTitle(text: string, title: string) {
   const target = squash(title);

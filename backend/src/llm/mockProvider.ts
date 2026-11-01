@@ -3,7 +3,7 @@ import { convertArrayToReadableStream, MockEmbeddingModelV4, MockLanguageModelV4
 import { embeddingRoute, type ModelRef } from './models.js';
 
 // Stand-in providers for LLM_MOCK=1: the whole app runs with no model calls, so the web
-// app's browser tests (and a laptop without keys) get real chat, study and memory flows.
+// app's browser tests (and development without keys) get real chat, study and memory flows.
 // Deterministic: the same prompt always gets the same reply.
 //
 // Language model: with tools and no result yet, it searches the sources for the user's
@@ -73,7 +73,7 @@ function studySet(schema: unknown) {
   const cite = [1];
 
   if (has('questions')) {
-    const topics = ['storage', 'replication', 'partitioning', 'transactions', 'consistency'];
+    const topics = ['tokens', 'embeddings', 'attention', 'training', 'sampling'];
     return {
       title: 'Sample quiz',
       questions: topics.map((topic, i) => ({
@@ -94,7 +94,7 @@ function studySet(schema: unknown) {
   if (has('cards')) {
     return {
       title: 'Sample flashcards',
-      cards: ['Leader', 'Follower', 'Replication lag', 'Quorum', 'Partition'].map((term) => ({
+      cards: ['Token', 'Embedding', 'Attention head', 'Loss', 'Temperature'].map((term) => ({
         front: term,
         back: `${term}: a short definition taken from the material.`,
         citations: cite,

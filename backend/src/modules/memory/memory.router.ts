@@ -22,7 +22,7 @@ import {
   updateMemorySchema,
 } from './memory.validator.js';
 
-// Guest accounts are throwaway and shared-looking (the demo): nothing is remembered for them.
+// Guest accounts are throwaway: nothing is remembered for them.
 function rejectGuests(_req: Request, res: Response, next: NextFunction) {
   next(getAuthUser(res).isGuest ? new ForbiddenError('Guests have no memory') : undefined);
 }

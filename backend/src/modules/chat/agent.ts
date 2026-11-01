@@ -27,7 +27,7 @@ export type AgentEvent =
 
 /** One tool call as the assistant message stores it. */
 export type SavedToolCall = {
-  // Missing on answers saved before calls had ids.
+  // Absent on answers stored without call ids.
   id?: string;
   step: number;
   tool: string;

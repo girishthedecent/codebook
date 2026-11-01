@@ -166,7 +166,7 @@ describe('embedTexts', () => {
 
 describe('embeddingCacheKey', () => {
   it("hasn't changed, so indexed sources keep their cached vectors", () => {
-    // Pinned when the model-specific input format moved onto the embedding route.
+    // Pinned: a different key would orphan every cached vector.
     const input = embeddingInput('Some chunk text', 'document', 'Book');
     expect(input).toBe('title: Book | text: Some chunk text');
     expect(embeddingCacheKey('document', input)).toBe(

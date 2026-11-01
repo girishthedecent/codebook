@@ -35,16 +35,16 @@ Content-Type: application/json
 POST {{base}}/api/v1/conversations/{{conversationId}}/messages
 Content-Type: application/json
 
-{ "content": "How does leader-based replication handle a failed follower?" }
+{ "content": "How does causal self-attention work in nanoGPT?" }
 
 ### A book page: visitors get a short excerpt (excerpt: true)
-GET {{base}}/api/v1/sources/{{sourceId}}/content?page=160
+GET {{base}}/api/v1/sources/{{sourceId}}/content?page=40
 
 ### Search: hits are cut to snippets, no parent sections
 POST {{base}}/api/v1/workspaces/{{workspaceId}}/search
 Content-Type: application/json
 
-{ "query": "replication lag", "mode": "keyword" }
+{ "query": "temperature", "mode": "keyword" }
 
 ### Refused for guests (403)
 POST {{base}}/api/v1/workspaces

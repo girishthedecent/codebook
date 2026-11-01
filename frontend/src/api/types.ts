@@ -36,10 +36,7 @@ export type Query<P extends keyof paths, M extends keyof paths[P]> = paths[P][M]
 
 export type Page<T> = { items: T[]; nextCursor: string | null };
 
-export type Me = Schemas['Me'] & {
-  // Added to /me by the backend for the admin pages; older servers don't send it.
-  isAdmin?: boolean;
-};
+export type Me = Schemas['Me'];
 export type Workspace = Schemas['Workspace'];
 export type WorkspaceDetail = Schemas['WorkspaceDetail'];
 export type WorkspaceSettings = Schemas['WorkspaceSettings'];

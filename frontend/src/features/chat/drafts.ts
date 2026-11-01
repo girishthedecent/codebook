@@ -18,7 +18,7 @@ function write(scope: string, value: string) {
     if (value) localStorage.setItem(key(scope), value);
     else localStorage.removeItem(key(scope));
   } catch {
-    // ignore
+    // Storage can be blocked or full; the draft just isn't kept.
   }
 }
 

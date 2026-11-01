@@ -37,15 +37,12 @@ export type TextRoute = {
   timeoutMs: number;
 };
 
-// Model ids checked against both providers' /models endpoints on 2026-10-23.
-//
 // Groq free tier: 8K tokens/min, 1K requests/day, ~200K tokens/day, counted per model,
 // and only tokens actually used count (not maxOutputTokens). Splitting work between the
-// two gpt-oss models doubles what we get. Llama models are enterprise-only on Groq now.
+// two gpt-oss models doubles what we get. Llama models are enterprise-only on Groq.
 //
 // Gemini free tier: limits are per project and shown in AI Studio, not in the API.
-// gemini-3.7-flash and 3.8-flash are listed but never answered on the free tier (no
-// response in 90s, 2026-10-23); 3.6 answers in ~3s at the same price.
+// gemini-3.7-flash and 3.8-flash are listed but don't answer on the free tier, so 3.6 is used.
 // Exact ids only: the -latest aliases move to new models and would break eval comparisons.
 const GPT_OSS_120B: ModelRef = { provider: 'groq', model: 'openai/gpt-oss-120b' };
 const GPT_OSS_20B: ModelRef = { provider: 'groq', model: 'openai/gpt-oss-20b' };
@@ -159,8 +156,7 @@ export const embeddingRoute = {
   dimensions: 1536,
   timeoutMs: 30_000,
   // gemini-embedding-2 takes the task as a text prefix (it has no taskType option); a
-  // document's title gives it context. Code search could use "task: code retrieval" once
-  // evals show it helps.
+  // document's title gives it context.
   input(text: string, kind: EmbedKind, title?: string) {
     return kind === 'query'
       ? `task: search result | query: ${text}`

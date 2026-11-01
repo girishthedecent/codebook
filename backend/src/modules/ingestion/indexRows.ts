@@ -54,7 +54,7 @@ export function indexRows(input: {
     headingPath: chunk.headingPath,
     pageStart: chunk.pageStart,
     pageEnd: chunk.pageEnd,
-    // Missing in drafts written before repositories were supported.
+    // Drafts stored without these fields still load.
     lineStart: chunk.lineStart ?? null,
     lineEnd: chunk.lineEnd ?? null,
     symbolName: chunk.symbolName ?? null,

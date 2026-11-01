@@ -90,7 +90,6 @@ export const strings = {
     theme: 'Theme',
     themes: { system: 'Same as the system', light: 'Light', dark: 'Dark' },
     shortcuts: 'Keyboard shortcuts',
-    shortcutsHint: 'Press Ctrl K (Cmd K on a Mac) anywhere to search or jump to a page.',
     account: 'Account',
     email: 'Email',
     name: 'Name',

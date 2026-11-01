@@ -4,7 +4,7 @@ import { kindLabel } from './strings';
 
 type Sym = Pick<GraphSymbol, 'kind' | 'name' | 'filePath' | 'lineStart'>;
 
-/** `function  handle   lib/router/index.js:139`: the one-line form used in pickers and lists. */
+/** `method  forward   model.py:139`: the one-line form used in pickers and lists. */
 export function SymbolLine({ symbol, className }: { symbol: Sym; className?: string }) {
   return (
     <span className={cn('flex min-w-0 items-baseline gap-2', className)}>

@@ -14,18 +14,18 @@ POST {{base}}/api/v1/workspaces/{{workspaceId}}/search
 Content-Type: application/json
 Origin: {{origin}}
 
-{ "query": "how does res.send pick the Content-Type", "topK": 8 }
+{ "query": "how does the model compute attention", "topK": 8 }
 
 ### Keyword only, PDFs only
 POST {{base}}/api/v1/workspaces/{{workspaceId}}/search
 Content-Type: application/json
 Origin: {{origin}}
 
-{ "query": "leader election in single-leader replication", "mode": "keyword", "sourceTypes": ["PDF"] }
+{ "query": "how a network is trained with gradient descent", "mode": "keyword", "sourceTypes": ["PDF"] }
 
 ### Split the question into sub-queries first
 POST {{base}}/api/v1/workspaces/{{workspaceId}}/search
 Content-Type: application/json
 Origin: {{origin}}
 
-{ "query": "how do express routers and app.route differ", "queryMode": "decompose" }
+{ "query": "how does nanoGPT sample text and what do temperature and top-k change", "queryMode": "decompose" }

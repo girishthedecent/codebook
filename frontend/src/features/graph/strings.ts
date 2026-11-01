@@ -35,7 +35,6 @@ export const graphStrings = {
     'Click a node, or Tab to one and press Enter, then open its code or center the map on it.',
   traceFromHere: 'Trace from here',
   traceToHere: 'Trace to here',
-  pickHint: 'Search for a function, class or file to see what calls it and what it calls.',
   fileSymbols: (path: string) => `What ${path} defines`,
   noFileSymbols: 'No symbols were found in this file.',
   truncated: 'Showing the nearest results only; there are more.',

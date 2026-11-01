@@ -6,14 +6,12 @@ export const strings = {
   intro: 'The books, code and pages your questions are answered from.',
   all: 'All sources',
   add: 'Add a source',
-  addShort: 'Add',
   empty:
     'Nothing here yet. Add a book, a GitHub repository or a docs page, and ask questions about it.',
   guestNoWrite: 'Sign in to add your own sources.',
   demoReadOnly:
     'This is the demo workspace, so it is read-only. Make your own workspace to add sources.',
   retry: 'Try again',
-  retryIndex: 'Retry',
   emptyReadOnly: 'No sources here.',
   gone: 'This source was deleted or never existed.',
   loadFailed: 'Sources could not be loaded.',
@@ -32,7 +30,6 @@ export const strings = {
   noProgress: (idle: string) => `No progress for ${idle}.`,
   stuckRetry: 'Retry',
   stuckViewer: 'Only the owner of this workspace can retry it.',
-  failedHeading: 'Indexing failed',
   stillAvailable: (date: string) => `The version from ${date} is still available.`,
   updating: (date: string) =>
     `Reading this source again. The version from ${date} stays available meanwhile.`,

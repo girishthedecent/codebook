@@ -214,7 +214,7 @@ export function resolveGraph(files: GraphFile[]): { graph: DraftGraph; stats: Gr
     if (!index) return null;
     const own = index.byLocal.get(name);
     if (own && byId.get(own)!.kind !== 'METHOD') return own;
-    // `module.exports = res` with `res.json = function …`: `json` is on the exported object.
+    // `module.exports = api` with `api.json = function …`: `json` is on the exported object.
     const { defaultExport } = index.file;
     const member = defaultExport ? index.byLocal.get(`${defaultExport}.${name}`) : undefined;
     if (member) return member;
@@ -246,7 +246,7 @@ export function resolveGraph(files: GraphFile[]): { graph: DraftGraph; stats: Gr
     if (!index) return null;
     const name = index.file.defaultExport;
     if (!name) {
-      // `module.exports = require('./lib/express')`
+      // `module.exports = require('./lib/app')`
       const passed = index.imports.find((fact) => fact.passesDefault && fact.target);
       return passed && hops > 0 ? defaultOf(passed.target!, hops - 1) : null;
     }
@@ -334,7 +334,7 @@ export function resolveGraph(files: GraphFile[]): { graph: DraftGraph; stats: Gr
       if (local && byId.get(local)!.kind !== 'METHOD') return { id: local };
       const imported = importedName(index, head);
       if (imported) return { id: imported };
-      // `const express = require('express'); express()` calls what the module exports.
+      // `const debounce = require('debounce'); debounce()` calls what the module exports.
       const bound = bindingTarget(index, head);
       const called = bound?.binding.kind === 'namespace' ? defaultOf(bound.target) : null;
       return called ? { id: called } : null;
@@ -357,7 +357,7 @@ export function resolveGraph(files: GraphFile[]): { graph: DraftGraph; stats: Gr
         if (found) return { id: found };
       }
     } else if (parts.length === 2) {
-      // `res.send()` in the file that assigns it, `Foo.bar()` for a class in the file.
+      // `api.send()` in the file that assigns it, `Foo.bar()` for a class in the file.
       const local = index.byLocal.get(callee);
       if (local) return { id: local };
       const variableType = index.file.variableTypes.get(head);

@@ -25,7 +25,7 @@
   --text-2xl--line-height: 1.1;
 
   /* Phone below sm, tablet up to lg, desktop from lg. Same widths as lib/breakpoints.ts;
-     md, xl and 2xl are dropped so no third threshold creeps back in. */
+     md, xl and 2xl are removed so there is no third threshold. */
   --breakpoint-*: initial;
   --breakpoint-sm: 720px;
   --breakpoint-lg: 1100px;

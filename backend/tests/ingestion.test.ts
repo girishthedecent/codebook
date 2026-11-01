@@ -401,7 +401,7 @@ describe('ingesting a PDF', () => {
 
 describe('ingestHash', () => {
   it("hasn't changed for PDFs, so indexed books keep taking the skip path", () => {
-    // Pinned when repositories were added: a change here re-indexes every PDF on resync.
+    // Pinned: a change here re-indexes every PDF on resync.
     expect(ingestHash('Book', ['page one\fpage two'])).toBe(
       '6eb5c6228b56208de4ad12054c2f30d3caf1c07db379fa29841d649b5f8b30da',
     );

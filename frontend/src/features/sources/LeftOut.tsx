@@ -60,7 +60,7 @@ export function LeftOut({ sourceId }: { sourceId: string }) {
   const groups = reasons
     .map((r) => ({ ...r, items: skipped.filter((f) => f.skippedReason === r.key) }))
     .filter((g) => g.items.length > 0);
-  // A reason the backend added after this list was written still gets shown.
+  // A reason missing from this list still gets shown.
   const known = new Set(reasons.map((r) => r.key));
   const other = skipped.filter((f) => !known.has(f.skippedReason ?? ''));
   if (other.length) {

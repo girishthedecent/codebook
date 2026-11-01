@@ -405,11 +405,6 @@ async function answerFromCorpusText(run: AnswerRun, evalCase: EvalCase): Promise
 }
 
 /**
- * Answers one case, judges it and stores the result; the run's cost grows by what the
- * answer and the judge spent. Memory configs seed the case's memories first and remove them
- * afterwards, whatever happens.
- */
-/**
  * A judge call failed (quota, timeout, bad output): the answer stands, only the judging is
  * missing. Deliberate skips ("judge off", an input over the judge's cap) are final.
  */
@@ -489,6 +484,11 @@ async function rejudge(run: AnswerRun, evalCase: EvalCase, stored: EvalResult) {
   return { line: `${evalCase.externalId} judged again: ${caseLine(scores, error)}` };
 }
 
+/**
+ * Answers one case, judges it and stores the result; the run's cost grows by what the
+ * answer and the judge spent. Memory configs seed the case's memories first and remove them
+ * afterwards, whatever happens.
+ */
 export async function runAnswerCase(runId: string, caseId: string) {
   const run = await openRun(runId);
   const { config, corpus } = run;

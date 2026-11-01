@@ -83,7 +83,6 @@ const baseSchema = z.object({
   // address could be claimed by whoever registers it first.
   ADMIN_USER_IDS: idList,
 
-  // Providers and storage become required (in production) in the phases that use them.
   GITHUB_TOKEN: optional,
 
   S3_ENDPOINT: httpUrl.optional(),
@@ -110,8 +109,8 @@ const baseSchema = z.object({
   GEMINI_API_KEY_2: optional,
   TAVILY_API_KEY: optional,
 
-  // bge-reranker-base scores a little better but takes ~23s for 20 chunks on a 4-core CPU;
-  // MiniLM takes ~2s. Evals compare the two.
+  // bge-reranker-base scores a little better but is many times slower than MiniLM on a CPU.
+  // Evals compare the two.
   RERANKER_MODEL: z
     .string()
     .default('Xenova/ms-marco-MiniLM-L-6-v2')

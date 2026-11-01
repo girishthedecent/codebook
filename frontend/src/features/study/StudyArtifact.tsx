@@ -229,7 +229,7 @@ function Loaded({
   );
 }
 
-/** "Made from the Express repository, focused on “routing”. 10 questions, medium difficulty." */
+/** "Made from the nanoGPT repository, focused on “attention”. 10 questions, medium difficulty." */
 function MadeFrom({ study, workspaceId }: { study: StudyDetail; workspaceId: string }) {
   const sources = flatItems(useSources(workspaceId).data);
   const { input } = study;

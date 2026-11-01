@@ -42,7 +42,7 @@ type Tool = NonNullable<Settings['preferredTools']>[number];
 const SEARCH_MODES: SearchMode[] = ['hybrid', 'vector', 'keyword'];
 const TOOLS = Object.keys(t.edit.toolLabels) as Tool[];
 
-/** Name, description and how the workspace searches. Still exported under its old name. */
+/** Edits a workspace's name, description and how it searches. */
 export function RenameWorkspaceDialog({
   workspace,
   open,

@@ -25,7 +25,6 @@ export const strings = {
     retrieved: 'Retrieved',
     judge: 'Judge',
     error: 'Error',
-    sameSuiteOnly: 'Both runs must be from the same suite and dataset.',
     compareLink: 'This comparison link is incomplete. Pick two runs from the list to compare them.',
     noChanges: 'No case changed between these runs.',
   },

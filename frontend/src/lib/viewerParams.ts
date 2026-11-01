@@ -5,8 +5,8 @@ import { z } from 'zod';
  * TOC entries, file trees and graph nodes all open it by setting these; the viewer only reads.
  *
  *   ?src=<sourceId>&page=157                          book page
- *   ?src=<sourceId>&path=lib/router.js&lines=42-61    code file, cited lines optional
- *   ?src=<sourceId>&path=<page url>&section=Routing   website page, scrolled to a heading
+ *   ?src=<sourceId>&path=model.py&lines=42-61         code file, cited lines optional
+ *   ?src=<sourceId>&path=<page url>&section=Sampling  website page, scrolled to a heading
  *   &cite=<n>&from=<messageId>                        which chip is lit: numbers restart every
  *                                                     answer, so the message names the answer
  *

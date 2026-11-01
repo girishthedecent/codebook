@@ -18,7 +18,7 @@ import { strings } from '@/features/account/strings';
 const s = strings.settings;
 const MIN_PASSWORD = 8;
 
-/** The signed-in person: picture, name, password, linked GitHub, sign-out and (soon) deletion. */
+/** The signed-in person: picture, name, password, linked GitHub, sign-out and the account-deletion notice. */
 export function AccountSection({ githubFailed }: { githubFailed: boolean }) {
   const { me } = useMe();
   const accounts = useQuery({

@@ -44,14 +44,14 @@ POST {{base}}/api/v1/workspaces/{{workspaceId}}/sources
 Content-Type: application/json
 Origin: {{origin}}
 
-{ "type": "GITHUB_REPO", "url": "https://github.com/expressjs/express" }
+{ "type": "GITHUB_REPO", "url": "https://github.com/karpathy/nanoGPT" }
 
 ### Add a website (maxDepth 0–2, maxPages 1–50)
 POST {{base}}/api/v1/workspaces/{{workspaceId}}/sources
 Content-Type: application/json
 Origin: {{origin}}
 
-{ "type": "WEBSITE", "url": "https://expressjs.com/en/guide/routing.html", "maxDepth": 0 }
+{ "type": "WEBSITE", "url": "https://huggingface.co/docs/transformers/en/llm_tutorial", "maxDepth": 0 }
 
 ### List the workspace's sources
 GET {{base}}/api/v1/workspaces/{{workspaceId}}/sources
@@ -76,7 +76,7 @@ GET {{base}}/api/v1/sources/{{sourceId}}/toc
 GET {{base}}/api/v1/sources/{{sourceId}}/files
 
 ### Repository files under a folder
-GET {{base}}/api/v1/sources/{{sourceId}}/files?prefix=lib/&limit=50
+GET {{base}}/api/v1/sources/{{sourceId}}/files?prefix=config/&limit=50
 
 ### Text of one PDF page (physical page number, 1 = first page of the file)
 GET {{base}}/api/v1/sources/{{sourceId}}/content?page=24
@@ -85,7 +85,7 @@ GET {{base}}/api/v1/sources/{{sourceId}}/content?page=24
 GET {{base}}/api/v1/sources/{{sourceId}}/content?tocNodeId={{tocNodeId}}
 
 ### Lines of a repository file (1-based, inclusive; at most 400 per request)
-GET {{base}}/api/v1/sources/{{sourceId}}/content?path=lib/response.js&lineStart=1&lineEnd=40
+GET {{base}}/api/v1/sources/{{sourceId}}/content?path=model.py&lineStart=1&lineEnd=40
 
 ### Resync (409 while queued or processing)
 POST {{base}}/api/v1/sources/{{sourceId}}/resync

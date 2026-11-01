@@ -50,7 +50,7 @@ export type DraftDocument = {
   pageEnd: number | null;
   lineCount: number | null;
   // Size of the original file; for a skipped file (no content) the only size there is.
-  // Missing in drafts written before repositories: then the content's size.
+  // Optional so stored drafts without it still load: then the content's size.
   sizeBytes?: number;
   // Set for files left out of the index (no content, no chunks), e.g. "secret file".
   skippedReason?: string | null;
@@ -69,7 +69,7 @@ export type RepoDraftStats = {
   skippedFiles: number;
   redactions: number;
   languages: Record<string, number>;
-  // Symbol and edge counts with resolution rates (modules/graph). Missing before the graph.
+  // Symbol and edge counts with resolution rates (modules/graph). Optional so stored drafts without it still load.
   graph?: GraphStats;
 };
 
@@ -81,7 +81,7 @@ export type WebsiteDraftStats = {
 };
 
 export type Draft = {
-  // Missing in drafts written before repositories were supported: those are PDFs.
+  // Optional so stored drafts without it still load: an absent type is a PDF.
   sourceType?: 'PDF' | 'GITHUB_REPO' | 'WEBSITE';
   repo?: RepoDraftStats;
   website?: WebsiteDraftStats;
@@ -92,8 +92,8 @@ export type Draft = {
   userId: string;
   workspaceId: string;
   contentHash: string;
-  // Contextual retrieval for this run (the workspace setting at prepare time). Missing in
-  // older drafts: then the app default.
+  // Contextual retrieval for this run (the workspace setting at prepare time). Optional so
+  // stored drafts without it still load: then the app default.
   contextual?: boolean;
   documents: DraftDocument[];
 };

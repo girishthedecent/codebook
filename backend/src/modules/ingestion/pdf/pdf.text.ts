@@ -4,7 +4,7 @@ import { appConfig } from '../../../config/app.config.js';
 // or "mix" alone on a line aren't taken for page numbers.
 const PAGE_NUMBER = String.raw`(?:\d+|[ivxlc]{1,6})`;
 const BARE_PAGE_NUMBER = new RegExp(`^${PAGE_NUMBER}$`);
-// Running heads like "12 | Chapter 2: Data Models" or "Replication | 13"; a single bar, so
+// Running heads like "12 | Chapter 2: Getting Started" or "Storage | 13"; a single bar, so
 // code such as "c || d" isn't one.
 const NUMBERED_HEAD = new RegExp(
   `^${PAGE_NUMBER}\\s*\\|(?!\\|)\\s*\\S|\\S\\s*(?<!\\|)\\|\\s*${PAGE_NUMBER}$`,
@@ -145,7 +145,7 @@ const PAGE_END_FRAGMENT = new RegExp(`(?:^|\\s)([A-Za-z]+)([${HYPHENS}])$`);
 
 // A word broken over two lines. Typesetters break words with the hyphen character U+2010
 // or a soft hyphen; a plain "-" at a line end is usually the author's own, as in
-// "data-intensive". The rest of the document decides: a typeset break is joined unless the
+// "state-of-the-art". The rest of the document decides: a typeset break is joined unless the
 // hyphenated form appears elsewhere, a plain "-" is dropped only if the joined word does.
 function mendWord(left: string, hyphen: string, right: string, { words, compounds }: Vocabulary) {
   const joined = `${left}${right}`;

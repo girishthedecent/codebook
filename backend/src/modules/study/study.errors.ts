@@ -35,7 +35,7 @@ export function failureCode(error: unknown): StudyErrorCode {
   return error.cause instanceof LlmTimeoutError ? 'TIMEOUT' : 'MODEL_UNAVAILABLE';
 }
 
-/** The code of a failed set: the stored one, or for older sets what their message says. */
+/** The code of a failed set: the stored one, or for sets stored without a code what their message says. */
 export function errorCodeOf(set: {
   status: string;
   error: string | null;

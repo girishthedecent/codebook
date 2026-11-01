@@ -93,7 +93,7 @@ export function declarationOf(node: Node): Declaration | null {
       return null;
     }
     case 'expression_statement': {
-      // `res.send = function send() { … }`, `module.exports = () => …`: older JavaScript's
+      // `api.send = function send() { … }`, `module.exports = () => …`: older JavaScript's
       // way of defining functions and methods.
       const assignment = node.namedChildren[0];
       const value = assignment?.childForFieldName('right');

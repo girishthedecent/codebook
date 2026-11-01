@@ -5,7 +5,7 @@
 
 type Import = { local: string; specifier: string };
 
-/** `@scope/name`, `express` or `node:fs` for a module path; the first part of a Python module. */
+/** `@scope/name`, `lodash` or `node:fs` for a module path; the first part of a Python module. */
 export function packageOf(specifier: string, filePath: string) {
   if (filePath.endsWith('.py')) return specifier.split('.')[0]!;
   const parts = specifier.split('/');

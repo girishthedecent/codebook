@@ -24,7 +24,6 @@ import { synthQuestionPrompt } from './synthQuestion.js';
 import { titlePrompt } from './title.js';
 
 // Every prompt the app uses, so the hash check in registry.test.ts covers them all.
-// Each phase adds its prompts here as it writes them.
 export const prompts: readonly PromptTemplate[] = [
   contextualizePrompt,
   contextualizeCodePrompt,

@@ -9,10 +9,10 @@ export type SymbolKind = 'CLASS' | 'INTERFACE' | 'FUNCTION' | 'METHOD';
 
 export type FileSymbol = {
   name: string;
-  // The name inside the file: `AuthService.login`, `res.send`, `loginHandler`.
+  // The name inside the file: `AuthService.login`, `api.send`, `loginHandler`.
   localName: string;
   kind: SymbolKind;
-  // The class a method belongs to, or the object a function is assigned onto (`res`).
+  // The class a method belongs to, or the object a function is assigned onto (`api`).
   container: string | null;
   lineStart: number;
   lineEnd: number;

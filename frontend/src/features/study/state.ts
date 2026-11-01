@@ -41,7 +41,7 @@ export function studyState(study: Stateful): StudyState {
     case 'DONE':
       return { making: false, cancelled: false, failed: false, label: statusLabel.DONE };
     case 'FAILED': {
-      // Sets stopped before the code existed carry only the message.
+      // A cancelled set may carry only the message, with no error code.
       const cancelled = study.errorCode === 'CANCELLED' || study.error === 'Cancelled.';
       if (cancelled) {
         return {
