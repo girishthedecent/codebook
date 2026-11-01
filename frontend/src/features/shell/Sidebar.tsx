@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type UIEvent } from 'react';
 import { Link, useLocation } from '@tanstack/react-router';
 import {
   Brain,
@@ -20,10 +20,12 @@ import { ConversationsSection } from '@/features/chat/ConversationsSection';
 import { icons, labels } from './navItems';
 import { shellStrings } from './strings';
 
+// The current page gets a short accent bar at its left edge as well as the tint.
 const navClass = (collapsed: boolean) =>
   cn(
-    'flex items-center gap-2.5 rounded-sm text-sm text-ink-2 hover:bg-paper-3 hover:text-ink',
+    'relative flex items-center gap-2.5 rounded-sm text-sm text-ink-2 hover:bg-paper-3 hover:text-ink',
     '[&.active]:bg-paper-3 [&.active]:font-medium [&.active]:text-ink',
+    '[&.active]:before:absolute [&.active]:before:inset-y-2 [&.active]:before:left-0 [&.active]:before:w-0.5 [&.active]:before:rounded-full [&.active]:before:bg-accent',
     '[@media(pointer:coarse)]:min-h-11',
     collapsed ? 'h-10 justify-center' : 'min-h-9 px-2 py-1.5',
   );
@@ -34,6 +36,11 @@ const navClass = (collapsed: boolean) =>
  * with one button that opens the whole thing over the page.
  */
 export function Sidebar({ workspaceId, collapsed }: { workspaceId: string; collapsed: boolean }) {
+  const [scrolled, setScrolled] = useState(false);
+  const onScroll = (e: UIEvent<HTMLDivElement>) => {
+    const next = e.currentTarget.scrollTop > 0;
+    if (next !== scrolled) setScrolled(next);
+  };
   return (
     // The outer element stretches to the page so the tint runs full height; the inner one
     // sticks to the viewport and scrolls on its own when the lists are long.
@@ -41,7 +48,18 @@ export function Sidebar({ workspaceId, collapsed }: { workspaceId: string; colla
       aria-label="Workspace"
       className={cn('shrink-0 bg-paper-2/60', collapsed ? 'w-14' : 'w-64')}
     >
-      <div className="sticky top-0 flex h-full max-h-dvh flex-col overflow-y-auto pb-3">
+      <div
+        onScroll={onScroll}
+        className="sticky top-0 flex h-full max-h-dvh flex-col overflow-y-auto pb-3"
+      >
+        {/* Once the list scrolls, a rule and a soft shadow mark the edge it slides under. */}
+        <div
+          aria-hidden
+          className={cn(
+            'pointer-events-none sticky top-0 z-10 -mb-2.5 h-2.5 shrink-0 border-t border-rule bg-linear-to-b from-black/[0.07] to-transparent motion-safe:transition-opacity motion-safe:duration-150',
+            scrolled ? 'opacity-100' : 'opacity-0',
+          )}
+        />
         <WorkspaceSwitcher workspaceId={workspaceId} collapsed={collapsed} />
         <SidebarBody workspaceId={workspaceId} collapsed={collapsed} />
         {collapsed && <Library workspaceId={workspaceId} full className="mx-2 my-3" />}

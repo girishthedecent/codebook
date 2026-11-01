@@ -62,16 +62,29 @@ export function citedOrder(markdown: string): number[] {
   return [...seen];
 }
 
-/** The same text with each marker written as the number the reader sees. */
-export function renumberMarkers(markdown: string, shown: ReadonlyMap<number, number>): string {
+/** The text with every marker outside code replaced by what `write` makes of its numbers. */
+export function rewriteMarkers(
+  markdown: string,
+  write: (numbers: number[], marker: string) => string,
+): string {
   let out = '';
   for (const run of runs(markdown.replace(FOREIGN, '[$1]'))) {
     out += run.code
       ? run.text
-      : run.text.replace(MARKER, (marker, list: string) => {
-          const numbers = list.split(',').map((n) => shown.get(Number(n)));
-          return numbers.every((n) => n !== undefined) ? `[${numbers.join(', ')}]` : marker;
-        });
+      : run.text.replace(MARKER, (marker, list: string) =>
+          write(
+            list.split(',').map((n) => Number(n)),
+            marker,
+          ),
+        );
   }
   return out;
+}
+
+/** The same text with each marker written as the number the reader sees. */
+export function renumberMarkers(markdown: string, shown: ReadonlyMap<number, number>): string {
+  return rewriteMarkers(markdown, (registry, marker) => {
+    const numbers = registry.map((n) => shown.get(n));
+    return numbers.every((n) => n !== undefined) ? `[${numbers.join(', ')}]` : marker;
+  });
 }

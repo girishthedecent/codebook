@@ -7,7 +7,9 @@ import {
   type KeyboardEvent,
   type ReactNode,
 } from 'react';
+import { X } from '@phosphor-icons/react';
 import { Button, Kbd, Switch } from '@/ui';
+import { clearAskAbout, quoteFor, useAskAbout, type AskAbout } from '@/lib/askAbout';
 import { useBreakpoint } from '@/lib/breakpoints';
 import { useShortcut } from '@/lib/keyboard';
 import { cn } from '@/lib/cn';
@@ -48,6 +50,10 @@ function readMemoryPref() {
  * The question box. Enter asks, Shift+Enter is a new line (on phones Enter is a new line and the
  * button asks), Esc stops an answer in progress. On desktop it sticks to the bottom of the
  * column; on phones it sits above the tabs and rides up with the on-screen keyboard.
+ *
+ * A passage sent from elsewhere (the viewer, a flashcard, the graph) is quoted at the top of
+ * the draft with a line saying where it is from, until the question is sent or the line is
+ * dismissed.
  */
 export function Composer({
   draftScope,
@@ -66,6 +72,28 @@ export function Composer({
   const box = useRef<HTMLTextAreaElement>(null);
   const length = text.trim().length;
   const over = Math.max(0, length - MAX_QUESTION_CHARS);
+  const about = useAskAbout();
+  const [placed, setPlaced] = useState<AskAbout | null>(null);
+
+  // A new passage replaces the quote of the one before, if the reader left it untouched.
+  if (about && about !== placed) {
+    const quote = quoteFor(about);
+    const before = placed ? quoteFor(placed) : undefined;
+    setPlaced(about);
+    setText((t) => {
+      if (t.startsWith(quote)) return t;
+      return quote + (before && t.startsWith(before) ? t.slice(before.length) : t);
+    });
+  }
+
+  useEffect(() => {
+    if (!placed) return;
+    const el = box.current;
+    if (!el) return;
+    el.focus();
+    el.setSelectionRange(el.value.length, el.value.length);
+    el.scrollTop = el.scrollHeight;
+  }, [placed]);
 
   useShortcut('/', () => box.current?.focus());
 
@@ -98,6 +126,16 @@ export function Composer({
     }
   };
 
+  const dismissAbout = () => {
+    if (placed) {
+      const quote = quoteFor(placed);
+      setText((t) => (t.startsWith(quote) ? t.slice(quote.length) : t));
+    }
+    setPlaced(null);
+    clearAskAbout();
+    box.current?.focus();
+  };
+
   const submit = (e?: FormEvent) => {
     e?.preventDefault();
     const question = text.trim();
@@ -106,6 +144,8 @@ export function Composer({
     onSend(question, isGuest ? false : useMemory);
     setText('');
     clearDraft(draftScope);
+    setPlaced(null);
+    clearAskAbout();
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -125,6 +165,23 @@ export function Composer({
     <ComposerDock>
       <form onSubmit={submit} className="mx-auto w-full max-w-[720px]">
         <div className="rounded-md border border-edge bg-paper transition-colors duration-150 focus-within:border-accent">
+          {about && (
+            <div className="flex items-center gap-2 border-b border-rule py-0.5 pr-1 pl-3.5 text-xs text-ink-3">
+              <p className="min-w-0 flex-1 truncate">
+                {chat.about}{' '}
+                <span className="font-serif text-sm text-ink-2 italic">{about.label}</span>
+              </p>
+              <button
+                type="button"
+                onClick={dismissAbout}
+                aria-label={chat.dismissAbout}
+                title={chat.dismissAbout}
+                className="flex size-7 shrink-0 items-center justify-center rounded-xs hover:bg-paper-2 hover:text-ink max-sm:size-11"
+              >
+                <X size={14} aria-hidden />
+              </button>
+            </div>
+          )}
           <label htmlFor={`composer-${draftScope}`} className="sr-only">
             {placeholder}
           </label>

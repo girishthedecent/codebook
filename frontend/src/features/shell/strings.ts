@@ -23,6 +23,10 @@ export const shellStrings = {
     signedInAs: (email: string) => `Signed in as ${email}`,
     demoVisitor: 'You are using the demo as a guest.',
   },
+  shortcuts: {
+    title: 'Keyboard shortcuts',
+    description: 'Press ? again or Esc to close this list.',
+  },
   backToDemo: 'Back to the demo',
   viewerLoading: 'Opening the source',
 } as const;
