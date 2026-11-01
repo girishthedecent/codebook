@@ -24,7 +24,8 @@ export function ViewerLayout({ main, viewer }: { main: ReactNode; viewer?: React
       // Visible, so the viewer can stick to the screen while the page scrolls.
       style={{ overflow: 'visible', flex: '1 1 0%', minWidth: 0, height: 'auto' }}
     >
-      <Panel id="main" minSize="360px" style={{ overflow: 'visible' }}>
+      {/* A column, so the page fills the height and its composer sits at the bottom. */}
+      <Panel id="main" minSize="360px" className="flex flex-col" style={{ overflow: 'visible' }}>
         {main}
       </Panel>
       {viewer && (
