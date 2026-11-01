@@ -15,7 +15,10 @@ type Props = {
   page: number;
   zoom: Zoom;
   snippet?: string;
-  onRendered?: () => void;
+  /** The room the page has to fit in when the zoom is "fit page". */
+  fitHeight?: number;
+  /** Called after each drawing, with the text layer that now holds the page's text. */
+  onRendered?: (textLayer: HTMLElement) => void;
 };
 
 /**
@@ -23,7 +26,7 @@ type Props = {
  * selected, and the cited passage marked in that layer. The next page is drawn off screen and
  * copied over in one step, so turning a page never shows an empty canvas in between.
  */
-export function PdfPage({ doc, page, zoom, snippet, onRendered }: Props) {
+export function PdfPage({ doc, page, zoom, snippet, fitHeight, onRendered }: Props) {
   const frameRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const textRef = useRef<HTMLDivElement>(null);
@@ -43,7 +46,7 @@ export function PdfPage({ doc, page, zoom, snippet, onRendered }: Props) {
   }, []);
 
   useEffect(() => {
-    if (!width) return;
+    if (!width || (zoom === 'page' && !fitHeight)) return;
     let cancelled = false;
     let renderTask: RenderTask | undefined;
     let textLayer: TextLayer | undefined;
@@ -52,7 +55,12 @@ export function PdfPage({ doc, page, zoom, snippet, onRendered }: Props) {
       const pdfPage = await doc.getPage(page);
       if (cancelled) return;
       const base = pdfPage.getViewport({ scale: 1 });
-      const scale = zoom === 'fit' ? width / base.width : zoom * CSS_UNITS;
+      const scale =
+        zoom === 'fit'
+          ? width / base.width
+          : zoom === 'page'
+            ? Math.min(width / base.width, fitHeight! / base.height)
+            : zoom * CSS_UNITS;
       const viewport = pdfPage.getViewport({ scale });
 
       let ratio = window.devicePixelRatio || 1;
@@ -91,7 +99,7 @@ export function PdfPage({ doc, page, zoom, snippet, onRendered }: Props) {
       if (cancelled) return;
       markSnippet(textLayer, snippet)?.scrollIntoView({ block: 'center' });
       setFailure(undefined);
-      onRendered?.();
+      onRendered?.(container);
     })().catch((error: unknown) => {
       if (cancelled || (error as { name?: string }).name === 'RenderingCancelledException') return;
       setFailure({ page, attempt });
@@ -102,7 +110,7 @@ export function PdfPage({ doc, page, zoom, snippet, onRendered }: Props) {
       renderTask?.cancel();
       textLayer?.cancel();
     };
-  }, [doc, page, zoom, width, snippet, onRendered, attempt]);
+  }, [doc, page, zoom, width, fitHeight, snippet, onRendered, attempt]);
 
   const failed = failure?.page === page && failure.attempt === attempt;
 
@@ -114,7 +122,7 @@ export function PdfPage({ doc, page, zoom, snippet, onRendered }: Props) {
         hidden={failed}
       >
         <canvas ref={canvasRef} className="block" aria-hidden />
-        <div ref={textRef} className="textLayer" />
+        <div ref={textRef} className="textLayer" data-selectable />
       </div>
     </div>
   );

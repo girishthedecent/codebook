@@ -6,6 +6,7 @@ import type { Source } from '@/api/types';
 import { BackLink, Button, Callout, PageLoading, SectionHeading, SourceBadge } from '@/ui';
 import { DeleteSourceDialog } from './DeleteSourceDialog';
 import { FileTree } from './FileTree';
+import { SourceHighlights } from './HighlightList';
 import { LeftOut } from './LeftOut';
 import { SitePages } from './PageList';
 import { SourceStatus } from './SourceStatus';
@@ -162,6 +163,7 @@ function Detail({
             </>
           )}
           {source.type === 'WEBSITE' && <SitePages source={source} />}
+          {canManage && <SourceHighlights workspaceId={workspaceId} sourceId={source.id} />}
         </>
       )}
 

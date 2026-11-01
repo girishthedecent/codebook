@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { ArrowSquareOut } from '@phosphor-icons/react';
@@ -6,13 +6,31 @@ import { cn } from '@/lib/cn';
 import { ProgressRule, textLinkClass } from '@/ui';
 import { findSnippet } from './findSnippet';
 import { markdownHeadings, squash, type Heading } from './headings';
+import { indexText, paint, unpaint } from './textIndex';
 import { usePageText } from './usePageText';
+import { useTextMarks } from './useTextMarks';
+import { useViewerContext } from './viewerContext';
 import { ViewError } from './ViewError';
 import { s } from './strings';
 
 type Props = { sourceId: string; url: string; heading?: string; snippet?: string };
 
-const HIGHLIGHT = 'cb-cited';
+type TextSize = 's' | 'm' | 'l';
+const SIZE_KEY = 'codebook-web-text-size';
+const sizes: Array<{ value: TextSize; label: string; glyph: string }> = [
+  { value: 's', label: s.textSmall, glyph: 'text-xs' },
+  { value: 'm', label: s.textMedium, glyph: 'text-sm' },
+  { value: 'l', label: s.textLarge, glyph: 'text-base' },
+];
+
+function savedSize(): TextSize {
+  try {
+    const saved = localStorage.getItem(SIZE_KEY);
+    return saved === 's' || saved === 'l' ? saved : 'm';
+  } catch {
+    return 'm';
+  }
+}
 
 /**
  * A web page as stored at ingest: its text with headings, scrolled to the cited section,
@@ -21,16 +39,28 @@ const HIGHLIGHT = 'cb-cited';
 export function WebView({ sourceId, url, heading, snippet }: Props) {
   const { text, loaded, error, retry } = usePageText(sourceId, url);
   const trail = useMemo(() => (text ? headingTrail(text, heading) : []), [text, heading]);
-  const bodyRef = useRef<HTMLDivElement>(null);
+  const [body, setBody] = useState<HTMLDivElement | null>(null);
+  const [size, setSizeState] = useState<TextSize>(savedSize);
+  const setSize = (next: TextSize) => {
+    setSizeState(next);
+    try {
+      localStorage.setItem(SIZE_KEY, next);
+    } catch {
+      // Without storage the size holds until the viewer closes.
+    }
+  };
+
+  const { highlights } = useViewerContext();
+  const passages = highlights.filter((h) => h.path === url).map((h) => h.text);
+  useTextMarks(body, text, passages);
 
   useEffect(() => {
-    const body = bodyRef.current;
     if (!text || !body) return;
     const range = snippet ? rangeOfSnippet(body, snippet) : undefined;
     if (range) {
-      markRange(range);
+      paint('cb-cited', [range]);
       range.startContainer.parentElement?.scrollIntoView({ block: 'center' });
-      return () => clearMark();
+      return () => unpaint('cb-cited');
     }
     if (!heading) return;
     const wanted = squash(heading);
@@ -40,7 +70,7 @@ export function WebView({ sourceId, url, heading, snippet }: Props) {
     el?.scrollIntoView({ block: 'start' });
     el?.classList.add('bg-highlight');
     return () => el?.classList.remove('bg-highlight');
-  }, [text, heading, snippet]);
+  }, [text, body, heading, snippet]);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -48,6 +78,25 @@ export function WebView({ sourceId, url, heading, snippet }: Props) {
         <p className="min-w-0 flex-1 truncate text-xs text-ink-3">
           {trail.length ? trail.map((h) => h.text).join(' › ') : hostAndPath(url)}
         </p>
+        <div role="group" aria-label={s.textSize} className="flex shrink-0 items-center">
+          {sizes.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              aria-label={option.label}
+              title={option.label}
+              aria-pressed={size === option.value}
+              onClick={() => setSize(option.value)}
+              className={cn(
+                'flex h-8 w-7 items-center justify-center rounded-xs font-serif hover:bg-paper-2 max-sm:h-11 max-sm:w-10',
+                option.glyph,
+                size === option.value ? 'text-ink' : 'text-ink-3',
+              )}
+            >
+              <span aria-hidden>A</span>
+            </button>
+          ))}
+        </div>
         <a
           href={url}
           target="_blank"
@@ -62,9 +111,16 @@ export function WebView({ sourceId, url, heading, snippet }: Props) {
       {error ? (
         <ViewError error={error} onRetry={retry} />
       ) : (
-        <div ref={bodyRef} className="min-h-0 flex-1 overflow-auto px-5 py-5">
+        <div
+          ref={setBody}
+          data-size={size === 'm' ? undefined : size}
+          className="cb-web min-h-0 flex-1 overflow-auto px-5 py-5"
+        >
           {text !== undefined && (
-            <div className="prose [&_h1]:scroll-mt-4 [&_h2]:scroll-mt-4 [&_h3]:scroll-mt-4 [&_h4]:scroll-mt-4">
+            <div
+              data-selectable
+              className="prose [&_h1]:scroll-mt-4 [&_h2]:scroll-mt-4 [&_h3]:scroll-mt-4 [&_h4]:scroll-mt-4"
+            >
               <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
                 {text}
               </ReactMarkdown>
@@ -101,40 +157,9 @@ function headingTrail(text: string, heading: string | undefined): Heading[] {
 
 /** The cited passage as a DOM range over the rendered text, or nothing if it isn't found. */
 function rangeOfSnippet(root: HTMLElement, snippet: string): Range | undefined {
-  const nodes: Text[] = [];
-  const starts: number[] = [];
-  let all = '';
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
-    nodes.push(n as Text);
-    starts.push(all.length);
-    all += (n as Text).data + ' ';
-  }
-  const found = findSnippet(all, snippet);
-  if (!found) return undefined;
-
-  const at = (offset: number) => {
-    let i = starts.findLastIndex((start) => start <= offset);
-    if (i < 0) i = 0;
-    return { node: nodes[i]!, offset: Math.min(offset - starts[i]!, nodes[i]!.length) };
-  };
-  const from = at(found.start);
-  const to = at(found.end - 1);
-  const range = document.createRange();
-  range.setStart(from.node, from.offset);
-  range.setEnd(to.node, Math.min(to.offset + 1, to.node.length));
-  return range;
-}
-
-// The CSS Custom Highlight API marks the text without touching the nodes React renders.
-// Browsers without it keep the heading highlight alone.
-function markRange(range: Range) {
-  if (typeof Highlight === 'undefined' || !('highlights' in CSS)) return;
-  CSS.highlights.set(HIGHLIGHT, new Highlight(range));
-}
-
-function clearMark() {
-  if ('highlights' in CSS) CSS.highlights.delete(HIGHLIGHT);
+  const index = indexText(root);
+  const found = findSnippet(index.text, snippet);
+  return found && index.toRange(found);
 }
 
 function hostAndPath(url: string) {

@@ -24,6 +24,7 @@ import { Route as AccountAdminIndexRouteImport } from './routes/_account/admin/i
 import { Route as AccountAdminMonitoringRouteImport } from './routes/_account/admin/monitoring'
 import { Route as WWorkspaceIdIndexRouteImport } from './routes/w.$workspaceId/index'
 import { Route as WWorkspaceIdGraphRouteImport } from './routes/w.$workspaceId/graph'
+import { Route as WWorkspaceIdHighlightsRouteImport } from './routes/w.$workspaceId/highlights'
 import { Route as WWorkspaceIdMoreRouteImport } from './routes/w.$workspaceId/more'
 import { Route as AccountAdminEvalsIndexRouteImport } from './routes/_account/admin/evals/index'
 import { Route as AccountAdminEvalsRunIdRouteImport } from './routes/_account/admin/evals/$runId'
@@ -108,6 +109,11 @@ const WWorkspaceIdGraphRoute = WWorkspaceIdGraphRouteImport.update({
   path: '/graph',
   getParentRoute: () => WWorkspaceIdRouteRoute,
 } as any)
+const WWorkspaceIdHighlightsRoute = WWorkspaceIdHighlightsRouteImport.update({
+  id: '/highlights',
+  path: '/highlights',
+  getParentRoute: () => WWorkspaceIdRouteRoute,
+} as any)
 const WWorkspaceIdMoreRoute = WWorkspaceIdMoreRouteImport.update({
   id: '/more',
   path: '/more',
@@ -172,6 +178,7 @@ export interface FileRoutesByFullPath {
   '/w/': typeof WIndexRoute
   '/admin/monitoring': typeof AccountAdminMonitoringRoute
   '/w/$workspaceId/graph': typeof WWorkspaceIdGraphRoute
+  '/w/$workspaceId/highlights': typeof WWorkspaceIdHighlightsRoute
   '/w/$workspaceId/more': typeof WWorkspaceIdMoreRoute
   '/admin/': typeof AccountAdminIndexRoute
   '/w/$workspaceId/': typeof WWorkspaceIdIndexRoute
@@ -195,6 +202,7 @@ export interface FileRoutesByTo {
   '/w': typeof WIndexRoute
   '/admin/monitoring': typeof AccountAdminMonitoringRoute
   '/w/$workspaceId/graph': typeof WWorkspaceIdGraphRoute
+  '/w/$workspaceId/highlights': typeof WWorkspaceIdHighlightsRoute
   '/w/$workspaceId/more': typeof WWorkspaceIdMoreRoute
   '/admin': typeof AccountAdminIndexRoute
   '/w/$workspaceId': typeof WWorkspaceIdIndexRoute
@@ -222,6 +230,7 @@ export interface FileRoutesById {
   '/w/': typeof WIndexRoute
   '/_account/admin/monitoring': typeof AccountAdminMonitoringRoute
   '/w/$workspaceId/graph': typeof WWorkspaceIdGraphRoute
+  '/w/$workspaceId/highlights': typeof WWorkspaceIdHighlightsRoute
   '/w/$workspaceId/more': typeof WWorkspaceIdMoreRoute
   '/_account/admin/': typeof AccountAdminIndexRoute
   '/w/$workspaceId/': typeof WWorkspaceIdIndexRoute
@@ -249,6 +258,7 @@ export interface FileRouteTypes {
     | '/w/'
     | '/admin/monitoring'
     | '/w/$workspaceId/graph'
+    | '/w/$workspaceId/highlights'
     | '/w/$workspaceId/more'
     | '/admin/'
     | '/w/$workspaceId/'
@@ -272,6 +282,7 @@ export interface FileRouteTypes {
     | '/w'
     | '/admin/monitoring'
     | '/w/$workspaceId/graph'
+    | '/w/$workspaceId/highlights'
     | '/w/$workspaceId/more'
     | '/admin'
     | '/w/$workspaceId'
@@ -298,6 +309,7 @@ export interface FileRouteTypes {
     | '/w/'
     | '/_account/admin/monitoring'
     | '/w/$workspaceId/graph'
+    | '/w/$workspaceId/highlights'
     | '/w/$workspaceId/more'
     | '/_account/admin/'
     | '/w/$workspaceId/'
@@ -428,6 +440,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WWorkspaceIdGraphRouteImport
       parentRoute: typeof WWorkspaceIdRouteRoute
     }
+    '/w/$workspaceId/highlights': {
+      id: '/w/$workspaceId/highlights'
+      path: '/highlights'
+      fullPath: '/w/$workspaceId/highlights'
+      preLoaderRoute: typeof WWorkspaceIdHighlightsRouteImport
+      parentRoute: typeof WWorkspaceIdRouteRoute
+    }
     '/w/$workspaceId/more': {
       id: '/w/$workspaceId/more'
       path: '/more'
@@ -532,6 +551,7 @@ const AccountRouteWithChildren =
 
 interface WWorkspaceIdRouteRouteChildren {
   WWorkspaceIdGraphRoute: typeof WWorkspaceIdGraphRoute
+  WWorkspaceIdHighlightsRoute: typeof WWorkspaceIdHighlightsRoute
   WWorkspaceIdMoreRoute: typeof WWorkspaceIdMoreRoute
   WWorkspaceIdIndexRoute: typeof WWorkspaceIdIndexRoute
   WWorkspaceIdCConversationIdRoute: typeof WWorkspaceIdCConversationIdRoute
@@ -543,6 +563,7 @@ interface WWorkspaceIdRouteRouteChildren {
 
 const WWorkspaceIdRouteRouteChildren: WWorkspaceIdRouteRouteChildren = {
   WWorkspaceIdGraphRoute: WWorkspaceIdGraphRoute,
+  WWorkspaceIdHighlightsRoute: WWorkspaceIdHighlightsRoute,
   WWorkspaceIdMoreRoute: WWorkspaceIdMoreRoute,
   WWorkspaceIdIndexRoute: WWorkspaceIdIndexRoute,
   WWorkspaceIdCConversationIdRoute: WWorkspaceIdCConversationIdRoute,

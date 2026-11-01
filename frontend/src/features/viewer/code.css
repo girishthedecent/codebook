@@ -15,3 +15,16 @@
 .cb-code .t[data-i] {
   font-style: italic;
 }
+
+/* Lines the reader highlighted carry the marker; on a cited line the citation's band and bar
+   stay, and the marker shows in the line numbers. Find hits paint over both. */
+.cb-code [data-mark]:not([data-cited]),
+.cb-code [data-mark] > [data-gutter] {
+  background-color: var(--mark);
+}
+.cb-code [data-find] {
+  background-color: var(--find);
+}
+.cb-code [data-find='now'] {
+  background-color: var(--find-now);
+}

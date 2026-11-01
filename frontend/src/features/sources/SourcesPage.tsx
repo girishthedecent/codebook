@@ -1,9 +1,13 @@
 import { useEffect, useState } from 'react';
-import { useParams } from '@tanstack/react-router';
+import { Link, useNavigate, useParams } from '@tanstack/react-router';
 import { Plus } from '@phosphor-icons/react';
 import { Button, Callout, EmptyState, PageHeader, PageLoading } from '@/ui';
 import { AddSourceDialog } from './AddSourceDialog';
+import { LibraryDrop } from './LibraryDrop';
+import { RecentPlaces } from './RecentPlaces';
 import { SourceRow } from './SourceRow';
+import { UploadList } from './UploadList';
+import { enqueuePdfs } from './uploadQueue';
 import { WorkspaceSearch } from './WorkspaceSearch';
 import { isIndexing } from './sourceMeta';
 import { SOURCE_LIMIT, strings } from './strings';
@@ -20,6 +24,9 @@ export function SourcesPage() {
   const [added, setAdded] = useState<string>();
   const indexing = sources.some((s) => isIndexing(s.status));
   const now = useNow(indexing);
+  const navigate = useNavigate();
+  const openLibrary = () =>
+    void navigate({ to: '/w/$workspaceId/sources', params: { workspaceId } });
 
   // The highlight on a new source fades after a few seconds.
   useEffect(() => {
@@ -37,13 +44,22 @@ export function SourcesPage() {
         intro={note ?? strings.intro}
         actions={
           canManage && (
-            <Button variant="primary" onClick={() => setAdding(true)}>
-              <Plus size={14} weight="bold" aria-hidden />
-              {strings.add}
-            </Button>
+            <>
+              <Button asChild variant="ghost">
+                <Link to="/w/$workspaceId/highlights" params={{ workspaceId }}>
+                  {strings.library.highlights}
+                </Link>
+              </Button>
+              <Button variant="primary" onClick={() => setAdding(true)}>
+                <Plus size={14} weight="bold" aria-hidden />
+                {strings.add}
+              </Button>
+            </>
           )
         }
       />
+
+      {canManage && <UploadList workspaceId={workspaceId} />}
 
       {query.isPending ? (
         <PageLoading label="Loading sources" rows={3} />
@@ -66,6 +82,7 @@ export function SourcesPage() {
           {query.isError && (
             <Callout error={query.error} onRetry={() => void query.refetch()} className="mb-4" />
           )}
+          <RecentPlaces workspaceId={workspaceId} sources={sources} />
           <p className="mb-2 flex flex-wrap justify-between gap-x-4 text-xs text-ink-3">
             <span>{strings.count(sources.length, SOURCE_LIMIT)}</span>
             {indexing && <span>{strings.leaveNote}</span>}
@@ -98,6 +115,12 @@ export function SourcesPage() {
         </>
       )}
 
+      {canManage && (
+        <LibraryDrop
+          disabled={adding}
+          onFiles={(files) => enqueuePdfs(workspaceId, files, openLibrary)}
+        />
+      )}
       {canManage && (
         <AddSourceDialog
           workspaceId={workspaceId}
