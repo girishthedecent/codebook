@@ -1,22 +1,8 @@
 import { LlmTimeoutError } from '../../llm/retry.js';
 import { UpstreamError } from '../../utils/errors/app.error.js';
+import { isStudyErrorCode, type StudyErrorCode } from './study.codes.js';
 
-// Why a study set failed. Stored with the set, so a client can tell a set the owner stopped
-// from one the models couldn't make, and word each its own way.
-export const STUDY_ERROR_CODES = [
-  'CANCELLED',
-  'VALIDATION_FAILED',
-  'MODEL_UNAVAILABLE',
-  'TIMEOUT',
-  'NO_MATERIAL',
-  'QUEUE_FAILED',
-  'GENERATION_FAILED',
-] as const;
-
-export type StudyErrorCode = (typeof STUDY_ERROR_CODES)[number];
-
-export const isStudyErrorCode = (value: unknown): value is StudyErrorCode =>
-  STUDY_ERROR_CODES.some((code) => code === value);
+export { STUDY_ERROR_CODES, isStudyErrorCode, type StudyErrorCode } from './study.codes.js';
 
 // Shown with a set when nothing more specific is known. Safe for users: no provider details.
 export const STUDY_ERROR_MESSAGES: Record<StudyErrorCode, string> = {

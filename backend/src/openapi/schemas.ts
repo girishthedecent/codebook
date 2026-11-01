@@ -17,7 +17,7 @@ import {
   UsageType,
   WorkspaceTemplate,
 } from '../generated/prisma/enums.js';
-import { STUDY_ERROR_CODES } from '../modules/study/study.errors.js';
+import { STUDY_ERROR_CODES } from '../modules/study/study.codes.js';
 import { AGENT_TOOLS, SEARCH_MODES } from '../modules/workspaces/workspace.validator.js';
 
 // Response bodies as the controllers send them. These only describe the API for the docs:
