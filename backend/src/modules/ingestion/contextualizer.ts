@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { appConfig } from '../../config/app.config.js';
 import logger from '../../config/logger.config.js';
 import { generateObject, type CallContext } from '../../llm/client.js';
-import { hasBackupKey, textRoutes, type ModelRef } from '../../llm/models.js';
+import { keyCounts, textRoutes, type ModelRef } from '../../llm/models.js';
 import { contextualizePrompt } from '../../llm/prompts/contextualize.js';
 import { contextualizeCodePrompt } from '../../llm/prompts/contextualizeCode.js';
 import { UpstreamError } from '../../utils/errors/app.error.js';
@@ -30,16 +30,17 @@ const contextSchema = z.object({
 });
 
 // Shared by every ingest in this process, so two books at once still stay under the
-// free-tier rate. Each Gemini key is a project with its own per-minute limit, so with a
-// backup key the calls alternate between the two. Each key is paced as it is called, so a
-// call that falls over to the other key (or skips a key that ran out) waits its turn there.
+// free-tier rate. Each Gemini key is a project with its own per-minute limit, so with
+// several keys the calls take turns among them. Each key is paced as it is called, so a
+// call that falls over to another key (or skips a key that ran out) waits its turn there.
 const { minIntervalMs } = appConfig.ingestion.contextualize;
-const pacers = { primary: createPacer(minIntervalMs), backup: createPacer(minIntervalMs) };
-const paceKey = (ref: ModelRef) => (ref.key === 'backup' ? pacers.backup : pacers.primary)();
+const pacers: (() => Promise<void>)[] = [];
+const paceKey = (ref: ModelRef) => (pacers[ref.key ?? 0] ??= createPacer(minIntervalMs))();
 let calls = 0;
 
-/** How many contextualize calls can usefully run at once: one per Gemini key. */
-export const contextualizeLanes = () => (hasBackupKey() ? 2 : 1);
+/** How many contextualize calls can usefully run at once: one per key of its model. */
+export const contextualizeLanes = () =>
+  Math.max(1, keyCounts()[textRoutes.contextualize.primary.provider]);
 
 // The prompt's inputs other than the chunk itself, so a cached context is only reused for
 // the same section of the same document.
@@ -132,7 +133,7 @@ function numbered(index: number, text: string) {
 // One model call whose numbered contexts go to `keys` (chunk n → keys[n - 1]). False when
 // the call failed.
 async function writeContexts(keys: string[], prompt: string, ctx: CallContext) {
-  const onBackup = hasBackupKey() && calls++ % 2 === 1;
+  const startKey = calls++ % contextualizeLanes();
   let contexts: z.infer<typeof contextSchema>['contexts'];
   try {
     const { object } = await generateObject({
@@ -140,7 +141,7 @@ async function writeContexts(keys: string[], prompt: string, ctx: CallContext) {
       schema: contextSchema,
       prompt,
       ctx,
-      startWith: onBackup ? 'backup' : undefined,
+      startKey,
       pace: paceKey,
     });
     contexts = object.contexts;

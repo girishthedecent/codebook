@@ -1,40 +1,54 @@
 import { describe, expect, it } from 'vitest';
-import { backupFirst, modelLabel, withBackupKey, type ModelRef } from './models.js';
+import { modelLabel, startingAtKey, withEveryKey, type ModelRef } from './models.js';
 
 const groq: ModelRef = { provider: 'groq', model: 'openai/gpt-oss-120b' };
 const gemini: ModelRef = { provider: 'google', model: 'gemini-3.6-flash' };
 
-describe('withBackupKey', () => {
-  it('leaves the route alone without a backup key', () => {
-    expect(withBackupKey([gemini, groq], false)).toEqual([gemini, groq]);
+describe('withEveryKey', () => {
+  it('leaves the route alone with one key per provider', () => {
+    expect(withEveryKey([gemini, groq], { google: 1, groq: 1 })).toEqual([gemini, groq]);
+    expect(withEveryKey([gemini, groq], { google: 0, groq: 0 })).toEqual([gemini, groq]);
   });
 
-  it('tries each Google model again on the backup key before moving on', () => {
-    expect(withBackupKey([gemini, groq], true)).toEqual([
+  it('tries each model again on the other keys before moving on', () => {
+    expect(withEveryKey([gemini, groq], { google: 2, groq: 1 })).toEqual([
       gemini,
-      { ...gemini, key: 'backup' },
+      { ...gemini, key: 1 },
       groq,
     ]);
-    expect(withBackupKey([groq, gemini], true)).toEqual([
+    expect(withEveryKey([groq, gemini], { google: 3, groq: 2 })).toEqual([
       groq,
+      { ...groq, key: 1 },
       gemini,
-      { ...gemini, key: 'backup' },
+      { ...gemini, key: 1 },
+      { ...gemini, key: 2 },
     ]);
   });
 });
 
-describe('backupFirst', () => {
-  it('moves each backup copy ahead of its model and leaves the rest in order', () => {
-    const backup = { ...gemini, key: 'backup' as const };
-    expect(backupFirst([gemini, backup, groq])).toEqual([backup, gemini, groq]);
-    expect(backupFirst([groq, gemini, backup])).toEqual([groq, backup, gemini]);
-    expect(backupFirst([gemini, groq])).toEqual([gemini, groq]);
+describe('startingAtKey', () => {
+  const route = withEveryKey([gemini, groq], { google: 3, groq: 2 });
+  const [g1, g2, g3, q1, q2] = route;
+
+  it('leaves the route alone at the first key', () => {
+    expect(startingAtKey(route, 0)).toEqual(route);
+  });
+
+  it('starts each model on the given key and keeps the models in order', () => {
+    expect(startingAtKey(route, 1)).toEqual([g2, g3, g1, q2, q1]);
+    expect(startingAtKey(route, 2)).toEqual([g3, g1, g2, q1, q2]);
+  });
+
+  it('wraps round when a provider has fewer keys', () => {
+    expect(startingAtKey(route, 3)).toEqual([g1, g2, g3, q2, q1]);
+    expect(startingAtKey([gemini, groq], 2)).toEqual([gemini, groq]);
   });
 });
 
 describe('modelLabel', () => {
-  it('marks the backup key', () => {
+  it('numbers the keys after the first from 2', () => {
     expect(modelLabel(gemini)).toBe('google/gemini-3.6-flash');
-    expect(modelLabel({ ...gemini, key: 'backup' })).toBe('google/gemini-3.6-flash#backup');
+    expect(modelLabel({ ...gemini, key: 1 })).toBe('google/gemini-3.6-flash#2');
+    expect(modelLabel({ ...groq, key: 2 })).toBe('groq/openai/gpt-oss-120b#3');
   });
 });

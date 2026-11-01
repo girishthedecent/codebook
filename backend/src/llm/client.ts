@@ -16,9 +16,10 @@ import logger from '../config/logger.config.js';
 import { Prisma } from '../generated/prisma/client.js';
 import { UpstreamError } from '../utils/errors/app.error.js';
 import {
-  backupFirst,
+  keyLabel,
   modelLabel,
   modelsFor,
+  startingAtKey,
   textRoutes,
   type ModelRef,
   type TextRoute,
@@ -48,8 +49,9 @@ type CallOptions = PromptInput & {
   task: TextTask;
   // Evals pin a model to compare models; an override is tried alone, without fallback.
   modelOverride?: ModelRef;
-  // Bulk work that spreads its calls over both Gemini keys starts some on the backup key.
-  startWith?: 'backup';
+  // Bulk work that spreads its calls over every key starts each model on this key (wrapping
+  // round when its provider has fewer).
+  startKey?: number;
   // Waits before each model is tried, for callers that pace their calls to a key's rate.
   pace?: (ref: ModelRef) => Promise<void>;
   abortSignal?: AbortSignal;
@@ -60,8 +62,8 @@ type CallOptions = PromptInput & {
 export type CallInfo = TokenCounts & {
   provider: string;
   model: string;
-  // Set when the backup Gemini key answered.
-  key?: 'backup';
+  // The index of the provider key that answered, when it wasn't the first (see ModelRef).
+  key?: number;
   fallbackUsed: boolean;
   costUsd: Prisma.Decimal;
   latencyMs: number;
@@ -258,7 +260,7 @@ async function callWithFallback<T>(options: CallOptions, attempt: Attempt<T>) {
   const { task, modelOverride, abortSignal, ctx } = options;
   const route = textRoutes[task];
   const routed = modelsFor(task, modelOverride);
-  const models = options.startWith === 'backup' ? backupFirst(routed) : routed;
+  const models = options.startKey ? startingAtKey(routed, options.startKey) : routed;
   const started = performance.now();
   logPrompt(options, models);
 
@@ -352,7 +354,7 @@ function callInfo(
   return {
     provider: ref.provider,
     model: ref.model,
-    ...(ref.key && { key: ref.key }),
+    ...(ref.key ? { key: ref.key } : {}),
     fallbackUsed,
     ...addTokens(spent.tokens, tokens),
     costUsd: spent.costUsd.add(estimateCost(ref.model, tokens)),
@@ -369,7 +371,7 @@ function usageRow(task: TextTask, call: CallInfo, ctx: CallContext | undefined) 
     messageId: ctx?.messageId,
     provider: call.provider,
     model: call.model,
-    key: call.key,
+    key: keyLabel(call.key),
     tokensIn: call.tokensIn,
     tokensOut: call.tokensOut,
     tokensCached: call.tokensCached,

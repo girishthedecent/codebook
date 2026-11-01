@@ -27,13 +27,13 @@ beforeEach(() => {
   resetCircuitBreaker();
 });
 
-describe('backup key', () => {
-  it('keeps its own state, so the first key running out does not skip the second', () => {
+describe('other keys', () => {
+  it('keep their own state, so the first key running out does not skip the second', () => {
     const gemini: ModelRef = { provider: 'google', model: 'gemini-3.6-flash' };
-    const backup: ModelRef = { ...gemini, key: 'backup' };
+    const second: ModelRef = { ...gemini, key: 1 };
     for (let i = 0; i < quotaErrors; i++) noteQuotaError(gemini);
     expect(isOpen(gemini)).toBe(true);
-    expect(isOpen(backup)).toBe(false);
+    expect(isOpen(second)).toBe(false);
   });
 });
 
@@ -130,12 +130,10 @@ describe('breakerStates', () => {
     expect(breakerStates(start + coolOffMs)[0]).toMatchObject({ open: false, openUntil: null });
   });
 
-  it('lists a backup key apart from its model', () => {
-    const backup: ModelRef = { provider: 'google', model: 'gemini-3.6-flash', key: 'backup' };
-    noteQuotaError(backup, start);
+  it('lists another key apart from its model', () => {
+    const third: ModelRef = { provider: 'google', model: 'gemini-3.6-flash', key: 2 };
+    noteQuotaError(third, start);
 
-    expect(breakerStates(start).map((state) => state.model)).toEqual([
-      'google/gemini-3.6-flash#backup',
-    ]);
+    expect(breakerStates(start).map((state) => state.model)).toEqual(['google/gemini-3.6-flash#3']);
   });
 });

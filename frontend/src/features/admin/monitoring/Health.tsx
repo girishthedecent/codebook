@@ -188,7 +188,7 @@ function ByModel({ models }: { models: ModelUsage['models'] }) {
               <TD className="font-mono text-xs">
                 {m.provider}/{m.model}
               </TD>
-              <TD className="font-mono text-xs text-ink-2">{m.key ?? '—'}</TD>
+              <TD className="font-mono text-xs text-ink-2">{m.key ? `#${m.key}` : '—'}</TD>
               <TD className="text-ink-2">{callTypes[m.type]}</TD>
               <TD numeric>{count(m.calls)}</TD>
               <TD numeric className={m.errors > 0 ? 'text-error' : undefined}>

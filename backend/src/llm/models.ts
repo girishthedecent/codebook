@@ -23,9 +23,10 @@ export type ProviderName = 'groq' | 'google';
 export type ModelRef = {
   provider: ProviderName;
   model: string;
-  // Set on the copy of a Google model that uses GEMINI_API_KEY_2, a key from another
-  // project: free-tier quotas are per project, so it still answers when the first is out.
-  key?: 'backup';
+  // Which of the provider's keys to call it with, counted from 0; unset for the first. The
+  // keys come from different projects and free-tier quotas are per project, so a model
+  // whose quota is out on one key still answers on the next.
+  key?: number;
 };
 
 export type TextRoute = {
@@ -168,27 +169,52 @@ export const embeddingRoute = {
   },
 };
 
-/** "provider/model", plus "#backup" for the backup key: for logs and per-model state. */
-export const modelLabel = (ref: ModelRef) =>
-  `${ref.provider}/${ref.model}${ref.key ? `#${ref.key}` : ''}`;
+/** A key's number counted from 1, as saved on usage rows: undefined for the first key. */
+export const keyLabel = (key: number | undefined) => (key ? String(key + 1) : undefined);
 
-/** Puts a backup-key copy right after each Google model, so the same model is tried again on the other project before the next one. */
-export function withBackupKey(refs: ModelRef[], hasBackupKey: boolean): ModelRef[] {
-  if (!hasBackupKey) return refs;
-  return refs.flatMap((ref) =>
-    ref.provider === 'google' ? [ref, { ...ref, key: 'backup' as const }] : [ref],
-  );
+/** "provider/model", plus "#2", "#3"... for the other keys: for logs and per-model state. */
+export function modelLabel(ref: ModelRef) {
+  const key = keyLabel(ref.key);
+  return `${ref.provider}/${ref.model}${key ? `#${key}` : ''}`;
 }
 
-/** Swaps each model with the backup-key copy that follows it, so the backup key goes first. */
-export function backupFirst(refs: ModelRef[]): ModelRef[] {
-  const out = [...refs];
-  for (let i = 0; i < out.length - 1; i++) {
-    const [ref, next] = [out[i]!, out[i + 1]!];
-    if (!ref.key && next.key === 'backup' && next.model === ref.model) {
-      [out[i], out[i + 1]] = [next, ref];
-      i++;
-    }
+export type KeyCounts = Record<ProviderName, number>;
+
+export const keyCounts = (): KeyCounts => ({
+  groq: serverConfig.GROQ_API_KEYS.length,
+  google: serverConfig.GEMINI_API_KEYS.length,
+});
+
+/**
+ * Puts a copy of each model for every other key of its provider right after it, so the
+ * same model is tried on each key before the next model.
+ */
+export function withEveryKey(refs: ModelRef[], counts: KeyCounts): ModelRef[] {
+  return refs.flatMap((ref) => [
+    ref,
+    ...Array.from({ length: Math.max(0, counts[ref.provider] - 1) }, (_, i) => ({
+      ...ref,
+      key: i + 1,
+    })),
+  ]);
+}
+
+/**
+ * Rotates each model's run of key copies to start at key `start` (wrapping round when the
+ * provider has fewer keys), so bulk work can spread its calls over every key. The models
+ * keep their order.
+ */
+export function startingAtKey(refs: ModelRef[], start: number): ModelRef[] {
+  const out: ModelRef[] = [];
+  let i = 0;
+  while (i < refs.length) {
+    const first = refs[i]!;
+    let end = i + 1;
+    while (refs[end]?.provider === first.provider && refs[end]?.model === first.model) end++;
+    const run = refs.slice(i, end);
+    const at = start % run.length;
+    out.push(...run.slice(at), ...run.slice(0, at));
+    i = end;
   }
   return out;
 }
@@ -197,7 +223,5 @@ export function backupFirst(refs: ModelRef[]): ModelRef[] {
 export function modelsFor(task: TextTask, override?: ModelRef): ModelRef[] {
   if (override) return [override];
   const { primary, fallback } = textRoutes[task];
-  return withBackupKey(fallback ? [primary, fallback] : [primary], hasBackupKey());
+  return withEveryKey(fallback ? [primary, fallback] : [primary], keyCounts());
 }
-
-export const hasBackupKey = () => Boolean(serverConfig.GEMINI_API_KEY_2);

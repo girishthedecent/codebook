@@ -300,9 +300,8 @@ never commit it.
 | Variable | Where it comes from | Needed for |
 |---|---|---|
 | `BETTER_AUTH_SECRET` | `openssl rand -base64 32` (32+ characters) | always |
-| `GEMINI_API_KEY` | Google AI Studio | chat, embeddings, ingestion |
-| `GEMINI_API_KEY_2` | a second Google AI Studio project (optional; quotas are per project) | used when the first key's quota runs out |
-| `GROQ_API_KEY` | console.groq.com | chat fallback, cheap tasks |
+| `GEMINI_API_KEY` | Google AI Studio; several keys from different projects can be listed, separated by commas (quotas are per project, so the next key is tried when one runs out) | chat, embeddings, ingestion |
+| `GROQ_API_KEY` | console.groq.com; takes several comma-separated keys the same way | chat fallback, cheap tasks |
 | `GITHUB_TOKEN` | a GitHub fine-grained token: public repositories, read-only | repository sources |
 | `TAVILY_API_KEY` | tavily.com | the `web_search` tool |
 | `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | a GitHub OAuth app with the callback `http://localhost:4000/api/auth/callback/github` (a deployed address needs an app of its own) | optional GitHub login (both or neither) |

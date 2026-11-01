@@ -11,7 +11,7 @@ type ModelState = { errors: number[]; openUntil: number };
 
 const states = new Map<string, ModelState>();
 
-// The backup key is another project with its own quota, so it has its own state.
+// Each key of a provider is another project with its own quota, so it has its own state.
 const keyOf = modelLabel;
 
 /** True for a rate-limit or quota-exhausted answer from the provider. */
@@ -46,7 +46,7 @@ export function isOpen(ref: ModelRef, now = Date.now()) {
 }
 
 export type BreakerState = {
-  // modelLabel(): "provider/model", plus "#backup" for the backup key.
+  // modelLabel(): "provider/model", plus "#2", "#3"... for the provider's other keys.
   model: string;
   open: boolean;
   openUntil: Date | null;

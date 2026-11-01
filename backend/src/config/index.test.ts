@@ -58,6 +58,20 @@ describe('parseServerConfig', () => {
     expect(() => parseServerConfig({ ...withoutKeys, NODE_ENV: 'development' })).not.toThrow();
   });
 
+  it('takes one provider key or a comma list of them', () => {
+    const config = parseServerConfig({ ...base, GEMINI_API_KEY: 'a, b,,c' });
+    expect(config.GEMINI_API_KEYS).toEqual(['a', 'b', 'c']);
+    expect(config.GROQ_API_KEYS).toEqual(['groq-key']);
+    expect(config).not.toHaveProperty('GEMINI_API_KEY');
+    const { GEMINI_API_KEY: _, ...withoutGemini } = base;
+    const local = parseServerConfig({ ...withoutGemini, NODE_ENV: 'development' });
+    expect(local.GEMINI_API_KEYS).toEqual([]);
+  });
+
+  it('wants at least one key per provider in production', () => {
+    expect(() => parseServerConfig({ ...base, GEMINI_API_KEY: ' , ' })).toThrow(/GEMINI_API_KEY/);
+  });
+
   it('rejects storage and queue URLs without a scheme', () => {
     expect(() => parseServerConfig({ ...base, S3_ENDPOINT: 's3:9000' })).toThrow(/S3_ENDPOINT/);
     expect(() =>

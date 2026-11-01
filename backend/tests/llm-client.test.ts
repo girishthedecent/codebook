@@ -23,6 +23,8 @@ const BIG = 'openai/gpt-oss-120b';
 const SMALL = 'openai/gpt-oss-20b';
 const FLASH = 'gemini-3.6-flash';
 const LITE = 'gemini-3.5-flash-lite';
+// The one key the tests run with; a test that wants more sets them and puts this back.
+const geminiKeys = serverConfig.GEMINI_API_KEYS;
 
 beforeEach(async () => {
   await resetDb();
@@ -130,38 +132,81 @@ describe('retries and fallback', () => {
     expect(primary.doGenerateCalls).toHaveLength(1);
   });
 
-  it('tries the same Gemini model on the backup key before the next model', async () => {
-    serverConfig.GEMINI_API_KEY_2 = 'backup-key';
+  it('tries the same Gemini model on the next key before the next model', async () => {
+    serverConfig.GEMINI_API_KEYS = ['first', 'second'];
     try {
-      const flash = scriptedModel([apiError(429), 'from backup']);
+      const flash = scriptedModel([apiError(429), 'from the second key']);
       const groq = textModel('groq');
       useModels({ [FLASH]: flash, [BIG]: groq });
 
       const { text, call } = await generate({ task: 'study', prompt: 'hi' });
-      expect(text).toBe('from backup');
-      expect(call).toMatchObject({ model: FLASH, key: 'backup', fallbackUsed: true });
+      expect(text).toBe('from the second key');
+      expect(call).toMatchObject({ model: FLASH, key: 1, fallbackUsed: true });
       expect(groq.doGenerateCalls).toHaveLength(0);
       const rows = await usageRows();
-      expect(rows.at(-1)).toMatchObject({ model: FLASH, key: 'backup', ok: true });
+      expect(rows.at(-1)).toMatchObject({ model: FLASH, key: '2', ok: true });
     } finally {
-      serverConfig.GEMINI_API_KEY_2 = undefined;
+      serverConfig.GEMINI_API_KEYS = geminiKeys;
+    }
+  });
+
+  it('goes through every key in order while each one is out of quota', async () => {
+    serverConfig.GEMINI_API_KEYS = ['first', 'second', 'third'];
+    try {
+      const flash = scriptedModel([apiError(429), apiError(429), 'from the third key']);
+      const groq = textModel('groq');
+      useModels({ [FLASH]: flash, [BIG]: groq });
+      const tried: (number | undefined)[] = [];
+
+      const { text, call } = await generate({
+        task: 'study',
+        prompt: 'hi',
+        pace: async (ref) => void tried.push(ref.key),
+      });
+      expect(text).toBe('from the third key');
+      expect(tried).toEqual([undefined, 1, 2]);
+      expect(call).toMatchObject({ model: FLASH, key: 2, fallbackUsed: true });
+      expect(groq.doGenerateCalls).toHaveLength(0);
+      const rows = await usageRows();
+      expect(rows.at(-1)).toMatchObject({ model: FLASH, key: '3', ok: true });
+    } finally {
+      serverConfig.GEMINI_API_KEYS = geminiKeys;
+    }
+  });
+
+  it('starts on the key it is given and wraps round to the first', async () => {
+    serverConfig.GEMINI_API_KEYS = ['first', 'second', 'third'];
+    try {
+      useModels({ [LITE]: scriptedModel([apiError(429), 'ok']) });
+      const tried: (number | undefined)[] = [];
+
+      const { call } = await generate({
+        task: 'contextualize',
+        prompt: 'hi',
+        startKey: 2,
+        pace: async (ref) => void tried.push(ref.key),
+      });
+      expect(tried).toEqual([2, undefined]);
+      expect(call.key).toBeUndefined();
+    } finally {
+      serverConfig.GEMINI_API_KEYS = geminiKeys;
     }
   });
 
   it('paces each attempt against the key it is about to use', async () => {
-    serverConfig.GEMINI_API_KEY_2 = 'backup-key';
+    serverConfig.GEMINI_API_KEYS = ['first', 'second'];
     try {
       useModels({ [LITE]: scriptedModel([apiError(429), 'ok']) });
-      const paced: string[] = [];
+      const paced: (number | undefined)[] = [];
 
       await generate({
         task: 'contextualize',
         prompt: 'hi',
-        pace: async (ref) => void paced.push(ref.key ?? 'primary'),
+        pace: async (ref) => void paced.push(ref.key),
       });
-      expect(paced).toEqual(['primary', 'backup']);
+      expect(paced).toEqual([undefined, 1]);
     } finally {
-      serverConfig.GEMINI_API_KEY_2 = undefined;
+      serverConfig.GEMINI_API_KEYS = geminiKeys;
     }
   });
 

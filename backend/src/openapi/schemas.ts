@@ -716,7 +716,7 @@ export const modelUsageSchema = z
   .object({
     from: date,
     to: date,
-    // By model and the key it was called with (null for the main key), busiest first.
+    // Busiest first, by model and the key it was called with ("2", "3"... null for the first).
     models: z.array(
       z.object({
         type: z.enum(UsageType),

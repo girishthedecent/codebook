@@ -171,7 +171,9 @@ export type ModelUsageRow = {
 /** Calls, failures, fallbacks, tokens and cost per model (and the key it was called with). */
 export async function usageByModel(from: Date, to: Date, includeSystem: boolean) {
   return prismaClient.$queryRaw<ModelUsageRow[]>`
-    SELECT type::text AS type, provider, model, key,
+    SELECT type::text AS type, provider, model,
+      -- Rows from before keys were numbered call the second Gemini key "backup".
+      CASE WHEN key = 'backup' THEN '2' ELSE key END AS key,
       count(*)::int AS calls,
       count(*) FILTER (WHERE NOT ok)::int AS errors,
       count(*) FILTER (WHERE "fallbackUsed")::int AS fallbacks,
@@ -182,7 +184,7 @@ export async function usageByModel(from: Date, to: Date, includeSystem: boolean)
     WHERE "createdAt" >= ${utc(from)}::timestamptz AT TIME ZONE 'UTC'
       AND "createdAt" < ${utc(to)}::timestamptz AT TIME ZONE 'UTC'
       ${notSystem(includeSystem, usageUser)}
-    GROUP BY type, provider, model, key
+    GROUP BY 1, 2, 3, 4
     ORDER BY calls DESC, provider, model, key
   `;
 }

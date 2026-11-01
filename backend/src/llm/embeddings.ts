@@ -10,8 +10,9 @@ import { findCachedEmbeddings, saveCachedEmbeddings } from './embeddingCache.rep
 import { isOpen, isQuotaError, noteQuotaError } from './circuitBreaker.js';
 import {
   embeddingRoute,
-  hasBackupKey,
-  withBackupKey,
+  keyCounts,
+  keyLabel,
+  withEveryKey,
   type EmbedKind,
   type ModelRef,
 } from './models.js';
@@ -81,10 +82,11 @@ async function embedMissing(entries: [key: string, input: string][], options: Em
   const batches: [string, string][][] = [];
   for (let i = 0; i < entries.length; i += batchSize) batches.push(entries.slice(i, i + batchSize));
 
-  // The same model on the backup key (another project's quota) when the first key fails.
-  // The vectors are identical, so the two can be mixed freely.
-  const refs = withBackupKey([model], hasBackupKey());
-  let usedBackup = false;
+  // The same model on the next key (another project's quota) when one fails. The vectors
+  // are identical, so they can be mixed freely.
+  const refs = withEveryKey([model], keyCounts());
+  // The furthest key down the list that any batch needed.
+  let lastKeyUsed = 0;
   // The key of the attempt whose error is thrown; batches in flight can't overwrite it.
   let failedOn: ModelRef | undefined;
   const embedWithFallback = async (values: string[]) => {
@@ -105,7 +107,7 @@ async function embedMissing(entries: [key: string, input: string][], options: Em
             }),
           { timeoutMs, signal: options.abortSignal, hasFallback: index < refs.length - 1 },
         );
-        if (ref.key) usedBackup = true;
+        lastKeyUsed = Math.max(lastKeyUsed, ref.key ?? 0);
         return result;
       } catch (error) {
         lastError = error;
@@ -154,9 +156,9 @@ async function embedMissing(entries: [key: string, input: string][], options: Em
     workspaceId: options.ctx?.workspaceId,
     provider: model.provider,
     model: model.model,
-    // One row covers every batch: a success says whether any went to the backup key, a
-    // failure names the key its last attempt used.
-    key: (error === undefined ? usedBackup : failedOn?.key === 'backup') ? 'backup' : undefined,
+    // One row covers every batch: a success names the furthest key any batch went to, a
+    // failure the key its last attempt used.
+    key: keyLabel(error === undefined ? lastKeyUsed : failedOn?.key),
     ...tokens,
     costUsd: estimateCost(model.model, tokens),
     latencyMs: Math.round(performance.now() - started),

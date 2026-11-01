@@ -127,7 +127,9 @@ model UsageEvent {
   task         String
   provider     String
   model        String
-  // "backup" when GEMINI_API_KEY_2 answered, so each key's use and failures can be told apart.
+  // Which of the provider's keys was used: "2", "3"... and null for the first, so each key's
+  // use and failures can be told apart. Rows from before keys were numbered say "backup" for
+  // the second Gemini key.
   key          String?
   tokensIn     Int
   tokensOut    Int

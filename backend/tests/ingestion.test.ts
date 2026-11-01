@@ -206,20 +206,24 @@ describe('ingesting a PDF', () => {
     expect(contextCalls).toBe(13);
   });
 
-  it('spreads the context calls over both Gemini keys when there is a backup key', async () => {
-    serverConfig.GEMINI_API_KEY_2 = 'backup-key';
+  it('spreads the context calls over every Gemini key in turn', async () => {
+    const keys = serverConfig.GEMINI_API_KEYS;
+    serverConfig.GEMINI_API_KEYS = ['first', 'second', 'third'];
     try {
       const sourceId = await pdfSource();
       const { result } = await ingest(sourceId);
       expect(result).toMatchObject({ outcome: 'done', missingContexts: 0 });
 
       const rows = await prismaClient.usageEvent.findMany({ where: { task: 'contextualize' } });
-      const onBackup = rows.filter((row) => row.key === 'backup').length;
       expect(rows).toHaveLength(13);
-      expect(onBackup).toBeGreaterThanOrEqual(6);
-      expect(onBackup).toBeLessThanOrEqual(7);
+      expect(rows.every((row) => row.ok && !row.fallbackUsed)).toBe(true);
+      for (const key of [null, '2', '3']) {
+        const onKey = rows.filter((row) => row.key === key).length;
+        expect(onKey).toBeGreaterThanOrEqual(4);
+        expect(onKey).toBeLessThanOrEqual(5);
+      }
     } finally {
-      serverConfig.GEMINI_API_KEY_2 = undefined;
+      serverConfig.GEMINI_API_KEYS = keys;
     }
   });
 

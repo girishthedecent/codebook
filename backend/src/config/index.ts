@@ -9,18 +9,7 @@ const optional = z.string().optional();
 const httpUrl = z.url({ protocol: /^https?$/ });
 const postgresUrl = z.url({ protocol: /^postgres(ql)?$/ });
 
-const originList = z
-  .string()
-  .default('')
-  .transform((s) =>
-    s
-      .split(',')
-      .map((item) => item.trim())
-      .filter(Boolean),
-  )
-  .pipe(z.array(httpUrl));
-
-const idList = z
+const commaList = z
   .string()
   .default('')
   .transform((s) =>
@@ -29,6 +18,8 @@ const idList = z
       .map((item) => item.trim())
       .filter(Boolean),
   );
+
+const originList = commaList.pipe(z.array(httpUrl));
 
 // Names Express understands, plus plain IPs and CIDR subnets.
 const PROXY_NAMES = new Set(['loopback', 'linklocal', 'uniquelocal']);
@@ -81,7 +72,7 @@ const baseSchema = z.object({
   TRUSTED_ORIGINS: originList,
   // Users who may read /monitoring. Ids, not emails: sign-up doesn't verify email, so an
   // address could be claimed by whoever registers it first.
-  ADMIN_USER_IDS: idList,
+  ADMIN_USER_IDS: commaList,
 
   GITHUB_TOKEN: optional,
 
@@ -103,10 +94,10 @@ const baseSchema = z.object({
   // off otherwise (the worker is not part of the deployed app).
   EVALS_WORKER_ENABLED: z.stringbool().optional(),
 
-  GROQ_API_KEY: optional,
-  GEMINI_API_KEY: optional,
-  // A second Google project's key: tried when the first one's quota is out.
-  GEMINI_API_KEY_2: optional,
+  // One key, or several from different projects separated by commas: free-tier quotas are
+  // per project, so when one key's quota is out the same model is tried on the next.
+  GROQ_API_KEY: commaList,
+  GEMINI_API_KEY: commaList,
   TAVILY_API_KEY: optional,
 
   // bge-reranker-base scores a little better but is many times slower than MiniLM on a CPU.
@@ -156,7 +147,7 @@ const schema = baseSchema
         'INNGEST_SIGNING_KEY',
       ] as const;
       for (const name of required) {
-        if (!config[name]) {
+        if (!config[name]?.length) {
           ctx.addIssue({ code: 'custom', path: [name], message: 'required in production' });
         }
       }
@@ -184,9 +175,11 @@ const schema = baseSchema
       });
     }
   })
-  .transform((config) => ({
+  .transform(({ GROQ_API_KEY, GEMINI_API_KEY, ...config }) => ({
     ...config,
     BETTER_AUTH_URL: config.BETTER_AUTH_URL ?? 'http://localhost:4000',
+    GROQ_API_KEYS: GROQ_API_KEY,
+    GEMINI_API_KEYS: GEMINI_API_KEY,
   }));
 
 export type ServerConfig = z.infer<typeof schema>;

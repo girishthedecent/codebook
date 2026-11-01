@@ -1,6 +1,14 @@
 import { appConfig } from '../../config/app.config.js';
 import { breakerStates } from '../../llm/circuitBreaker.js';
-import { embeddingRoute, modelLabel, modelsFor, TASKS, type TextTask } from '../../llm/models.js';
+import {
+  embeddingRoute,
+  keyCounts,
+  modelLabel,
+  modelsFor,
+  TASKS,
+  withEveryKey,
+  type TextTask,
+} from '../../llm/models.js';
 import { paginate } from '../../utils/helpers/pagination.helpers.js';
 import { logEvent } from '../../utils/helpers/log.helpers.js';
 import type {
@@ -156,11 +164,14 @@ export async function rateLimitsService({ from, to }: RangeQuery) {
   return { from: from.toISOString(), to: to.toISOString(), limits };
 }
 
-// Every model a task can be sent to, the backup-key copies included, and the embedding model.
+// Every model a task can be sent to and the embedding model, each on every key.
 function configuredModels() {
   const tasks = TASKS.filter((task): task is TextTask => task !== 'embed');
-  const labels = tasks.flatMap((task) => modelsFor(task).map(modelLabel));
-  return new Set([...labels, modelLabel(embeddingRoute.model)]);
+  const refs = [
+    ...tasks.flatMap((task) => modelsFor(task)),
+    ...withEveryKey([embeddingRoute.model], keyCounts()),
+  ];
+  return new Set(refs.map(modelLabel));
 }
 
 /**

@@ -173,6 +173,7 @@ describe('system users in the stats', () => {
 
 describe('GET /monitoring/models', () => {
   it('sums calls, failures, fallbacks, tokens and cost per model and key, and per task', async () => {
+    // "backup" is what rows written before keys were numbered call the second Gemini key.
     await prismaClient.usageEvent.createMany({
       data: [
         usageEvent('2026-10-01T10:00:00Z'),
@@ -183,6 +184,7 @@ describe('GET /monitoring/models', () => {
           tokensOut: 0,
         }),
         usageEvent('2026-10-01T10:00:02Z', { key: 'backup', fallbackUsed: true, costUsd: '0.002' }),
+        usageEvent('2026-10-01T10:00:02.500Z', { key: '2' }),
         usageEvent('2026-10-01T10:00:03Z', {
           provider: 'groq',
           model: 'openai/gpt-oss-20b',
@@ -211,22 +213,22 @@ describe('GET /monitoring/models', () => {
         type: 'LLM',
         provider: 'google',
         model: 'gemini-3.6-flash',
-        key: null,
+        key: '2',
         calls: 2,
-        errors: 1,
-        fallbacks: 0,
-        tokensIn: 100,
-        tokensOut: 10,
-        costUsd: '0.002',
+        errors: 0,
+        fallbacks: 1,
+        tokensIn: 200,
+        tokensOut: 20,
+        costUsd: '0.003',
       },
       {
         type: 'LLM',
         provider: 'google',
         model: 'gemini-3.6-flash',
-        key: 'backup',
-        calls: 1,
-        errors: 0,
-        fallbacks: 1,
+        key: null,
+        calls: 2,
+        errors: 1,
+        fallbacks: 0,
         tokensIn: 100,
         tokensOut: 10,
         costUsd: '0.002',
@@ -257,7 +259,7 @@ describe('GET /monitoring/models', () => {
       },
     ]);
     expect(tasks).toEqual([
-      expect.objectContaining({ task: 'agent', calls: 3, errors: 1, fallbacks: 1, tokensIn: 200 }),
+      expect.objectContaining({ task: 'agent', calls: 4, errors: 1, fallbacks: 1, tokensIn: 300 }),
       expect.objectContaining({ task: 'cheap', calls: 1, fallbacks: 1 }),
       expect.objectContaining({ task: 'embed', calls: 1 }),
     ]);
@@ -423,6 +425,24 @@ describe('GET /monitoring/circuit-breaker', () => {
       recentQuotaErrors: 0,
     });
     expect(byModel['google/gemini-embedding-2']).toMatchObject({ open: false });
+  });
+
+  it('lists each model once for every key', async () => {
+    const keys = serverConfig.GEMINI_API_KEYS;
+    serverConfig.GEMINI_API_KEYS = ['first', 'second', 'third'];
+    try {
+      const labels = (await get('circuit-breaker')).models.map((m: { model: string }) => m.model);
+      for (const model of ['gemini-3.6-flash', 'gemini-3.5-flash-lite', 'gemini-embedding-2']) {
+        expect(labels.filter((label: string) => label.startsWith(`google/${model}`))).toEqual([
+          `google/${model}`,
+          `google/${model}#2`,
+          `google/${model}#3`,
+        ]);
+      }
+      expect(labels).not.toContain('groq/openai/gpt-oss-120b#2');
+    } finally {
+      serverConfig.GEMINI_API_KEYS = keys;
+    }
   });
 
   it('starts with every model closed', async () => {
