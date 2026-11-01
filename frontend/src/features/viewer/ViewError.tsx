@@ -1,5 +1,5 @@
 import { isApiError } from '@/api/client';
-import { Button } from '@/ui';
+import { Button, Callout } from '@/ui';
 import { s } from './strings';
 
 /** One sentence and a retry. The backend's message when it has one ("File not found"). */
@@ -7,27 +7,37 @@ export function ViewError({
   error,
   onRetry,
   missing,
+  message: given,
 }: {
-  error: unknown;
+  error?: unknown;
   onRetry?: () => void;
   /** What a 404 means here, when the backend's own words won't do. */
   missing?: string;
+  /** Replaces whatever the error says. */
+  message?: string;
 }) {
   const message =
-    missing && isApiError(error, 404)
+    given ??
+    (missing && isApiError(error, 404)
       ? missing
       : isApiError(error) && error.status !== 0
         ? error.message
-        : s.failed;
-  const retryable = !isApiError(error) || error.status === 0 || error.status >= 500;
+        : s.failed);
+  const retryable = !error || !isApiError(error) || error.status === 0 || error.status >= 500;
   return (
     <div className="px-5 py-6">
-      <p className="text-sm text-ink-2">{message}</p>
-      {onRetry && retryable && (
-        <Button variant="secondary" size="sm" className="mt-3" onClick={onRetry}>
-          {s.retry}
-        </Button>
-      )}
+      <Callout
+        tone="error"
+        action={
+          onRetry && retryable ? (
+            <Button size="sm" onClick={onRetry}>
+              {s.retry}
+            </Button>
+          ) : undefined
+        }
+      >
+        {message}
+      </Callout>
     </div>
   );
 }

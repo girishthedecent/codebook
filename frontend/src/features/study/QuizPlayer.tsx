@@ -95,40 +95,61 @@ export function QuizPlayer({
   if (total === 0) return null;
 
   if (finished) {
-    const missed = quiz.questions.filter((q) => answers[q.id] !== q.answerIndex);
+    const right = quiz.questions.filter((q) => answers[q.id] === q.answerIndex).length;
+    const percent = Math.round((right / total) * 100);
     return (
       <div className="max-w-[640px]">
-        <p className="font-serif text-2xl">{s.quiz.score(total - missed.length, total)}</p>
-        <p className="mt-1 text-sm text-ink-3">{s.quiz.scoreLabel}</p>
-        {missed.length === 0 ? (
-          <p className="mt-6 text-ink-2">{s.quiz.allRight}</p>
-        ) : (
-          <section aria-labelledby="missed" className="mt-8">
-            <h3 id="missed" className="text-xs font-medium text-ink-3">
-              {s.quiz.missed}
-            </h3>
-            <ol className="mt-2 border-t border-rule">
-              {missed.map((q) => (
-                <li key={q.id} className="border-b border-rule py-3">
-                  <p className="font-serif text-base">{q.question}</p>
-                  <p className="mt-1 text-sm">
-                    <span className="text-ink-3">{s.quiz.answer}: </span>
-                    {q.options[q.answerIndex]}
-                  </p>
-                  {answers[q.id] !== undefined && (
-                    <p className="mt-0.5 text-sm text-ink-3">
-                      {s.quiz.yourAnswer}: {q.options[answers[q.id]!]}
+        <p className="heading-display">
+          {s.quiz.score(right, total)}{' '}
+          <span className="font-sans text-base font-normal text-ink-3">{percent}%</span>
+        </p>
+        <p className="mt-1 text-sm text-ink-3">
+          {right === total ? s.quiz.allRight : s.quiz.scoreLabel}
+        </p>
+        <section aria-labelledby="review" className="mt-8">
+          <h3 id="review" className="heading-section">
+            {s.quiz.review}
+          </h3>
+          <ol className="mt-3 flex flex-col gap-5">
+            {quiz.questions.map((q, n) => {
+              const mine = answers[q.id];
+              const correct = mine === q.answerIndex;
+              return (
+                <li key={q.id} className="flex gap-3">
+                  <span
+                    className={cn(
+                      'w-6 shrink-0 pt-0.5 text-center font-serif text-lg leading-snug font-semibold',
+                      correct ? 'text-ok' : 'text-error',
+                    )}
+                  >
+                    <span aria-hidden>{correct ? '✓' : '✗'}</span>
+                    <span className="sr-only">{correct ? s.quiz.correct : s.quiz.missed}</span>
+                  </span>
+                  <div className="min-w-0">
+                    <p className="font-serif text-base text-ink">
+                      <span className="text-ink-3">{n + 1}. </span>
+                      {q.question}
                     </p>
-                  )}
-                  <p className="mt-1.5 text-sm text-ink-2">
-                    {q.explanation} <Cites citations={citationsOf(q, index)} />
-                  </p>
+                    {!correct && mine !== undefined && (
+                      <p className="mt-1 text-sm text-ink-3">
+                        {s.quiz.yourAnswer}: {q.options[mine]}
+                      </p>
+                    )}
+                    <p className="mt-0.5 text-sm text-ink">
+                      <span className="text-ink-3">{s.quiz.answer}: </span>
+                      {q.options[q.answerIndex]}
+                    </p>
+                    <p className="mt-1.5 text-sm text-ink-2">
+                      {q.explanation}{' '}
+                      <Cites citations={citationsOf(q, index)} uncited={q.uncited} />
+                    </p>
+                  </div>
                 </li>
-              ))}
-            </ol>
-          </section>
-        )}
-        <Button className="mt-6 h-11! sm:h-9!" variant="secondary" onClick={restart}>
+              );
+            })}
+          </ol>
+        </section>
+        <Button className="mt-8" variant="secondary" onClick={restart}>
           {s.quiz.again}
         </Button>
       </div>
@@ -140,7 +161,7 @@ export function QuizPlayer({
   return (
     <div className="max-w-[640px]">
       {resumed && <p className="mb-2 text-xs text-ink-3">{s.quiz.resumed}</p>}
-      <p className="flex items-baseline justify-between font-mono text-xs text-ink-3">
+      <p className="flex items-baseline justify-between text-xs text-ink-3">
         <span>{s.quiz.of(at + 1, total)}</span>
         <span>{question.difficulty}</span>
       </p>
@@ -149,11 +170,7 @@ export function QuizPlayer({
         label={s.quiz.of(at + 1, total)}
         value={(at + (answered ? 1 : 0)) / total}
       />
-      <h3
-        ref={heading}
-        tabIndex={-1}
-        className="mt-4 font-serif text-lg leading-snug font-normal outline-none"
-      >
+      <h3 ref={heading} tabIndex={-1} className="heading-section mt-4 font-medium outline-none">
         {question.question}
       </h3>
 
@@ -177,7 +194,7 @@ export function QuizPlayer({
                   answered && !isAnswer && !isPicked && 'text-ink-3',
                 )}
               >
-                <span className="w-4 shrink-0 pt-px font-mono text-xs text-ink-3">{i + 1}</span>
+                <span className="w-4 shrink-0 pt-px text-xs text-ink-3 tabular-nums">{i + 1}</span>
                 <span className="flex-1">{option}</span>
                 {answered && isAnswer && (
                   <span className="shrink-0 text-xs font-medium text-accent">{s.quiz.correct}</span>
@@ -194,7 +211,8 @@ export function QuizPlayer({
       {answered && (
         <div role="status" className="mt-5 border-l-2 border-rule-2 pl-4">
           <p className="prose text-ink-2">
-            {question.explanation} <Cites citations={citationsOf(question, index)} />
+            {question.explanation}{' '}
+            <Cites citations={citationsOf(question, index)} uncited={question.uncited} />
           </p>
         </div>
       )}
@@ -207,7 +225,7 @@ export function QuizPlayer({
         ) : (
           <span />
         )}
-        <Button variant="primary" className="h-11! sm:h-9!" disabled={!answered} onClick={next}>
+        <Button variant="primary" disabled={!answered} onClick={next}>
           {last ? s.quiz.finish : s.quiz.next}
         </Button>
       </div>

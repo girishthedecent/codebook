@@ -1,9 +1,7 @@
 import { forwardRef, type ButtonHTMLAttributes, type ComponentPropsWithoutRef } from 'react';
 import { createLink, type LinkComponent } from '@tanstack/react-router';
 import { cn } from '@/lib/cn';
-
-/** For anchors that can't be router links, such as the prerendered landing page. */
-export const textLinkClass = 'text-accent underline underline-offset-2 hover:text-accent-2';
+import { textLinkClass } from './textLinkClass';
 
 const Anchor = forwardRef<HTMLAnchorElement, ComponentPropsWithoutRef<'a'>>(function Anchor(
   { className, children, ...rest },

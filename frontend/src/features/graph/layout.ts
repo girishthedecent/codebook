@@ -11,6 +11,8 @@ export type LaidNode = {
   x: number;
   y: number;
   role: 'center' | 'caller' | 'dependency' | 'path';
+  /** Calls away from the centre; 0 for the centre and for a path. */
+  depth: number;
 };
 
 export type LaidEdge = { id: string; source: string; target: string };
@@ -33,7 +35,9 @@ export function layoutNeighborhood(
   callers: GraphWalk | undefined,
   dependencies: GraphDependencies | undefined,
 ): Layout {
-  const nodes: LaidNode[] = [{ id: center.id, symbol: center, x: 0, y: 0, role: 'center' }];
+  const nodes: LaidNode[] = [
+    { id: center.id, symbol: center, x: 0, y: 0, role: 'center', depth: 0 },
+  ];
   const edges: LaidEdge[] = [];
   const centerId = center.id;
 
@@ -57,6 +61,7 @@ export function layoutNeighborhood(
           x: side * depth * (NODE_WIDTH + COLUMN_GAP),
           y: top + row * (NODE_HEIGHT + ROW_GAP),
           role: side < 0 ? 'caller' : 'dependency',
+          depth,
         });
       });
     }
@@ -91,9 +96,21 @@ export function layoutPath(path: GraphSymbol[]): Layout {
     x: i * (NODE_WIDTH + COLUMN_GAP / 2),
     y: 0,
     role: 'path',
+    depth: 0,
   }));
   const edges = path
     .slice(1)
     .map((_, i) => ({ id: `ep:${i}`, source: `p:${i}`, target: `p:${i + 1}` }));
   return { nodes, edges };
+}
+
+/** The space the laid-out nodes take up, so a canvas can be sized to its content. */
+export function layoutSize(layout: Layout) {
+  if (layout.nodes.length === 0) return { width: NODE_WIDTH, height: NODE_HEIGHT };
+  const xs = layout.nodes.map((n) => n.x);
+  const ys = layout.nodes.map((n) => n.y);
+  return {
+    width: Math.max(...xs) - Math.min(...xs) + NODE_WIDTH,
+    height: Math.max(...ys) - Math.min(...ys) + NODE_HEIGHT,
+  };
 }

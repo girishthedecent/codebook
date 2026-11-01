@@ -7,7 +7,7 @@ import {
   type KeyboardEvent,
   type ReactNode,
 } from 'react';
-import { Button, Switch } from '@/ui';
+import { Button, Kbd, Switch } from '@/ui';
 import { useBreakpoint } from '@/lib/breakpoints';
 import { useShortcut } from '@/lib/keyboard';
 import { cn } from '@/lib/cn';
@@ -15,18 +15,21 @@ import { clearDraft, useDraft } from './drafts';
 import { chat } from './strings';
 import { useKeyboardInset } from './useKeyboardInset';
 
+/** The most the server accepts in one question. */
+export const MAX_QUESTION_CHARS = 4000;
+// The counter appears once a question is this long, so it never nags a short one.
+const COUNTER_FROM = 3500;
+
 export type ComposerProps = {
   /** Draft key: a conversation id, or `new:<workspaceId>` on the workspace home. */
   draftScope: string;
   streaming: boolean;
   isGuest: boolean;
-  /** Epoch ms until which asking is blocked (429), if any. */
-  blockedUntil?: number;
+  /** Whether the workspace has anything to read; with nothing, the memory switch has no use. */
+  hasSources: boolean;
   placeholder?: string;
   /** Put the cursor in the box when the page opens (not on phones: it would raise the keyboard). */
   focusOnMount?: boolean;
-  /** Text to put back into the box, e.g. a question that was rate limited. */
-  restore?: { text: string; at: number };
   onSend: (text: string, useMemory: boolean) => void;
   onStop: () => void;
 };
@@ -43,17 +46,16 @@ function readMemoryPref() {
 
 /**
  * The question box. Enter asks, Shift+Enter is a new line (on phones Enter is a new line and the
- * button asks). On desktop it sticks to the bottom of the column; on phones it sits above the
- * tabs and rides up with the on-screen keyboard.
+ * button asks), Esc stops an answer in progress. On desktop it sticks to the bottom of the
+ * column; on phones it sits above the tabs and rides up with the on-screen keyboard.
  */
 export function Composer({
   draftScope,
   streaming,
   isGuest,
-  blockedUntil,
+  hasSources,
   placeholder = chat.placeholder,
   focusOnMount,
-  restore,
   onSend,
   onStop,
 }: ComposerProps) {
@@ -62,8 +64,8 @@ export function Composer({
   const [text, setText] = useDraft(draftScope);
   const [useMemory, setUseMemory] = useState(readMemoryPref);
   const box = useRef<HTMLTextAreaElement>(null);
-  const waitSec = useCountdown(blockedUntil);
-  const blocked = waitSec > 0;
+  const length = text.trim().length;
+  const over = Math.max(0, length - MAX_QUESTION_CHARS);
 
   useShortcut('/', () => box.current?.focus());
 
@@ -72,13 +74,6 @@ export function Composer({
     // Only on the first render: later breakpoint changes shouldn't steal focus.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  // A rate-limited question comes back into the box. Keyed by time so the same text can return twice.
-  const [restored, setRestored] = useState<number>();
-  if (restore && restore.at !== restored) {
-    setRestored(restore.at);
-    setText(restore.text);
-  }
 
   // Grow with the text up to a third of the screen, then scroll inside.
   useLayoutEffect(() => {
@@ -106,7 +101,7 @@ export function Composer({
   const submit = (e?: FormEvent) => {
     e?.preventDefault();
     const question = text.trim();
-    if (!question || streaming || blocked) return;
+    if (!question || streaming || over > 0) return;
     // Guests never use memory, which is also what lets the demo serve cached answers.
     onSend(question, isGuest ? false : useMemory);
     setText('');
@@ -114,6 +109,11 @@ export function Composer({
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Escape' && streaming) {
+      e.preventDefault();
+      stop();
+      return;
+    }
     // keyCode 229 is Safari's Enter that confirms an IME candidate, sent after composition ended.
     if (e.key !== 'Enter' || e.shiftKey || e.nativeEvent.isComposing || e.keyCode === 229 || phone)
       return;
@@ -121,85 +121,83 @@ export function Composer({
     submit();
   };
 
-  const form = (
-    <form onSubmit={submit} className="mx-auto w-full max-w-[720px]">
-      <div className="rounded-md border border-rule-2 bg-paper transition-colors duration-150 focus-within:border-accent">
-        <label htmlFor={`composer-${draftScope}`} className="sr-only">
-          {placeholder}
-        </label>
-        <textarea
-          id={`composer-${draftScope}`}
-          ref={box}
-          rows={1}
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={onKeyDown}
-          placeholder={placeholder}
-          enterKeyHint={phone ? 'enter' : 'send'}
-          className="block w-full resize-none bg-transparent px-3.5 pt-3 pb-1 font-serif text-base leading-normal text-ink placeholder:text-ink-3 focus:outline-none"
-        />
-        <div className="flex items-center justify-between gap-3 px-2 pb-2 pl-3.5">
-          {isGuest ? (
-            <span className="text-xs text-ink-3">{chat.guestNote}</span>
-          ) : (
-            <Switch
-              checked={useMemory}
-              onCheckedChange={toggleMemory}
-              label={<span className="text-xs text-ink-2">{chat.useMemory}</span>}
-              className="min-h-8 gap-2.5 [&>label]:order-2"
-            />
-          )}
-          {streaming ? (
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={stop}
-              className={cn(phone && 'h-11! px-4!')}
-            >
-              {chat.stop}
-            </Button>
-          ) : (
-            <Button
-              type="submit"
-              size="sm"
-              variant="primary"
-              disabled={!text.trim() || blocked}
-              className={cn(phone && 'h-11! px-4!')}
-            >
-              {chat.send}
-            </Button>
-          )}
-        </div>
-      </div>
-      {/* The countdown ticks every second; the live region says it once, without the number. */}
-      <span className="sr-only" role="status">
-        {blocked ? chat.blockedNow : ''}
-      </span>
-      {blocked && (
-        <p className="mt-2 text-xs text-warn">
-          {waitSec <= 600
-            ? chat.waitFor(waitSec <= 90 ? `${waitSec} s` : longWait(waitSec))
-            : isGuest
-              ? chat.guestLimit
-              : chat.waitForLong(longWait(waitSec))}
-        </p>
-      )}
-    </form>
-  );
-
-  if (phone) return <PhoneDock>{form}</PhoneDock>;
-
   return (
-    <div className="sticky bottom-0 z-10 bg-paper px-4 pt-2 pb-4 [box-shadow:0_-1px_0_var(--rule)] sm:px-6">
-      {form}
-    </div>
+    <ComposerDock>
+      <form onSubmit={submit} className="mx-auto w-full max-w-[720px]">
+        <div className="rounded-md border border-edge bg-paper transition-colors duration-150 focus-within:border-accent">
+          <label htmlFor={`composer-${draftScope}`} className="sr-only">
+            {placeholder}
+          </label>
+          <textarea
+            id={`composer-${draftScope}`}
+            ref={box}
+            rows={1}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={onKeyDown}
+            placeholder={placeholder}
+            enterKeyHint={phone ? 'enter' : 'send'}
+            aria-invalid={over > 0 || undefined}
+            aria-describedby={length >= COUNTER_FROM ? `composer-count-${draftScope}` : undefined}
+            className="block w-full resize-none bg-transparent px-3.5 pt-3 pb-1 font-serif text-base leading-normal text-ink placeholder:text-ink-3 focus:outline-none"
+          />
+          <div className="flex items-center justify-between gap-3 px-2 pb-2 pl-3.5">
+            {isGuest ? (
+              <span className="text-xs text-ink-3">{chat.guestNote}</span>
+            ) : hasSources ? (
+              <Switch
+                checked={useMemory}
+                onCheckedChange={toggleMemory}
+                label={<span className="text-xs text-ink-2">{chat.useMemory}</span>}
+                description={phone ? undefined : chat.useMemoryHint}
+                className="gap-2.5 [&>label]:order-2"
+              />
+            ) : (
+              <span />
+            )}
+            <div className="flex items-center gap-3">
+              {length >= COUNTER_FROM && (
+                <span
+                  id={`composer-count-${draftScope}`}
+                  className={cn('text-xs tabular-nums', over > 0 ? 'text-error' : 'text-ink-3')}
+                >
+                  {over > 0 ? chat.tooLong(over) : chat.counter(length, MAX_QUESTION_CHARS)}
+                </span>
+              )}
+              {streaming ? (
+                <Button size="sm" variant="secondary" onClick={stop}>
+                  {chat.stop}
+                  {!phone && <Kbd>Esc</Kbd>}
+                </Button>
+              ) : (
+                <Button type="submit" size="sm" variant="primary" disabled={!length || over > 0}>
+                  {chat.send}
+                </Button>
+              )}
+            </div>
+          </div>
+        </div>
+      </form>
+    </ComposerDock>
   );
 }
 
 /**
- * Phones: the box is fixed above the bottom tabs, or right above the keyboard when it is up,
- * with a spacer in the page so the last answer can scroll clear of it.
+ * Where the question box lives: stuck to the bottom of the column on a wide screen, and fixed
+ * above the bottom tabs on a phone (or right above the keyboard when it is up) with a spacer in
+ * the page so the last answer can scroll clear of it. The limit notice takes the same place.
  */
+export function ComposerDock({ children }: { children: ReactNode }) {
+  const phone = useBreakpoint() === 'phone';
+  return phone ? (
+    <PhoneDock>{children}</PhoneDock>
+  ) : (
+    <div className="sticky bottom-0 z-10 bg-paper px-4 pt-2 pb-4 [box-shadow:0_-1px_0_var(--rule)] sm:px-6">
+      {children}
+    </div>
+  );
+}
+
 function PhoneDock({ children }: { children: ReactNode }) {
   const inset = useKeyboardInset();
   const dock = useRef<HTMLDivElement>(null);
@@ -227,32 +225,4 @@ function PhoneDock({ children }: { children: ReactNode }) {
       </div>
     </>
   );
-}
-
-/** "about 5 hours" for a daily limit that resets at midnight UTC. */
-function longWait(sec: number) {
-  if (sec < 3600) return `${Math.ceil(sec / 60)} minutes`;
-  const hours = Math.round(sec / 3600);
-  return `about ${hours} ${hours === 1 ? 'hour' : 'hours'}`;
-}
-
-/** Whole seconds left until `until`, ticking once a second; 0 when not blocked. */
-function useCountdown(until: number | undefined) {
-  const [now, setNow] = useState(() => Date.now());
-
-  useEffect(() => {
-    if (!until) return;
-    const tick = () => setNow(Date.now());
-    const first = setTimeout(tick, 0);
-    const t = setInterval(() => {
-      tick();
-      if (Date.now() >= until) clearInterval(t);
-    }, 1000);
-    return () => {
-      clearTimeout(first);
-      clearInterval(t);
-    };
-  }, [until]);
-
-  return until ? Math.max(0, Math.ceil((until - now) / 1000)) : 0;
 }

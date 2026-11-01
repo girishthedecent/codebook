@@ -31,7 +31,7 @@ export function ChartFrame({
     <figure className="m-0 min-w-0">
       <figcaption className="mb-2 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
         <span>
-          <span className="text-sm font-medium text-ink">{title}</span>
+          <span className="heading-minor text-ink">{title}</span>
           {subtitle && <span className="ml-2 text-xs text-ink-3">{subtitle}</span>}
         </span>
         {series.length > 1 && (

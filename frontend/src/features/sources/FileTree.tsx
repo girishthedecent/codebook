@@ -1,13 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { ArrowUp } from '@phosphor-icons/react';
-import { flatItems } from '@/api/queries/keys';
-import { useSourceFiles } from '@/api/queries/sources';
+import { ArrowUp, FolderSimple } from '@phosphor-icons/react';
 import type { SourceFile } from '@/api/types';
-import { Spinner } from '@/ui';
 import { useBreakpoint } from '@/lib/breakpoints';
-import { LoadError } from './LoadError';
+import { Button, Callout, EmptyState, Spinner } from '@/ui';
+import { ListSkeleton } from './ListSkeleton';
+import { plural } from './sourceInfo';
 import { strings } from './strings';
+import { useAllFiles } from './useAllFiles';
 import { useOpenInViewer } from './useOpenInViewer';
 
 type Entry =
@@ -16,27 +16,19 @@ type Entry =
 
 const ROW_HEIGHT = 36;
 const ROW_HEIGHT_PHONE = 44;
-// The files endpoint is flat; folders are built here. Repos are capped well below this.
-const MAX_PAGES = 30;
 
 /**
  * A repository's files one folder at a time. The full list loads once (repos are capped at a
- * few hundred files), folders are derived from paths, and long folders are virtualized.
+ * few hundred files), folders are derived from paths, and long folders are virtualized. Files
+ * that were left out of the index are not listed here; see `LeftOut`.
  */
 export function FileTree({ sourceId }: { sourceId: string }) {
-  const files = useSourceFiles(sourceId);
+  const files = useAllFiles(sourceId);
   const [prefix, setPrefix] = useState('');
   const openInViewer = useOpenInViewer();
-  const { hasNextPage, isFetchingNextPage, fetchNextPage, data } = files;
 
-  useEffect(() => {
-    if (hasNextPage && !isFetchingNextPage && (data?.pages.length ?? 0) < MAX_PAGES) {
-      void fetchNextPage();
-    }
-  }, [hasNextPage, isFetchingNextPage, fetchNextPage, data?.pages.length]);
-
-  const all = useMemo(() => flatItems(data), [data]);
-  const entries = useMemo(() => folderEntries(all, prefix), [all, prefix]);
+  const indexed = useMemo(() => files.files.filter((f) => !f.skippedReason), [files.files]);
+  const entries = useMemo(() => folderEntries(indexed, prefix), [indexed, prefix]);
 
   const rowHeight = useBreakpoint() === 'phone' ? ROW_HEIGHT_PHONE : ROW_HEIGHT;
   const scroller = useRef<HTMLDivElement>(null);
@@ -49,25 +41,25 @@ export function FileTree({ sourceId }: { sourceId: string }) {
     overscan: 12,
   });
 
-  if (files.isPending) return <Loading />;
-  if (files.isError && all.length === 0)
-    return <LoadError error={files.error} onRetry={() => void files.refetch()} />;
-  if (all.length === 0) return <p className="py-4 text-sm text-ink-3">{strings.detail.noFiles}</p>;
+  if (files.isPending) return <ListSkeleton label="Loading files" />;
+  if (files.isError && indexed.length === 0)
+    return <Callout error={files.error} onRetry={() => void files.refetch()} />;
+  if (indexed.length === 0) return <EmptyState>{strings.detail.noFiles}</EmptyState>;
 
   const crumbs = prefix.split('/').filter(Boolean);
 
   return (
-    <div className="py-2">
-      <div className="flex min-h-9 items-center gap-2 border-b border-rule font-mono text-xs">
+    <div>
+      <div className="flex min-h-9 items-center gap-1 font-mono text-xs">
         {prefix && (
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={() => setPrefix(parentOf(prefix))}
             aria-label={strings.detail.up}
-            className="flex size-7 items-center justify-center rounded-xs text-ink-3 max-sm:size-10 hover:bg-paper-2 hover:text-ink"
           >
-            <ArrowUp size={14} />
-          </button>
+            <ArrowUp size={14} aria-hidden />
+          </Button>
         )}
         <nav
           aria-label="Folder"
@@ -76,7 +68,7 @@ export function FileTree({ sourceId }: { sourceId: string }) {
           <button
             type="button"
             onClick={() => setPrefix('')}
-            className="text-ink-2 hover:text-accent"
+            className={crumbs.length ? 'text-ink-2 hover:text-accent' : 'text-ink'}
           >
             /
           </button>
@@ -93,44 +85,47 @@ export function FileTree({ sourceId }: { sourceId: string }) {
             </span>
           ))}
         </nav>
-        {isFetchingNextPage && <Spinner className="ml-auto size-3" />}
+        {files.isFetchingNextPage && <Spinner className="ml-auto size-3" />}
       </div>
 
-      <div ref={scroller} className="max-h-[min(70vh,720px)] overflow-y-auto">
+      <div
+        ref={scroller}
+        className="mt-1 max-h-[min(70vh,720px)] overflow-y-auto rounded-md border border-rule"
+      >
         <ul className="relative" style={{ height: rows.getTotalSize() }}>
           {rows.getVirtualItems().map((row) => {
             const entry = entries[row.index]!;
             return (
               <li
                 key={entry.kind === 'dir' ? entry.prefix : entry.file.id}
-                className="absolute inset-x-0 border-b border-rule"
+                className="absolute inset-x-0"
                 style={{ top: row.start, height: rowHeight }}
               >
                 {entry.kind === 'dir' ? (
                   <button
                     type="button"
                     onClick={() => setPrefix(entry.prefix)}
-                    className="flex h-full w-full items-center justify-between gap-3 px-1 text-left font-mono text-xs text-ink hover:bg-paper-2"
+                    className="flex h-full w-full items-center gap-2 px-3 text-left text-ink hover:bg-paper-2"
                   >
-                    <span className="truncate">{entry.name}/</span>
-                    <span className="shrink-0 text-ink-3">{entry.count}</span>
+                    <FolderSimple size={16} aria-hidden className="shrink-0 text-ink-3" />
+                    <span className="min-w-0 flex-1 truncate font-mono text-xs">{entry.name}</span>
+                    <span className="shrink-0 text-xs text-ink-3">
+                      {plural(entry.count, 'file')}
+                    </span>
                   </button>
                 ) : (
                   <button
                     type="button"
-                    disabled={!!entry.file.skippedReason}
-                    title={entry.file.skippedReason ?? undefined}
                     onClick={() => openInViewer({ kind: 'file', sourceId, path: entry.file.path })}
-                    className="flex h-full w-full items-center justify-between gap-3 px-1 text-left font-mono text-xs text-ink-2 hover:bg-paper-2 hover:text-ink disabled:text-ink-3 disabled:hover:bg-transparent"
+                    className="flex h-full w-full items-center gap-2 px-3 text-left text-ink-2 hover:bg-paper-2 hover:text-ink"
                   >
-                    <span className="truncate">{entry.name}</span>
-                    <span className="shrink-0 text-ink-3">
-                      {entry.file.skippedReason
-                        ? strings.detail.skipped
-                        : entry.file.lineCount
-                          ? `${entry.file.lineCount} lines`
-                          : ''}
-                    </span>
+                    <span aria-hidden className="size-4 shrink-0" />
+                    <span className="min-w-0 flex-1 truncate font-mono text-xs">{entry.name}</span>
+                    {!!entry.file.lineCount && (
+                      <span className="shrink-0 text-xs text-ink-3">
+                        {plural(entry.file.lineCount, 'line')}
+                      </span>
+                    )}
                   </button>
                 )}
               </li>
@@ -167,12 +162,4 @@ function parentOf(prefix: string) {
   const parts = prefix.split('/').filter(Boolean);
   parts.pop();
   return parts.length ? parts.join('/') + '/' : '';
-}
-
-function Loading() {
-  return (
-    <div className="flex items-center gap-2 py-4 text-sm text-ink-3">
-      <Spinner className="size-3.5" /> Loading
-    </div>
-  );
 }

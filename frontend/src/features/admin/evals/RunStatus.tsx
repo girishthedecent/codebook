@@ -1,17 +1,14 @@
-import { cn } from '@/lib/cn';
 import type { EvalRun } from '@/api/types';
+import { StatusDot } from '@/ui';
 
-/** Run status as plain text: failures in the error color, running with a small accent dot. */
+const looks = {
+  DONE: { tone: 'ok', label: 'done' },
+  RUNNING: { tone: 'accent', label: 'running' },
+  FAILED: { tone: 'error', label: 'failed' },
+} as const;
+
+/** Run status as a small mark and a word. */
 export function RunStatus({ status }: { status: EvalRun['status'] }) {
-  return (
-    <span
-      className={cn(
-        'inline-flex items-center gap-1.5 text-xs',
-        status === 'FAILED' ? 'text-error' : status === 'RUNNING' ? 'text-ink' : 'text-ink-3',
-      )}
-    >
-      {status === 'RUNNING' && <span aria-hidden className="size-1.5 rounded-full bg-accent" />}
-      {status === 'DONE' ? 'done' : status === 'RUNNING' ? 'running' : 'failed'}
-    </span>
-  );
+  const { tone, label } = looks[status];
+  return <StatusDot tone={tone} label={label} />;
 }

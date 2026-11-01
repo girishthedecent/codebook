@@ -34,6 +34,9 @@ export function useCitationNav(cite: number | undefined, from: string | undefine
     const index = stops.findIndex((stop) => stop.citation.n === cite);
     return {
       current: index >= 0 ? stops[index] : undefined,
+      /** 1-based place of the open citation among the stops, and how many stops there are. */
+      position: index >= 0 ? index + 1 : undefined,
+      count: stops.length,
       prev: index > 0 ? stops[index - 1] : undefined,
       next: index >= 0 && index < stops.length - 1 ? stops[index + 1] : undefined,
       hasStops: stops.length > 1 && index >= 0,

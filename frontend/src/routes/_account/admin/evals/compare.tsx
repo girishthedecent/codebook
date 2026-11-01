@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { z } from 'zod';
-import { BackLink } from '@/ui';
+import { BackLink, Callout } from '@/ui';
 import { ComparePage } from '@/features/admin/evals/ComparePage';
 import { strings } from '@/features/admin/strings';
 
@@ -10,7 +10,9 @@ export const Route = createFileRoute('/_account/admin/evals/compare')({
   errorComponent: () => (
     <div>
       <BackLink to="/admin/evals">{strings.evals.runs}</BackLink>
-      <p className="mt-4 text-sm text-ink-2">{strings.evals.compareLink}</p>
+      <Callout tone="warn" className="mt-4">
+        {strings.evals.compareLink}
+      </Callout>
     </div>
   ),
   component: function CompareRoute() {

@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { TextLayer, type PDFDocumentProxy, type RenderTask } from 'pdfjs-dist';
 import { findSnippet } from './findSnippet';
 import type { Zoom } from './PageBar';
+import { ViewError } from './ViewError';
+import { s } from './strings';
 
 // pdf.js scale 1 is 72 dpi; CSS pixels are 96.
 const CSS_UNITS = 96 / 72;
@@ -14,18 +16,20 @@ type Props = {
   zoom: Zoom;
   snippet?: string;
   onRendered?: () => void;
-  onError?: (error: unknown) => void;
 };
 
 /**
  * One page: the canvas at device resolution, pdf.js's text layer above it so text can be
- * selected, and the cited passage marked in that layer.
+ * selected, and the cited passage marked in that layer. The next page is drawn off screen and
+ * copied over in one step, so turning a page never shows an empty canvas in between.
  */
-export function PdfPage({ doc, page, zoom, snippet, onRendered, onError }: Props) {
+export function PdfPage({ doc, page, zoom, snippet, onRendered }: Props) {
   const frameRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const textRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);
+  const [failure, setFailure] = useState<{ page: number; attempt: number }>();
+  const [attempt, setAttempt] = useState(0);
 
   // Fit-width follows the pane as it is resized.
   useEffect(() => {
@@ -56,19 +60,24 @@ export function PdfPage({ doc, page, zoom, snippet, onRendered, onError }: Props
         ratio = Math.sqrt(MAX_CANVAS_PIXELS / (viewport.width * viewport.height));
       }
 
-      const canvas = canvasRef.current!;
-      canvas.width = Math.floor(viewport.width * ratio);
-      canvas.height = Math.floor(viewport.height * ratio);
-      canvas.style.width = `${Math.floor(viewport.width)}px`;
-      canvas.style.height = `${Math.floor(viewport.height)}px`;
-
+      const back = document.createElement('canvas');
+      back.width = Math.floor(viewport.width * ratio);
+      back.height = Math.floor(viewport.height * ratio);
       renderTask = pdfPage.render({
-        canvas,
+        canvas: back,
         viewport,
         transform: ratio === 1 ? undefined : [ratio, 0, 0, ratio, 0, 0],
       });
       await renderTask.promise;
       if (cancelled) return;
+
+      // Resizing a canvas clears it, so the copy follows in the same task, before any paint.
+      const front = canvasRef.current!;
+      front.width = back.width;
+      front.height = back.height;
+      front.style.width = `${Math.floor(viewport.width)}px`;
+      front.style.height = `${Math.floor(viewport.height)}px`;
+      front.getContext('2d')!.drawImage(back, 0, 0);
 
       const container = textRef.current!;
       container.replaceChildren();
@@ -81,10 +90,11 @@ export function PdfPage({ doc, page, zoom, snippet, onRendered, onError }: Props
       await textLayer.render();
       if (cancelled) return;
       markSnippet(textLayer, snippet)?.scrollIntoView({ block: 'center' });
+      setFailure(undefined);
       onRendered?.();
     })().catch((error: unknown) => {
       if (cancelled || (error as { name?: string }).name === 'RenderingCancelledException') return;
-      onError?.(error);
+      setFailure({ page, attempt });
     });
 
     return () => {
@@ -92,11 +102,17 @@ export function PdfPage({ doc, page, zoom, snippet, onRendered, onError }: Props
       renderTask?.cancel();
       textLayer?.cancel();
     };
-  }, [doc, page, zoom, width, snippet, onRendered, onError]);
+  }, [doc, page, zoom, width, snippet, onRendered, attempt]);
+
+  const failed = failure?.page === page && failure.attempt === attempt;
 
   return (
     <div ref={frameRef} className="w-full">
-      <div className="cb-pdf-page relative mx-auto w-fit bg-white shadow-[0_0_0_1px_var(--rule)]">
+      {failed && <ViewError message={s.pageFailed} onRetry={() => setAttempt((n) => n + 1)} />}
+      <div
+        className="cb-pdf-page relative mx-auto w-fit bg-white shadow-[0_0_0_1px_var(--rule)]"
+        hidden={failed}
+      >
         <canvas ref={canvasRef} className="block" aria-hidden />
         <div ref={textRef} className="textLayer" />
       </div>

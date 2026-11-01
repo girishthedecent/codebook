@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { ProgressRule } from '@/ui';
-import { pdfDocumentOptions } from './pdf';
+import { Button, Callout, ProgressRule } from '@/ui';
+import { pdfDocumentOptions, readAsText } from './pdf';
 import { PdfPage } from './PdfPage';
 import { PageBar, type Zoom } from './PageBar';
+import { ViewError } from './ViewError';
 import type { BookViewProps } from './BookView';
 import { s } from './strings';
 
@@ -13,16 +14,24 @@ type Props = BookViewProps & { onUnavailable: () => void };
 export default function PdfBook({ sourceId, page, snippet, onPage, onUnavailable }: Props) {
   const pdf = useQuery(pdfDocumentOptions(sourceId));
   const [zoom, setZoom] = useState<Zoom>('fit');
-  // The page counts as loading until the canvas for this page and zoom has been drawn.
-  const drawKey = `${page}:${zoom}`;
-  const [drawnKey, setDrawnKey] = useState<string>();
-  const onRendered = useCallback(() => setDrawnKey(drawKey), [drawKey]);
+  const scroller = useRef<HTMLDivElement>(null);
+  // The skeleton stands in until the first page has been drawn; after that the page being
+  // left stays on screen until the next one is ready.
+  const [drawn, setDrawn] = useState(false);
+  const onRendered = useCallback(() => setDrawn(true), []);
 
+  const fallback = pdf.isError && readAsText(pdf.error);
   useEffect(() => {
-    if (pdf.isError) onUnavailable();
-  }, [pdf.isError, onUnavailable]);
+    if (fallback) onUnavailable();
+  }, [fallback, onUnavailable]);
+
+  // A new page starts at its top, not wherever the last one was scrolled to.
+  useEffect(() => {
+    scroller.current?.scrollTo({ top: 0, left: 0 });
+  }, [page, sourceId]);
 
   const pageCount = pdf.data?.numPages;
+  const outOfRange = pageCount !== undefined && page > pageCount;
   const go = (next: number) => {
     const clamped = Math.max(1, pageCount ? Math.min(pageCount, next) : next);
     if (clamped !== page) onPage(clamped);
@@ -31,19 +40,62 @@ export default function PdfBook({ sourceId, page, snippet, onPage, onUnavailable
   return (
     <div className="flex h-full min-h-0 flex-col">
       <PageBar page={page} pageCount={pageCount} onGo={go} zoom={zoom} onZoom={setZoom} />
-      {(pdf.isPending || drawnKey !== drawKey) && <ProgressRule label={s.loading} />}
-      <div className="min-h-0 flex-1 overflow-auto bg-paper-2 p-3 [touch-action:pan-x_pan-y_pinch-zoom] sm:p-4">
-        {pdf.data && (
-          <PdfPage
-            doc={pdf.data}
-            page={page}
-            zoom={zoom}
-            snippet={snippet}
-            onRendered={onRendered}
-            onError={onUnavailable}
-          />
+      {pdf.isPending && <ProgressRule label={s.loading} />}
+      <div
+        ref={scroller}
+        data-vaul-no-drag
+        className="min-h-0 flex-1 overflow-auto bg-paper-2 p-3 [touch-action:pan-x_pan-y_pinch-zoom] sm:p-4"
+      >
+        {pdf.isError && !fallback && (
+          <ViewError message={s.fileFailed} onRetry={() => void pdf.refetch()} />
+        )}
+        {outOfRange && (
+          <Callout
+            className="mx-auto max-w-prose"
+            action={
+              <Button size="sm" onClick={() => go(pageCount)}>
+                {s.toLastPage(pageCount)}
+              </Button>
+            }
+          >
+            {s.pageCount(pageCount)}
+          </Callout>
+        )}
+        {!drawn && !pdf.isError && !outOfRange && <PageSkeleton />}
+        {pdf.data && !outOfRange && (
+          // Measured and drawn while hidden, so the skeleton is replaced in one step.
+          <div className={drawn ? undefined : 'invisible h-0'}>
+            <PdfPage
+              doc={pdf.data}
+              page={page}
+              zoom={zoom}
+              snippet={snippet}
+              onRendered={onRendered}
+            />
+          </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/** A blank page in the shape of a sheet of paper, where the page will appear. */
+function PageSkeleton() {
+  return (
+    <div
+      role="status"
+      aria-label={s.loading}
+      className="mx-auto w-full max-w-[794px] animate-pulse bg-paper px-[12%] py-[10%] shadow-[0_0_0_1px_var(--rule)] motion-reduce:animate-none"
+      style={{ aspectRatio: '1 / 1.414' }}
+    >
+      <div className="mx-auto mb-8 h-4 w-2/5 rounded-xs bg-paper-3" />
+      {Array.from({ length: 14 }, (_, i) => (
+        <div
+          key={i}
+          className="mb-3 h-2.5 rounded-xs bg-paper-3"
+          style={{ width: i % 5 === 4 ? '60%' : '100%' }}
+        />
+      ))}
     </div>
   );
 }

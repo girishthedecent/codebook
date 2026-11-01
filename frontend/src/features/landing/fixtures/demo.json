@@ -1,0 +1,29 @@
+{
+  "capturedAt": "2026-10-31T17:41:39.293Z",
+  "workspaceName": "CodeBook demo",
+  "starterQuestions": [
+    "How does causal self-attention work in nanoGPT, and how does the book explain it?",
+    "How is a GPT trained to predict the next token, in the book and in nanoGPT's training loop?",
+    "How does nanoGPT generate new text, and what do temperature and top-k change?",
+    "What common mistakes does the Hugging Face text generation guide warn about?"
+  ],
+  "sources": [
+    {
+      "type": "PDF",
+      "title": "The Little Book of Deep Learning",
+      "counts": { "pages": 189, "chunks": 148 }
+    },
+    {
+      "type": "GITHUB_REPO",
+      "title": "karpathy/nanoGPT@3adf61e154c3fe3fca428ad6bc3818b27a3b8291",
+      "href": "https://github.com/karpathy/nanoGPT",
+      "counts": { "files": 22, "symbols": 43, "chunks": 79 }
+    },
+    {
+      "type": "WEBSITE",
+      "title": "Text generation · Hugging Face",
+      "href": "https://huggingface.co/docs/transformers/en/llm_tutorial",
+      "counts": { "pages": 1, "chunks": 13 }
+    }
+  ]
+}

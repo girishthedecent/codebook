@@ -26,6 +26,11 @@ export function clearDraft(scope: string) {
   write(scope, '');
 }
 
+/** Puts text back as the draft, for a question that couldn't be sent. */
+export function saveDraft(scope: string, value: string) {
+  write(scope, value);
+}
+
 /**
  * A text state that is mirrored to localStorage, written at most every 300 ms. Leaving the
  * page inside that window still saves the last keystrokes.

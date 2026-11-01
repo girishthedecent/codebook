@@ -1,0 +1,392 @@
+{
+  "repo": "karpathy/nanoGPT",
+  "ref": "3adf61e154c3fe3fca428ad6bc3818b27a3b8291",
+  "href": "https://github.com/karpathy/nanoGPT",
+  "credit": "Andrej Karpathy, nanoGPT (MIT)",
+  "slices": [
+    {
+      "path": "model.py",
+      "lineStart": 29,
+      "lineEnd": 76,
+      "lines": [
+        [
+          ["class", "kw"],
+          [" ", ""],
+          ["CausalSelfAttention", "fn"],
+          ["(", ""],
+          ["nn", "fn"],
+          [".", ""],
+          ["Module", "fn"],
+          ["):", ""]
+        ],
+        [["", ""]],
+        [
+          ["    ", ""],
+          ["def", "kw"],
+          [" ", ""],
+          ["__init__", "num"],
+          ["(self, config):", ""]
+        ],
+        [
+          ["        ", ""],
+          ["super", "num"],
+          ["().", ""],
+          ["__init__", "num"],
+          ["()", ""]
+        ],
+        [
+          ["        ", ""],
+          ["assert", "kw"],
+          [" config.n_embd ", ""],
+          ["%", "kw"],
+          [" config.n_head ", ""],
+          ["==", "kw"],
+          [" ", ""],
+          ["0", "num"]
+        ],
+        [
+          ["        ", ""],
+          ["# key, query, value projections for all heads, but in a batch", "cm"]
+        ],
+        [
+          ["        ", ""],
+          ["self", "num"],
+          [".c_attn ", ""],
+          ["=", "kw"],
+          [" nn.Linear(config.n_embd, ", ""],
+          ["3", "num"],
+          [" ", ""],
+          ["*", "kw"],
+          [" config.n_embd, bias", ""],
+          ["=", "kw"],
+          ["config.bias)", ""]
+        ],
+        [
+          ["        ", ""],
+          ["# output projection", "cm"]
+        ],
+        [
+          ["        ", ""],
+          ["self", "num"],
+          [".c_proj ", ""],
+          ["=", "kw"],
+          [" nn.Linear(config.n_embd, config.n_embd, bias", ""],
+          ["=", "kw"],
+          ["config.bias)", ""]
+        ],
+        [
+          ["        ", ""],
+          ["# regularization", "cm"]
+        ],
+        [
+          ["        ", ""],
+          ["self", "num"],
+          [".attn_dropout ", ""],
+          ["=", "kw"],
+          [" nn.Dropout(config.dropout)", ""]
+        ],
+        [
+          ["        ", ""],
+          ["self", "num"],
+          [".resid_dropout ", ""],
+          ["=", "kw"],
+          [" nn.Dropout(config.dropout)", ""]
+        ],
+        [
+          ["        ", ""],
+          ["self", "num"],
+          [".n_head ", ""],
+          ["=", "kw"],
+          [" config.n_head", ""]
+        ],
+        [
+          ["        ", ""],
+          ["self", "num"],
+          [".n_embd ", ""],
+          ["=", "kw"],
+          [" config.n_embd", ""]
+        ],
+        [
+          ["        ", ""],
+          ["self", "num"],
+          [".dropout ", ""],
+          ["=", "kw"],
+          [" config.dropout", ""]
+        ],
+        [
+          ["        ", ""],
+          ["# flash attention make GPU go brrrrr but support is only in PyTorch >= 2.0", "cm"]
+        ],
+        [
+          ["        ", ""],
+          ["self", "num"],
+          [".flash ", ""],
+          ["=", "kw"],
+          [" ", ""],
+          ["hasattr", "num"],
+          ["(torch.nn.functional, ", ""],
+          ["'scaled_dot_product_attention'", "str"],
+          [")", ""]
+        ],
+        [
+          ["        ", ""],
+          ["if", "kw"],
+          [" ", ""],
+          ["not", "kw"],
+          [" ", ""],
+          ["self", "num"],
+          [".flash:", ""]
+        ],
+        [
+          ["            ", ""],
+          ["print", "num"],
+          ["(", ""],
+          ["\"WARNING: using slow attention. Flash Attention requires PyTorch >= 2.0\"", "str"],
+          [")", ""]
+        ],
+        [
+          ["            ", ""],
+          [
+            "# causal mask to ensure that attention is only applied to the left in the input sequence",
+            "cm"
+          ]
+        ],
+        [
+          ["            ", ""],
+          ["self", "num"],
+          [".register_buffer(", ""],
+          ["\"bias\"", "str"],
+          [", torch.tril(torch.ones(config.block_size, config.block_size))", ""]
+        ],
+        [
+          ["                                        .view(", ""],
+          ["1", "num"],
+          [", ", ""],
+          ["1", "num"],
+          [", config.block_size, config.block_size))", ""]
+        ],
+        [["", ""]],
+        [
+          ["    ", ""],
+          ["def", "kw"],
+          [" ", ""],
+          ["forward", "fn"],
+          ["(self, x):", ""]
+        ],
+        [
+          ["        B, T, C ", ""],
+          ["=", "kw"],
+          [" x.size() ", ""],
+          ["# batch size, sequence length, embedding dimensionality (n_embd)", "cm"]
+        ],
+        [["", ""]],
+        [
+          ["        ", ""],
+          [
+            "# calculate query, key, values for all heads in batch and move head forward to be the batch dim",
+            "cm"
+          ]
+        ],
+        [
+          ["        q, k, v  ", ""],
+          ["=", "kw"],
+          [" ", ""],
+          ["self", "num"],
+          [".c_attn(x).split(", ""],
+          ["self", "num"],
+          [".n_embd, dim", ""],
+          ["=", "kw"],
+          ["2", "num"],
+          [")", ""]
+        ],
+        [
+          ["        k ", ""],
+          ["=", "kw"],
+          [" k.view(B, T, ", ""],
+          ["self", "num"],
+          [".n_head, C ", ""],
+          ["//", "kw"],
+          [" ", ""],
+          ["self", "num"],
+          [".n_head).transpose(", ""],
+          ["1", "num"],
+          [", ", ""],
+          ["2", "num"],
+          [") ", ""],
+          ["# (B, nh, T, hs)", "cm"]
+        ],
+        [
+          ["        q ", ""],
+          ["=", "kw"],
+          [" q.view(B, T, ", ""],
+          ["self", "num"],
+          [".n_head, C ", ""],
+          ["//", "kw"],
+          [" ", ""],
+          ["self", "num"],
+          [".n_head).transpose(", ""],
+          ["1", "num"],
+          [", ", ""],
+          ["2", "num"],
+          [") ", ""],
+          ["# (B, nh, T, hs)", "cm"]
+        ],
+        [
+          ["        v ", ""],
+          ["=", "kw"],
+          [" v.view(B, T, ", ""],
+          ["self", "num"],
+          [".n_head, C ", ""],
+          ["//", "kw"],
+          [" ", ""],
+          ["self", "num"],
+          [".n_head).transpose(", ""],
+          ["1", "num"],
+          [", ", ""],
+          ["2", "num"],
+          [") ", ""],
+          ["# (B, nh, T, hs)", "cm"]
+        ],
+        [["", ""]],
+        [
+          ["        ", ""],
+          [
+            "# causal self-attention; Self-attend: (B, nh, T, hs) x (B, nh, hs, T) -> (B, nh, T, T)",
+            "cm"
+          ]
+        ],
+        [
+          ["        ", ""],
+          ["if", "kw"],
+          [" ", ""],
+          ["self", "num"],
+          [".flash:", ""]
+        ],
+        [
+          ["            ", ""],
+          ["# efficient attention using Flash Attention CUDA kernels", "cm"]
+        ],
+        [
+          ["            y ", ""],
+          ["=", "kw"],
+          [" torch.nn.functional.scaled_dot_product_attention(q, k, v, attn_mask", ""],
+          ["=", "kw"],
+          ["None", "num"],
+          [", dropout_p", ""],
+          ["=", "kw"],
+          ["self", "num"],
+          [".dropout ", ""],
+          ["if", "kw"],
+          [" ", ""],
+          ["self", "num"],
+          [".training ", ""],
+          ["else", "kw"],
+          [" ", ""],
+          ["0", "num"],
+          [", is_causal", ""],
+          ["=", "kw"],
+          ["True", "num"],
+          [")", ""]
+        ],
+        [
+          ["        ", ""],
+          ["else", "kw"],
+          [":", ""]
+        ],
+        [
+          ["            ", ""],
+          ["# manual implementation of attention", "cm"]
+        ],
+        [
+          ["            att ", ""],
+          ["=", "kw"],
+          [" (q ", ""],
+          ["@", "kw"],
+          [" k.transpose(", ""],
+          ["-", "kw"],
+          ["2", "num"],
+          [", ", ""],
+          ["-", "kw"],
+          ["1", "num"],
+          [")) ", ""],
+          ["*", "kw"],
+          [" (", ""],
+          ["1.0", "num"],
+          [" ", ""],
+          ["/", "kw"],
+          [" math.sqrt(k.size(", ""],
+          ["-", "kw"],
+          ["1", "num"],
+          [")))", ""]
+        ],
+        [
+          ["            att ", ""],
+          ["=", "kw"],
+          [" att.masked_fill(", ""],
+          ["self", "num"],
+          [".bias[:,:,:T,:T] ", ""],
+          ["==", "kw"],
+          [" ", ""],
+          ["0", "num"],
+          [", ", ""],
+          ["float", "num"],
+          ["(", ""],
+          ["'-inf'", "str"],
+          ["))", ""]
+        ],
+        [
+          ["            att ", ""],
+          ["=", "kw"],
+          [" F.softmax(att, dim", ""],
+          ["=-", "kw"],
+          ["1", "num"],
+          [")", ""]
+        ],
+        [
+          ["            att ", ""],
+          ["=", "kw"],
+          [" ", ""],
+          ["self", "num"],
+          [".attn_dropout(att)", ""]
+        ],
+        [
+          ["            y ", ""],
+          ["=", "kw"],
+          [" att ", ""],
+          ["@", "kw"],
+          [" v ", ""],
+          ["# (B, nh, T, T) x (B, nh, T, hs) -> (B, nh, T, hs)", "cm"]
+        ],
+        [
+          ["        y ", ""],
+          ["=", "kw"],
+          [" y.transpose(", ""],
+          ["1", "num"],
+          [", ", ""],
+          ["2", "num"],
+          [").contiguous().view(B, T, C) ", ""],
+          ["# re-assemble all head outputs side by side", "cm"]
+        ],
+        [["", ""]],
+        [
+          ["        ", ""],
+          ["# output projection", "cm"]
+        ],
+        [
+          ["        y ", ""],
+          ["=", "kw"],
+          [" ", ""],
+          ["self", "num"],
+          [".resid_dropout(", ""],
+          ["self", "num"],
+          [".c_proj(y))", ""]
+        ],
+        [
+          ["        ", ""],
+          ["return", "kw"],
+          [" y", ""]
+        ]
+      ]
+    }
+  ]
+}

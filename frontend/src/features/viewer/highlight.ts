@@ -72,18 +72,34 @@ export function languageFor(path: string, language: string | null | undefined) {
   return byExtension[ext] ?? 'text';
 }
 
-/** Highlighted lines for `code`, or undefined until the worker answers (render plain text). */
-export function useHighlight(code: string | undefined, lang: string) {
-  const [result, setResult] = useState<{ code: string; lines: Token[][] }>();
+/**
+ * Highlighted lines for `code`, or undefined until the worker first answers (render plain
+ * text). When the text grows at either end ("show later lines"), the lines that were already
+ * coloured keep their colours while the new run is highlighted, so nothing flashes plain.
+ */
+export function useHighlight(
+  code: string | undefined,
+  lang: string,
+): Array<Token[] | undefined> | undefined {
+  const [result, setResult] = useState<{ code: string; lang: string; lines: Token[][] }>();
   useEffect(() => {
     if (code === undefined || lang === 'text') return;
     let current = true;
     void requestHighlight(code, lang).then((lines) => {
-      if (current && lines) setResult({ code, lines });
+      if (current && lines) setResult({ code, lang, lines });
     });
     return () => {
       current = false;
     };
   }, [code, lang]);
-  return result && result.code === code ? result.lines : undefined;
+
+  if (!result || code === undefined || result.lang !== lang) return undefined;
+  if (result.code === code) return result.lines;
+  // Lines are cut at "\n", so a shared start or end is a whole number of lines.
+  if (code.startsWith(result.code + '\n')) return result.lines as Array<Token[] | undefined>;
+  if (code.endsWith('\n' + result.code)) {
+    const added = code.slice(0, code.length - result.code.length).split('\n').length - 1;
+    return [...new Array<Token[] | undefined>(added), ...result.lines];
+  }
+  return undefined;
 }

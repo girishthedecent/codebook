@@ -1,83 +1,75 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams } from '@tanstack/react-router';
-import { flatItems } from '@/api/queries/keys';
-import { useSources } from '@/api/queries/sources';
-import { Button, Spinner } from '@/ui';
+import { Plus } from '@phosphor-icons/react';
+import { Button, Callout, EmptyState, PageHeader, PageLoading } from '@/ui';
 import { AddSourceDialog } from './AddSourceDialog';
-import { LoadError } from './LoadError';
 import { SourceRow } from './SourceRow';
 import { WorkspaceSearch } from './WorkspaceSearch';
-import { strings } from './strings';
+import { isIndexing } from './sourceMeta';
+import { SOURCE_LIMIT, strings } from './strings';
+import { useNow, useSourceList } from './useSourceList';
 import { useSourceAccess } from './useSourceAccess';
 
-/** Every source in the workspace, newest first, with live progress for the ones indexing. */
+/** The library: every source in the workspace, newest first, with progress while indexing. */
 export function SourcesPage() {
   const { workspaceId } = useParams({ from: '/w/$workspaceId/sources/' });
-  const query = useSources(workspaceId);
+  const query = useSourceList(workspaceId);
+  const { sources } = query;
   const { canManage, isGuest, isDemo } = useSourceAccess(workspaceId);
   const [adding, setAdding] = useState(false);
-  const sources = flatItems(query.data);
+  const [added, setAdded] = useState<string>();
+  const indexing = sources.some((s) => isIndexing(s.status));
+  const now = useNow(indexing);
+
+  // The highlight on a new source fades after a few seconds.
+  useEffect(() => {
+    if (!added) return;
+    const timer = setTimeout(() => setAdded(undefined), 4000);
+    return () => clearTimeout(timer);
+  }, [added]);
+
+  const note = isGuest ? strings.guestNoWrite : isDemo ? strings.demoReadOnly : undefined;
 
   return (
-    <div className="mx-auto max-w-[760px] px-4 py-6 sm:px-6">
-      <header className="flex items-baseline justify-between gap-4 border-b border-rule pb-3">
-        <h1 className="text-lg font-semibold">{strings.title}</h1>
-        {canManage && (
-          <Button
-            variant="primary"
-            size="sm"
-            className="max-sm:h-10"
-            onClick={() => setAdding(true)}
-          >
-            {strings.add}
-          </Button>
-        )}
-      </header>
-      {isGuest ? (
-        <p className="mt-3 text-sm text-ink-3">{strings.guestNoWrite}</p>
-      ) : (
-        isDemo && <p className="mt-3 text-sm text-ink-3">{strings.demoReadOnly}</p>
-      )}
-
-      {query.isPending ? (
-        <div className="flex items-center gap-2 py-6 text-sm text-ink-3">
-          <Spinner className="size-3.5" /> Loading
-        </div>
-      ) : query.isError && sources.length === 0 ? (
-        <LoadError
-          error={query.error}
-          onRetry={() => void query.refetch()}
-          className="py-6 text-sm"
-        />
-      ) : sources.length === 0 ? (
-        <div className="py-8">
-          <p className="max-w-[52ch] text-sm text-ink-2">
-            {canManage ? strings.empty : strings.emptyReadOnly}
-          </p>
-          {canManage && (
-            <Button
-              variant="secondary"
-              className="mt-4 max-sm:h-10"
-              onClick={() => setAdding(true)}
-            >
+    <div className="mx-auto w-full max-w-narrow px-4 py-8 sm:px-6 sm:py-10">
+      <PageHeader
+        title={strings.title}
+        intro={note ?? strings.intro}
+        actions={
+          canManage && (
+            <Button variant="primary" onClick={() => setAdding(true)}>
+              <Plus size={14} weight="bold" aria-hidden />
               {strings.add}
             </Button>
-          )}
-        </div>
+          )
+        }
+      />
+
+      {query.isPending ? (
+        <PageLoading label="Loading sources" rows={3} />
+      ) : query.isError && sources.length === 0 ? (
+        <Callout error={query.error} onRetry={() => void query.refetch()} />
+      ) : sources.length === 0 ? (
+        <EmptyState
+          action={
+            canManage && (
+              <Button variant="secondary" onClick={() => setAdding(true)}>
+                {strings.add}
+              </Button>
+            )
+          }
+        >
+          {canManage ? strings.empty : strings.emptyReadOnly}
+        </EmptyState>
       ) : (
         <>
           {query.isError && (
-            <p role="alert" className="mt-3 text-sm break-words text-error">
-              {query.error.message}{' '}
-              <button
-                type="button"
-                onClick={() => void query.refetch()}
-                className="py-2 text-accent underline underline-offset-2"
-              >
-                {strings.retry}
-              </button>
-            </p>
+            <Callout error={query.error} onRetry={() => void query.refetch()} className="mb-4" />
           )}
+          <p className="mb-2 flex flex-wrap justify-between gap-x-4 text-xs text-ink-3">
+            <span>{strings.count(sources.length, SOURCE_LIMIT)}</span>
+            {indexing && <span>{strings.leaveNote}</span>}
+          </p>
           <ul>
             {sources.map((source) => (
               <SourceRow
@@ -85,28 +77,34 @@ export function SourcesPage() {
                 source={source}
                 workspaceId={workspaceId}
                 canManage={canManage}
+                now={now}
+                highlighted={source.id === added}
               />
             ))}
           </ul>
           {query.hasNextPage && (
             <Button
               variant="ghost"
-              size="sm"
-              className="mt-3 max-sm:h-10"
+              className="mt-3"
               loading={query.isFetchingNextPage}
               onClick={() => void query.fetchNextPage()}
             >
               {strings.loadMore}
             </Button>
           )}
-          {canManage && sources.some((s) => s.status === 'READY') && (
+          {sources.some((s) => s.status === 'READY') && (
             <WorkspaceSearch workspaceId={workspaceId} />
           )}
         </>
       )}
 
       {canManage && (
-        <AddSourceDialog workspaceId={workspaceId} open={adding} onOpenChange={setAdding} />
+        <AddSourceDialog
+          workspaceId={workspaceId}
+          open={adding}
+          onOpenChange={setAdding}
+          onAdded={(source) => setAdded(source.id)}
+        />
       )}
     </div>
   );

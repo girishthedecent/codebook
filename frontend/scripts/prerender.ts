@@ -20,9 +20,9 @@ const vite = await createServer({
 let markup: string;
 try {
   const mod = (await vite.ssrLoadModule('/src/features/landing/Landing.tsx')) as {
-    Landing: () => React.ReactElement;
+    Landing: (props: { standalone?: boolean }) => React.ReactElement;
   };
-  markup = renderToString(createElement(mod.Landing));
+  markup = renderToString(createElement(mod.Landing, { standalone: true }));
 } finally {
   await vite.close();
 }
@@ -55,18 +55,41 @@ if (cssTag) {
   html = html.replace('</head>', `${hints}</head>`);
 }
 
-// The landing page is plain HTML and links (no state, no handlers), so it never needs the app:
-// its links are ordinary navigations, and the app starts on the page they lead to. Booting it
-// here would also rebuild the page the reader is already looking at. A hover or touch only
-// warms the app's files so that navigation is quick. Every other URL serves this same file,
-// so there the app starts at once, with the preloads the build would have emitted.
+// The landing page has an entry of its own (src/landing.tsx) that makes the prerendered markup
+// interactive, so `/` never loads the app: its links are ordinary navigations, and the app
+// starts on the page they lead to. A hover or touch only warms the app's files so that
+// navigation is quick. Every other URL serves this same file, so there the app starts at once,
+// with the preloads the build would have emitted.
+type Chunk = { file: string; src?: string; isEntry?: boolean; imports?: string[]; css?: string[] };
+const manifest = JSON.parse(await readFile(dist + '.vite/manifest.json', 'utf8')) as Record<
+  string,
+  Chunk
+>;
+const landing = Object.values(manifest).find(
+  (chunk) => chunk.isEntry && chunk.src === 'src/landing.tsx',
+);
+if (!landing) throw new Error('The build has no landing entry');
+const landingFiles = new Set<string>();
+const collect = (chunk: Chunk) => {
+  for (const key of chunk.imports ?? []) {
+    const dep = manifest[key]!;
+    if (!landingFiles.has(dep.file)) {
+      landingFiles.add(dep.file);
+      collect(dep);
+    }
+  }
+};
+collect(landing);
+const landingDeps = [...landingFiles].map((file) => `/${file}`);
+const landingEntry = `/${landing.file}`;
+
 const preloads = [...html.matchAll(/<link rel="modulepreload"[^>]*href="([^"]+)"[^>]*>/g)].map(
   (m) => m[1]!,
 );
 const entry = /<script type="module" crossorigin src="([^"]+)"><\/script>/.exec(html);
 if (!entry || preloads.length === 0) throw new Error('dist/index.html has no module entry');
 html = html.replace(/\s*<link rel="modulepreload"[^>]*>/g, '').replace(entry[0], '');
-const loader = `<script>(function(){var deps=${JSON.stringify(preloads)},entry=${JSON.stringify(entry[1])};function preload(){deps.concat(entry).forEach(function(h){var l=document.createElement('link');l.rel='modulepreload';l.crossOrigin='';l.href=h;document.head.appendChild(l)})}if(location.pathname==='/'){['pointerover','touchstart','focusin'].forEach(function(t){addEventListener(t,preload,{once:true,passive:true})})}else{document.getElementById('root').textContent='';preload();var s=document.createElement('script');s.type='module';s.crossOrigin='';s.src=entry;document.head.appendChild(s)}})()</script>`;
+const loader = `<script>(function(){var deps=${JSON.stringify(preloads)},entry=${JSON.stringify(entry[1])},home=${JSON.stringify(landingDeps)},landing=${JSON.stringify(landingEntry)};function link(h){var l=document.createElement('link');l.rel='modulepreload';l.crossOrigin='';l.href=h;document.head.appendChild(l)}function load(src){var s=document.createElement('script');s.type='module';s.crossOrigin='';s.src=src;document.head.appendChild(s)}function warm(){deps.concat(entry).forEach(link)}if(location.pathname==='/'){home.forEach(link);load(landing);['pointerover','touchstart','focusin'].forEach(function(t){addEventListener(t,warm,{once:true,passive:true})})}else{var c=document.querySelector('link[rel=canonical]');if(c)c.remove();document.getElementById('root').textContent='';warm();load(entry)}})()</script>`;
 html = html.replace('</body>', `${loader}</body>`);
 
 await writeFile(dist + 'index.html', html);

@@ -83,7 +83,7 @@ export async function* streamEvents(
   }
 }
 
-const turnEvents = new Set(['step', 'token', 'citations', 'done', 'error']);
+const turnEvents = new Set(['title', 'step', 'token', 'citations', 'done', 'error']);
 const sourceEvents = new Set(['progress', 'done', 'failed', 'deleted', 'error']);
 
 /**

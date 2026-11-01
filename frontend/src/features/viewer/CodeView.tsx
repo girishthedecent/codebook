@@ -3,7 +3,7 @@ import { useQueries } from '@tanstack/react-query';
 import { useNavigate, useParams } from '@tanstack/react-router';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { sourceContentQueryOptions } from '@/api/queries';
-import { Button, ProgressRule } from '@/ui';
+import { Button, EmptyState, ProgressRule } from '@/ui';
 import { cn } from '@/lib/cn';
 import { languageFor, useHighlight, type Token } from './highlight';
 import { ViewError } from './ViewError';
@@ -92,18 +92,25 @@ export function CodeView({ sourceId, path, lineStart, lineEnd }: Props) {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <CodeBar sourceId={sourceId} path={path} lineCount={lineCount} />
+      <CodeBar
+        sourceId={sourceId}
+        path={path}
+        lineCount={lineCount}
+        lineStart={lineStart}
+        lineEnd={lineEnd}
+      />
       {loading && <ProgressRule label={s.loading} />}
       {error && !lines.length ? (
         <ViewError error={error.error} onRetry={() => error.refetch()} />
       ) : !loading && !lines.length ? (
-        <p className="px-5 py-6 text-sm text-ink-3">{s.emptyFile}</p>
+        <EmptyState className="px-5">{s.emptyFile}</EmptyState>
       ) : (
         <Lines
           lines={lines}
           tokens={tokens}
           lineStart={lineStart}
           lineEnd={lineEnd ?? lineStart}
+          scrollKey={`${key}:${lineStart ?? ''}-${lineEnd ?? ''}`}
           before={
             firstShown !== undefined && firstShown > 1 ? (
               <MoreButton onClick={() => add(windowOf(firstShown) - 1)}>{s.earlier}</MoreButton>
@@ -127,7 +134,7 @@ function windowQuery(path: string, w: number) {
 function MoreButton({ onClick, children }: { onClick: () => void; children: string }) {
   return (
     <div className="px-3 py-1.5">
-      <Button variant="ghost" size="sm" className="max-sm:h-11" onClick={onClick}>
+      <Button variant="ghost" size="sm" onClick={onClick}>
         {children}
       </Button>
     </div>
@@ -138,14 +145,20 @@ function CodeBar({
   sourceId,
   path,
   lineCount,
+  lineStart,
+  lineEnd,
 }: {
   sourceId: string;
   path: string;
   lineCount?: number;
+  lineStart?: number;
+  lineEnd?: number;
 }) {
   const navigate = useNavigate();
   const { workspaceId } = useParams({ strict: false }) as { workspaceId?: string };
-  const parts = path.split('/');
+  const slash = path.lastIndexOf('/');
+  const folder = path.slice(0, slash + 1);
+  const file = path.slice(slash + 1);
 
   const toGraph = (direction: 'callers' | 'dependencies') => {
     if (!workspaceId) return;
@@ -159,36 +172,32 @@ function CodeBar({
   };
 
   return (
-    <div className="flex min-h-10 shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-rule px-3 py-1.5">
-      <nav aria-label="File path" className="min-w-0 flex-1 truncate font-mono text-xs text-ink-3">
-        {parts.map((part, i) => (
-          <span key={i}>
-            {i > 0 && <span className="px-0.5 text-ink-3/70">/</span>}
-            <span className={i === parts.length - 1 ? 'text-ink' : undefined}>{part}</span>
-          </span>
-        ))}
-        {lineCount !== undefined && <span className="ml-2">· {s.linesOf(lineCount)}</span>}
-      </nav>
-      {workspaceId && (
-        <div className="flex gap-1">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="max-sm:h-11"
-            onClick={() => toGraph('callers')}
-          >
-            {s.callers}
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="max-sm:h-11"
-            onClick={() => toGraph('dependencies')}
-          >
-            {s.dependencies}
-          </Button>
-        </div>
-      )}
+    <div className="shrink-0 border-b border-rule px-3 py-2">
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+        {/* The folders give way first, so the file name is always the part that shows. */}
+        <nav aria-label="File path" className="flex min-w-0 flex-1 font-mono text-xs">
+          {folder && <span className="min-w-0 truncate text-ink-3">{folder}</span>}
+          <span className="shrink-0 text-ink">{file}</span>
+        </nav>
+        {workspaceId && (
+          <div className="flex gap-1">
+            <Button variant="ghost" size="sm" onClick={() => toGraph('callers')}>
+              {s.callers}
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => toGraph('dependencies')}>
+              {s.dependencies}
+            </Button>
+          </div>
+        )}
+      </div>
+      <p className="mt-0.5 font-serif text-xs text-ink-3 italic">
+        {lineStart !== undefined
+          ? s.caption(file, lineStart, lineEnd ?? lineStart)
+          : lineCount !== undefined
+            ? `${file}, ${s.linesOf(lineCount)}`
+            : file}
+        {lineStart !== undefined && lineCount !== undefined && ` of ${lineCount.toLocaleString()}`}
+      </p>
     </div>
   );
 }
@@ -198,13 +207,16 @@ function Lines({
   tokens,
   lineStart,
   lineEnd,
+  scrollKey,
   before,
   after,
 }: {
   lines: Line[];
-  tokens?: Token[][];
+  tokens?: Array<Token[] | undefined>;
   lineStart?: number;
   lineEnd?: number;
+  /** Changes with the cited lines or the file; the view scrolls to the citation each time. */
+  scrollKey: string;
   before: ReactNode;
   after: ReactNode;
 }) {
@@ -223,10 +235,13 @@ function Lines({
     overscan: 30,
   });
 
-  // Bring the cited lines into view once they are on screen.
+  // Bring the cited lines into view once they are on screen: once per citation, not again
+  // when more lines load above or below.
   const target = lineStart !== undefined ? lines.findIndex((l) => l.n === lineStart) : -1;
+  const scrolledFor = useRef<string>(undefined);
   useEffect(() => {
-    if (target < 0) return;
+    if (target < 0 || scrolledFor.current === scrollKey) return;
+    scrolledFor.current = scrollKey;
     if (virtual) {
       virtualizer.scrollToIndex(target, { align: 'center' });
     } else {
@@ -234,9 +249,9 @@ function Lines({
         ?.querySelector<HTMLElement>(`[data-line="${lines[target]!.n}"]`)
         ?.scrollIntoView({ block: 'center' });
     }
-    // Scroll once per target, not on every highlight pass.
+    // The key says when to scroll; the other values are read as they are at that moment.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [target, virtual]);
+  }, [target, scrollKey]);
 
   const row = (i: number, style?: CSSProperties) => {
     const line = lines[i]!;
@@ -245,7 +260,11 @@ function Lines({
         key={line.n}
         data-line={line.n}
         style={style}
-        className={cn('flex', cited(line.n) && 'bg-highlight')}
+        className={cn(
+          'flex',
+          // A bar in the margin as well as the tint, so the lines read without colour.
+          cited(line.n) && 'bg-highlight shadow-[inset_3px_0_0_0_var(--accent)]',
+        )}
       >
         <span
           aria-hidden
@@ -262,7 +281,7 @@ function Lines({
   };
 
   return (
-    <div ref={scrollRef} className="min-h-0 flex-1 overflow-auto">
+    <div ref={scrollRef} data-vaul-no-drag className="min-h-0 flex-1 overflow-auto">
       {before}
       <div
         className="cb-code min-w-fit py-2 font-mono text-xs leading-5 text-ink"

@@ -17,6 +17,23 @@
   font-style: italic;
 }
 
+/* A book page is white paper; in the dark theme it is dimmed so it doesn't glare. */
+:root[data-theme='dark'] .cb-pdf-page canvas,
+[data-theme='dark'] .cb-pdf-page canvas {
+  filter: brightness(0.82) contrast(1.05);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .cb-pdf-page canvas {
+    filter: brightness(0.82) contrast(1.05);
+  }
+}
+
+/* The cited passage of a web page, drawn by the CSS Custom Highlight API. */
+::highlight(cb-cited) {
+  background-color: var(--highlight);
+  color: inherit;
+}
+
 /* The page box pdf.js sizes its text layer against. */
 .cb-pdf-page {
   --user-unit: 1;

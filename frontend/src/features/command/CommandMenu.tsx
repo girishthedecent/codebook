@@ -1,19 +1,26 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Command } from 'cmdk';
 import { Dialog as RadixDialog } from 'radix-ui';
-import { useInfiniteQuery } from '@tanstack/react-query';
+import { keepPreviousData, useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { useNavigate, useParams } from '@tanstack/react-router';
 import { conversationsQueryOptions } from '@/api/queries/conversations';
 import { flatItems } from '@/api/queries/keys';
+import { searchQueryOptions, sourcesQueryOptions } from '@/api/queries/sources';
 import { workspacesQueryOptions } from '@/api/queries/workspaces';
-import { signOut, useMe } from '@/auth';
+import type { SearchHit } from '@/api/types';
+import { useMe } from '@/auth';
+import { useSignOut } from '@/auth/useSignOut';
 import { setTheme } from '@/lib/theme';
+import { displayTitle } from '@/lib/displayTitle';
 import { shortcutLabel, useShortcut } from '@/lib/keyboard';
 import { useBreakpoint } from '@/lib/breakpoints';
-import { Dialog, Kbd, VisuallyHidden } from '@/ui';
+import { viewerSearchFor } from '@/lib/viewerParams';
+import { Dialog, Kbd, SourceBadge, VisuallyHidden } from '@/ui';
 import { readLastWorkspaceId } from '@/features/account/lastWorkspaceId';
 import { en } from '@/i18n/en';
 import { strings } from '@/features/account/strings';
+import { Highlight, hitTarget, hitWhere, snippetAround } from './passages';
+import { commandStrings as c } from './strings';
 
 const s = strings.command;
 const OPEN_EVENT = 'codebook:open-command';
@@ -24,8 +31,8 @@ export function openCommandMenu() {
 }
 
 /**
- * ⌘K / Ctrl K. Jumps to any page, workspace or recent conversation, and runs the few actions
- * that don't need a form. Mounted once by each layout.
+ * ⌘K / Ctrl K. Jumps to any page, source, workspace or recent conversation, finds passages in
+ * the sources, and runs the few actions that don't need a form. Mounted once by each layout.
  */
 export function CommandMenu() {
   const [open, setOpen] = useState(false);
@@ -66,19 +73,60 @@ export function CommandMenu() {
   );
 }
 
+function useDebounced<T>(value: T, ms: number) {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const timer = setTimeout(() => setDebounced(value), ms);
+    return () => clearTimeout(timer);
+  }, [value, ms]);
+  return debounced;
+}
+
+// Passages are searched from this many letters, so a first keystroke doesn't fire a search.
+const MIN_PASSAGE_QUERY = 2;
+const SOURCES_SHOWN = 6;
+
 function Menu({ close, showShortcuts }: { close: () => void; showShortcuts: () => void }) {
   const bp = useBreakpoint();
   const navigate = useNavigate();
+  const { signOut } = useSignOut();
   const { isAdmin, isGuest } = useMe();
   const params = useParams({ strict: false }) as { workspaceId?: string };
   const current = params.workspaceId;
   const workspaceId = current ?? readLastWorkspaceId() ?? undefined;
+
+  const [text, setText] = useState('');
+  const query = text.trim();
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+  // Every word has to be in the label; with no words everything shows.
+  const match = (label: string) => words.every((w) => label.toLowerCase().includes(w));
 
   const workspaces = useInfiniteQuery(workspacesQueryOptions);
   const conversations = useInfiniteQuery({
     ...conversationsQueryOptions(current ?? ''),
     enabled: Boolean(current),
   });
+  const sources = useInfiniteQuery({
+    ...sourcesQueryOptions(workspaceId ?? ''),
+    enabled: Boolean(workspaceId),
+  });
+
+  // Keyword mode: the database matches the words, with no embedding or model call behind a
+  // keystroke.
+  const passageQuery = useDebounced(query, 300);
+  const passages = useQuery({
+    ...searchQueryOptions(workspaceId ?? '', {
+      query: passageQuery,
+      mode: 'keyword',
+      topK: 6,
+      expandParents: false,
+      rerank: false,
+    }),
+    enabled: Boolean(workspaceId) && passageQuery.length >= MIN_PASSAGE_QUERY,
+    placeholderData: keepPreviousData,
+  });
+  const searching = query.length >= MIN_PASSAGE_QUERY;
+  const hits = searching && passages.data ? passages.data.results : [];
 
   // `href` keeps these working for routes other features own; the router still navigates in-app.
   const go = (href: string) => {
@@ -86,6 +134,19 @@ function Menu({ close, showShortcuts }: { close: () => void; showShortcuts: () =
     void navigate({ href });
   };
   const inWorkspace = (path: string) => go(workspaceId ? `/w/${workspaceId}${path}` : '/w');
+  const openPassage = (hit: SearchHit) => {
+    close();
+    const target = viewerSearchFor(hitTarget(hit));
+    // Beside whatever is open when inside a workspace; otherwise on its chat page.
+    if (current) {
+      void navigate({
+        to: '.',
+        search: (prev: Record<string, unknown>) => ({ ...prev, ...target }),
+      });
+    } else if (workspaceId) {
+      void navigate({ to: '/w/$workspaceId', params: { workspaceId }, search: target });
+    }
+  };
 
   const toggleTheme = () => {
     const root = document.documentElement;
@@ -96,38 +157,135 @@ function Menu({ close, showShortcuts }: { close: () => void; showShortcuts: () =
     close();
   };
 
+  const places: [string, () => void][] = [
+    [s.chat, () => inWorkspace('')],
+    [s.sources, () => inWorkspace('/sources')],
+    [strings.nav.graph, () => inWorkspace('/graph')],
+    [s.study, () => inWorkspace('/study')],
+    ...(isGuest ? [] : ([[strings.nav.memory, () => go('/memory')]] as [string, () => void][])),
+    [strings.nav.usage, () => go('/usage')],
+    [strings.nav.settings, () => go('/settings')],
+    ...(isAdmin ? ([[strings.nav.admin, () => go('/admin')]] as [string, () => void][]) : []),
+  ];
+  const shownPlaces = places.filter(([label]) => match(label));
+  const shownSources = flatItems(sources.data)
+    .filter((src) => match(displayTitle(src).name))
+    .slice(0, SOURCES_SHOWN);
+  const allWorkspaces = flatItems(workspaces.data);
+  const shownWorkspaces = allWorkspaces.filter((w) => match(w.name));
+  const shownConversations = flatItems(conversations.data)
+    .filter((conv) => match(conv.title))
+    .slice(0, 8);
+
+  const actions: [string, () => void][] = [
+    ...(workspaceId
+      ? ([[s.newConversation, () => inWorkspace('')]] as [string, () => void][])
+      : []),
+    [s.toggleTheme, toggleTheme],
+    ...(bp !== 'phone' ? ([[s.shortcuts, showShortcuts]] as [string, () => void][]) : []),
+    ...(isGuest
+      ? ([
+          [
+            en.auth.signIn,
+            () =>
+              go(
+                `/sign-in?next=${encodeURIComponent(window.location.pathname + window.location.search)}`,
+              ),
+          ],
+        ] as [string, () => void][])
+      : ([
+          [
+            strings.nav.signOut,
+            () => {
+              close();
+              void signOut();
+            },
+          ],
+        ] as [string, () => void][])),
+  ];
+  const shownActions = actions.filter(([label]) => match(label));
+
   return (
-    <Command label={s.label} loop className="flex max-h-[60vh] flex-col">
+    <Command label={s.label} loop shouldFilter={false} className="flex max-h-[60vh] flex-col">
       <div className="flex items-center gap-2 border-b border-rule px-4">
         {/* Radix moves focus to the first focusable element, which is this input. */}
         <Command.Input
-          placeholder={s.placeholder}
-          className="h-12 flex-1 bg-transparent text-sm text-ink outline-none placeholder:text-ink-3"
+          value={text}
+          onValueChange={setText}
+          placeholder={c.placeholder}
+          className="h-12 flex-1 bg-transparent text-sm text-ink outline-none placeholder:text-ink-3 max-sm:text-base"
         />
         <Kbd>{shortcutLabel('escape')}</Kbd>
       </div>
       <Command.List className="overflow-y-auto p-1">
-        <Command.Empty className="px-3 py-6 text-sm text-ink-3">{s.empty}</Command.Empty>
+        {!searching || !passages.isFetching ? (
+          <Command.Empty className="px-3 py-6 text-sm text-ink-3">{s.empty}</Command.Empty>
+        ) : null}
 
-        <Group heading={s.goTo}>
-          <Item onSelect={() => inWorkspace('')}>{s.chat}</Item>
-          <Item onSelect={() => inWorkspace('/sources')}>{s.sources}</Item>
-          <Item onSelect={() => inWorkspace('/graph')}>{strings.nav.graph}</Item>
-          <Item onSelect={() => inWorkspace('/study')}>{s.study}</Item>
-          {!isGuest && <Item onSelect={() => go('/memory')}>{strings.nav.memory}</Item>}
-          <Item onSelect={() => go('/usage')}>{strings.nav.usage}</Item>
-          <Item onSelect={() => go('/settings')}>{strings.nav.settings}</Item>
-          {isAdmin && <Item onSelect={() => go('/admin')}>{strings.nav.admin}</Item>}
-        </Group>
+        {shownPlaces.length > 0 && (
+          <Group heading={s.goTo}>
+            {shownPlaces.map(([label, run]) => (
+              <Item key={label} value={`go ${label}`} onSelect={run}>
+                {label}
+              </Item>
+            ))}
+          </Group>
+        )}
 
-        {flatItems(workspaces.data).length > 1 && (
+        {shownSources.length > 0 && (
+          <Group heading={c.sources}>
+            {shownSources.map((src) => {
+              const { name, ref } = displayTitle(src);
+              return (
+                <Item
+                  key={src.id}
+                  value={`source ${src.title}`}
+                  onSelect={() => go(`/w/${workspaceId}/sources/${src.id}`)}
+                >
+                  <span className="flex min-w-0 items-center gap-2">
+                    <SourceBadge type={src.type} />
+                    <span className="truncate">{name}</span>
+                  </span>
+                  {ref && <Hint>{ref}</Hint>}
+                </Item>
+              );
+            })}
+          </Group>
+        )}
+
+        {searching && (hits.length > 0 || passages.isFetching || passages.isError) && (
+          <Group heading={c.passages}>
+            {hits.map((hit, i) => (
+              <Item key={hit.chunkId} value={`passage ${i}`} tall onSelect={() => openPassage(hit)}>
+                <span className="min-w-0">
+                  <span className="block truncate text-xs text-ink-3">
+                    {displayTitle({ title: hit.sourceTitle, type: hit.sourceType }).name} ·{' '}
+                    {hitWhere(hit)}
+                  </span>
+                  <span className="mt-0.5 line-clamp-2 font-serif text-sm text-ink">
+                    <Highlight
+                      text={snippetAround(hit.content, passageQuery)}
+                      query={passageQuery}
+                    />
+                  </span>
+                </span>
+              </Item>
+            ))}
+            {hits.length === 0 && passages.isFetching && (
+              <p role="status" className="px-3 py-2 text-sm text-ink-3">
+                {c.searching}
+              </p>
+            )}
+            {hits.length === 0 && passages.isError && !passages.isFetching && (
+              <p className="px-3 py-2 text-sm text-ink-3">{c.passagesFailed}</p>
+            )}
+          </Group>
+        )}
+
+        {allWorkspaces.length > 1 && shownWorkspaces.length > 0 && (
           <Group heading={s.workspaces}>
-            {flatItems(workspaces.data).map((w) => (
-              <Item
-                key={w.id}
-                value={`workspace ${w.name} ${w.id}`}
-                onSelect={() => go(`/w/${w.id}`)}
-              >
+            {shownWorkspaces.map((w) => (
+              <Item key={w.id} value={`workspace ${w.name}`} onSelect={() => go(`/w/${w.id}`)}>
                 {w.name}
                 {w.id === current && <Hint>current</Hint>}
               </Item>
@@ -135,49 +293,30 @@ function Menu({ close, showShortcuts }: { close: () => void; showShortcuts: () =
           </Group>
         )}
 
-        {current && flatItems(conversations.data).length > 0 && (
+        {current && shownConversations.length > 0 && (
           <Group heading={s.conversations}>
-            {flatItems(conversations.data)
-              .slice(0, 8)
-              .map((c) => (
-                <Item
-                  key={c.id}
-                  value={`conversation ${c.title} ${c.id}`}
-                  onSelect={() => go(`/w/${current}/c/${c.id}`)}
-                >
-                  {c.title}
-                </Item>
-              ))}
+            {shownConversations.map((conv, i) => (
+              <Item
+                key={conv.id}
+                // Titles repeat ("New conversation"), and cmdk takes equal values for one item.
+                value={`conversation ${i} ${conv.title}`}
+                onSelect={() => go(`/w/${current}/c/${conv.id}`)}
+              >
+                {conv.title}
+              </Item>
+            ))}
           </Group>
         )}
 
-        <Group heading={s.actions}>
-          {workspaceId && <Item onSelect={() => inWorkspace('')}>{s.newConversation}</Item>}
-          <Item onSelect={toggleTheme}>{s.toggleTheme}</Item>
-          {bp !== 'phone' && <Item onSelect={showShortcuts}>{s.shortcuts}</Item>}
-          {isGuest && (
-            <Item
-              onSelect={() =>
-                go(
-                  `/sign-in?next=${encodeURIComponent(window.location.pathname + window.location.search)}`,
-                )
-              }
-            >
-              {en.auth.signIn}
-            </Item>
-          )}
-          {!isGuest && (
-            <Item
-              onSelect={async () => {
-                close();
-                await signOut();
-                void navigate({ to: '/' });
-              }}
-            >
-              {strings.nav.signOut}
-            </Item>
-          )}
-        </Group>
+        {shownActions.length > 0 && (
+          <Group heading={s.actions}>
+            {shownActions.map(([label, run]) => (
+              <Item key={label} value={`action ${label}`} onSelect={run}>
+                {label}
+              </Item>
+            ))}
+          </Group>
+        )}
       </Command.List>
     </Command>
   );
@@ -198,16 +337,22 @@ function Item({
   children,
   onSelect,
   value,
+  tall,
 }: {
   children: ReactNode;
   onSelect: () => void;
-  value?: string;
+  value: string;
+  /** Two lines of content, so the row isn't centred on a fixed height. */
+  tall?: boolean;
 }) {
   return (
     <Command.Item
       value={value}
       onSelect={onSelect}
-      className="flex min-h-10 cursor-pointer items-center justify-between gap-3 rounded-sm px-3 text-sm text-ink data-[selected=true]:bg-paper-2 max-sm:min-h-11"
+      className={
+        'flex cursor-pointer items-center justify-between gap-3 rounded-sm px-3 text-sm text-ink data-[selected=true]:bg-paper-2 ' +
+        (tall ? 'min-h-12 py-2' : 'min-h-10 max-sm:min-h-11')
+      }
     >
       {children}
     </Command.Item>
@@ -215,7 +360,7 @@ function Item({
 }
 
 function Hint({ children }: { children: ReactNode }) {
-  return <span className="font-mono text-xs text-ink-3">{children}</span>;
+  return <span className="shrink-0 text-xs text-ink-3">{children}</span>;
 }
 
 const shortcutList: [string, string][] = [
@@ -223,7 +368,8 @@ const shortcutList: [string, string][] = [
   ['/', 'Focus the message box'],
   ['Esc', 'Close the viewer or a dialog'],
   ['[  ]', 'Previous and next page in the viewer'],
-  ['\u2190  \u2192', 'Previous and next flashcard'],
+  ['←  →', 'Previous and next flashcard'],
+  ['K  A', 'Know a flashcard, or see it again'],
   ['1 to 6', 'Pick a quiz answer, Enter for next'],
 ];
 

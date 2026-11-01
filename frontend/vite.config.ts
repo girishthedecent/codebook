@@ -26,5 +26,14 @@ export default defineConfig({
   build: {
     target: 'es2023',
     sourcemap: false,
+    // The landing page has an entry of its own, so `/` never loads the app; the manifest tells
+    // the prerender step which files that entry needs.
+    manifest: true,
+    rollupOptions: {
+      input: {
+        index: fileURLToPath(new URL('./index.html', import.meta.url)),
+        landing: fileURLToPath(new URL('./src/landing.tsx', import.meta.url)),
+      },
+    },
   },
 });

@@ -38,7 +38,7 @@ export function LineChart({
 
   const all = series.flatMap((s) => s.values.filter((v): v is number => v !== null));
   const ticks = niceTicks(Math.min(0, ...all), Math.max(0, ...all));
-  const left = 8 + Math.max(...ticks.map((t) => formatY(t).length)) * 7;
+  const left = 8 + Math.max(...ticks.map((t) => formatY(t).length)) * 8;
   const innerW = Math.max(40, width - left - M.right);
   const innerH = height - M.top - M.bottom;
   const sx = linear([0, Math.max(1, x.length - 1)], [left, left + innerW]);
@@ -133,7 +133,7 @@ export function LineChart({
                   y={sy(t)}
                   dy="0.32em"
                   textAnchor="end"
-                  className="fill-ink-3 font-mono text-[11px]"
+                  className="fill-ink-3 font-mono text-xs"
                 >
                   {formatY(t)}
                 </text>
@@ -145,7 +145,7 @@ export function LineChart({
                 x={sx(i)}
                 y={height - 6}
                 textAnchor={i === 0 ? 'start' : i === x.length - 1 ? 'end' : 'middle'}
-                className="fill-ink-3 font-mono text-[11px]"
+                className="fill-ink-3 font-mono text-xs"
               >
                 {formatX(x[i]!)}
               </text>
@@ -182,7 +182,7 @@ export function LineChart({
                   x={sx(last.i)}
                   y={sy(last.v) - 10}
                   textAnchor="end"
-                  className="fill-ink-2 font-mono text-[11px]"
+                  className="fill-ink-2 font-mono text-xs"
                 >
                   {formatY(last.v)}
                 </text>

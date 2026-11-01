@@ -1,10 +1,12 @@
 import { useNavigate } from '@tanstack/react-router';
 import { useRef, useState } from 'react';
-import { isStudyPending, useCancelStudy, useRegenerateStudy, useStudy } from '@/api/queries/study';
+import { useQuery } from '@tanstack/react-query';
+import { flatItems } from '@/api/queries/keys';
+import { useSources } from '@/api/queries/sources';
+import { studyQueryOptions, useCancelStudy, useRegenerateStudy } from '@/api/queries/study';
 import type { StudyDetail } from '@/api/types';
-import { Link } from '@tanstack/react-router';
-import { BackLink, Button, ProgressRule, Spinner } from '@/ui';
-import { ErrorLine } from './ErrorLine';
+import { displayTitle } from '@/lib/displayTitle';
+import { BackLink, Button, Callout, ProgressRule, Skeleton, TextLink } from '@/ui';
 import { DeleteStudyDialog } from './StudyList';
 import { citationIndex, itemCount, studyContent, type StudyContent } from './data';
 import { Flashcards } from './Flashcards';
@@ -12,6 +14,7 @@ import { relativeDate } from './format';
 import { MindMap } from './MindMap';
 import { QuizPlayer } from './QuizPlayer';
 import type { StudySearch } from './search';
+import { isStale, studyState } from './state';
 import { s, typeLabel } from './strings';
 import { Summary } from './Summary';
 
@@ -33,10 +36,15 @@ export function StudyArtifact({
   search,
   setSearch,
 }: Props) {
-  const query = useStudy(studyId);
+  // Polls while the set is being made, and stops for one that looks stalled.
+  const query = useQuery({
+    ...studyQueryOptions(studyId),
+    refetchInterval: (q) =>
+      q.state.data && studyState(q.state.data).making && !isStale(q.state.data) ? 3000 : false,
+  });
 
   return (
-    <div className="px-4 py-4 pb-8 sm:px-6">
+    <div className="px-4 py-6 pb-10 sm:px-8">
       {showBack && (
         <BackLink
           to="/w/$workspaceId/study"
@@ -56,22 +64,25 @@ export function StudyArtifact({
           setSearch={setSearch}
         />
       ) : query.isError ? (
-        <div className="flex flex-col gap-3">
-          <ErrorLine error={query.error} onRetry={() => void query.refetch()} />
+        <div className="flex max-w-prose flex-col items-start gap-3">
+          <Callout error={query.error} onRetry={() => void query.refetch()} />
           {/* Phones already have the back link above. */}
           {!showBack && (
-            <Link
+            <TextLink
               to="/w/$workspaceId/study"
               params={{ workspaceId }}
-              className="text-sm text-accent underline underline-offset-2"
+              className="inline-flex min-h-10 items-center"
             >
               {s.back}
-            </Link>
+            </TextLink>
           )}
         </div>
       ) : (
-        <div className="flex items-center gap-2 text-sm text-ink-3">
-          <Spinner label="Loading study set" /> Loading
+        <div role="status" className="flex max-w-prose flex-col gap-3">
+          <span className="sr-only">{s.loadingOne}</span>
+          <Skeleton className="h-4 w-1/4" />
+          <Skeleton className="h-9 w-4/5" />
+          <Skeleton className="mt-4 h-40 w-full" />
         </div>
       )}
     </div>
@@ -97,92 +108,94 @@ function Loaded({
   const [confirm, setConfirm] = useState(false);
   const content = studyContent(study);
   const index = citationIndex(study);
-  const pending = isStudyPending(study);
+  const state = studyState(study);
+  const stale = isStale(study);
   // Regenerating swaps the buttons for a progress line, so focus would be lost with them.
   const title = useRef<HTMLHeadingElement>(null);
   const remake = () => regenerate.mutate(study.id, { onSuccess: () => title.current?.focus() });
 
   return (
     <>
-      <header className="max-w-[680px]">
-        <p className="font-mono text-xs text-ink-3">
-          {typeLabel[study.type].toLowerCase()}
+      <header className="max-w-prose">
+        <p className="text-xs text-ink-3">
+          {typeLabel[study.type]}
           {content && ` · ${countLabel(content)}`} · {relativeDate(study.createdAt)}
         </p>
-        <h2 ref={title} tabIndex={-1} className="mt-1 text-lg font-semibold outline-none">
+        <h2
+          ref={title}
+          tabIndex={-1}
+          className="heading-page mt-1 outline-none [overflow-wrap:anywhere]"
+        >
           {study.title}
         </h2>
-        {!readOnly && !pending && (
-          <div className="mt-2 flex gap-1">
-            <Button
-              size="sm"
-              variant="ghost"
-              className="h-10! sm:h-7!"
-              loading={regenerate.isPending}
-              onClick={remake}
-            >
+        <MadeFrom study={study} workspaceId={workspaceId} />
+        {!readOnly && !state.making && (
+          <div className="mt-3 flex gap-1">
+            <Button size="sm" variant="ghost" loading={regenerate.isPending} onClick={remake}>
               {s.regenerate}
             </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              className="h-10! sm:h-7!"
-              onClick={() => setConfirm(true)}
-            >
+            <Button size="sm" variant="ghost" onClick={() => setConfirm(true)}>
               {s.delete}
             </Button>
           </div>
         )}
-        {regenerate.isError && (
-          <p role="alert" className="mt-2 text-sm text-error">
-            {regenerate.error.message}
-          </p>
-        )}
+        {regenerate.isError && <Callout error={regenerate.error} className="mt-3" />}
       </header>
 
-      <div className="mt-6">
-        {pending ? (
-          <div className="max-w-[480px]">
-            <ProgressRule label={s.making} />
-            <p role="status" className="mt-3 text-sm text-ink-2">
-              {study.status === 'PENDING' ? s.queued : s.making}
+      <div className="mt-8">
+        {state.making ? (
+          <div className="max-w-md">
+            {!stale && <ProgressRule label={s.making} />}
+            <p role="status" className="mt-3 font-serif text-base text-ink-2">
+              {stale ? s.stale : study.status === 'PENDING' ? s.queued : s.making}
             </p>
-            <p className="mt-1 text-xs text-ink-3">{s.leaveHint}</p>
+            <p className="mt-1 text-xs text-ink-3">{stale ? s.staleHint : s.leaveHint}</p>
             {!readOnly && (
               <Button
                 size="sm"
-                variant="ghost"
-                className="mt-2 h-10! sm:h-7!"
+                variant="secondary"
+                className="mt-3"
                 loading={cancel.isPending}
                 onClick={() => cancel.mutate(study.id)}
               >
                 {s.cancel}
               </Button>
             )}
-            {cancel.isError && (
-              <p role="alert" className="mt-2 text-sm text-error">
-                {cancel.error.message}
-              </p>
-            )}
+            {cancel.isError && <Callout error={cancel.error} className="mt-3" />}
           </div>
-        ) : study.status === 'FAILED' ? (
-          <div className="max-w-[560px] border-l-2 border-error pl-4">
-            <p className="text-sm font-medium">{s.failed}</p>
-            {study.error && <p className="mt-1 text-sm text-ink-2">{study.error}</p>}
+        ) : state.cancelled ? (
+          <div className="max-w-md border-l-2 border-edge pl-4">
+            <p className="font-serif text-base text-ink">{s.cancelled}</p>
+            <p className="mt-1 text-sm text-ink-3">{s.cancelledHint}</p>
             {!readOnly && (
               <Button
                 size="sm"
                 variant="secondary"
-                className="mt-3 h-10! sm:h-7!"
+                className="mt-3"
                 loading={regenerate.isPending}
                 onClick={remake}
               >
-                {s.retry}
+                {s.regenerate}
               </Button>
             )}
           </div>
+        ) : state.failed ? (
+          <Callout
+            tone="error"
+            title={s.failed}
+            className="max-w-xl"
+            action={
+              !readOnly && (
+                <Button size="sm" loading={regenerate.isPending} onClick={remake}>
+                  {s.retry}
+                </Button>
+              )
+            }
+          >
+            {state.reason}
+          </Callout>
         ) : !content ? (
-          <p className="max-w-[560px] text-sm text-ink-2">{s.unreadable}</p>
+          <p className="max-w-prose font-serif text-base text-ink-2">{s.unreadable}</p>
         ) : content.type === 'QUIZ' ? (
           <QuizPlayer
             key={study.updatedAt}
@@ -216,13 +229,53 @@ function Loaded({
   );
 }
 
+/** "Made from the Express repository, focused on “routing”. 10 questions, medium difficulty." */
+function MadeFrom({ study, workspaceId }: { study: StudyDetail; workspaceId: string }) {
+  const sources = flatItems(useSources(workspaceId).data);
+  const { input } = study;
+  const names = input.sourceIds.flatMap((id) => {
+    const source = sources.find((src) => src.id === id);
+    return source ? [displayTitle(source).name] : [];
+  });
+  const from = names.length > 0 ? list(names) : s.theSources;
+  const scope = input.topic
+    ? s.focusedOn(input.topic)
+    : input.tocNodeId
+      ? s.wholeChapter
+      : input.pathPrefix
+        ? s.folder(input.pathPrefix)
+        : s.spread;
+  const size =
+    input.count === undefined
+      ? undefined
+      : study.type === 'QUIZ'
+        ? s.questionsCount(input.count)
+        : study.type === 'FLASHCARDS'
+          ? s.cardsCount(input.count)
+          : undefined;
+  const extra = [size, study.type === 'QUIZ' ? s.difficulty(input.difficulty) : undefined].filter(
+    Boolean,
+  );
+
+  return (
+    <p className="mt-3 font-serif text-base text-pretty text-ink-2">
+      {s.madeFrom} {from}: {scope}.{extra.length > 0 && ` ${capitalize(extra.join(', '))}.`}
+    </p>
+  );
+}
+
+const list = (items: string[]) =>
+  items.length < 3 ? items.join(' and ') : `${items.slice(0, -1).join(', ')} and ${items.at(-1)}`;
+
+const capitalize = (text: string) => text[0]!.toUpperCase() + text.slice(1);
+
 function countLabel(content: StudyContent) {
   const n = itemCount(content);
   switch (content.type) {
     case 'QUIZ':
-      return `${n} question${n === 1 ? '' : 's'}`;
+      return s.questionsCount(n);
     case 'FLASHCARDS':
-      return `${n} card${n === 1 ? '' : 's'}`;
+      return s.cardsCount(n);
     case 'MINDMAP':
       return `${n} topics`;
     case 'SUMMARY':

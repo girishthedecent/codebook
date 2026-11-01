@@ -1,46 +1,38 @@
-// How an agent step reads in the transcript: a past-tense verb and a short detail taken from
-// the tool's arguments, e.g. `searched sources  "leader failure"`.
+// How an agent step reads in the transcript. A step in progress is named in the present
+// ("Searching the sources"), a finished one in the past ("Searched the sources"), followed by
+// a short detail taken from the tool's arguments.
 
-const verbs: Record<string, string> = {
-  search_sources: 'searched sources',
-  read_source: 'read',
-  browse_toc: 'looked at the contents',
-  list_files: 'listed files',
-  search_code: 'searched code',
-  find_callers: 'found callers',
-  find_dependencies: 'found dependencies',
-  trace_flow: 'traced',
-  web_search: 'searched the web',
-  recall_memory: 'checked memory',
+const names: Record<string, { running: string; past: string }> = {
+  search_sources: { running: 'Searching the sources', past: 'Searched the sources' },
+  read_source: { running: 'Reading', past: 'Read' },
+  browse_toc: { running: 'Looking at the contents', past: 'Looked at the contents' },
+  list_files: { running: 'Listing files', past: 'Listed files' },
+  search_code: { running: 'Searching the code', past: 'Searched the code' },
+  find_callers: { running: 'Finding callers', past: 'Found callers' },
+  find_dependencies: { running: 'Finding dependencies', past: 'Found dependencies' },
+  trace_flow: { running: 'Tracing the call flow', past: 'Traced the call flow' },
+  web_search: { running: 'Searching the web', past: 'Searched the web' },
+  recall_memory: { running: 'Checking memory', past: 'Checked memory' },
 };
 
-// While a step runs the status line names it in the present.
-const running: Record<string, string> = {
-  search_sources: 'Searching sources',
-  read_source: 'Reading',
-  browse_toc: 'Looking at the contents',
-  list_files: 'Listing files',
-  search_code: 'Searching code',
-  find_callers: 'Finding callers',
-  find_dependencies: 'Finding dependencies',
-  trace_flow: 'Tracing the flow',
-  web_search: 'Searching the web',
-  recall_memory: 'Checking memory',
-};
+function plain(tool: string) {
+  const words = tool.replaceAll('_', ' ');
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
 
-export function stepVerb(tool: string) {
-  return verbs[tool] ?? tool.replaceAll('_', ' ');
+export function stepPast(tool: string) {
+  return names[tool]?.past ?? plain(tool);
 }
 
 export function stepRunning(tool: string) {
-  return running[tool] ?? stepVerb(tool);
+  return names[tool]?.running ?? plain(tool);
 }
 
 type Args = Record<string, unknown>;
 
 const str = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : undefined);
 const num = (v: unknown) => (typeof v === 'number' ? v : undefined);
-const quote = (s: string) => `"${clip(s, 60)}"`;
+const quote = (s: string) => `“${clip(s, 60)}”`;
 
 function clip(s: string, max: number) {
   return s.length > max ? `${s.slice(0, max - 1)}…` : s;
@@ -80,7 +72,7 @@ export function stepDetail(tool: string, raw: unknown): string {
       }
       if (page) {
         const end = num(args.pageEnd);
-        return end && end !== page ? `pp. ${page}–${end}` : `p. ${page}`;
+        return end && end !== page ? `pages ${page}–${end}` : `page ${page}`;
       }
       return str(args.tocNodeId) ? 'a section' : '';
     }
@@ -101,6 +93,11 @@ export function stepDetail(tool: string, raw: unknown): string {
     default:
       return '';
   }
+}
+
+/** What a tool reported, without the trailing `[n]` that numbers the passage it read. */
+export function stepSummary(summary: string | undefined) {
+  return summary?.replace(/\s*\[\d+\]$/, '').trim() ?? '';
 }
 
 export function formatMs(ms: number | undefined) {

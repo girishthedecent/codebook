@@ -11,3 +11,11 @@ export const icons = {
 };
 
 export const labels = en.nav;
+
+// The pages that sit beside the workspaces rather than inside one. They open in the same frame,
+// so the phone "More" tab stays lit on them.
+const accountRoots = ['/memory', '/usage', '/settings', '/admin'];
+
+export function isAccountPath(pathname: string) {
+  return accountRoots.some((root) => pathname === root || pathname.startsWith(`${root}/`));
+}

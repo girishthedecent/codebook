@@ -50,6 +50,26 @@ export function day(isoDay: string) {
   return dateFmt.format(new Date(`${isoDay}T12:00:00Z`));
 }
 
+const clockFmt = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' });
+
+/** "3:42 PM" for a timestamp in ms. */
+export function clock(at: number) {
+  return clockFmt.format(new Date(at));
+}
+
+/** A span in ms as "45 s", "4 min" or "2 h". */
+export function duration(spanMs: number) {
+  const sec = Math.max(0, Math.round(spanMs / 1000));
+  if (sec < 90) return `${sec} s`;
+  const min = Math.round(sec / 60);
+  if (min < 90) return `${min} min`;
+  return `${Math.round(min / 60)} h`;
+}
+
+export function count(n: number) {
+  return n.toLocaleString();
+}
+
 const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
 
 export function relative(iso: string) {

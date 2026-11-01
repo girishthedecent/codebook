@@ -65,16 +65,19 @@ export function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
 
-/** Runs-table columns: the same five for every suite, blank where a suite has no such number. */
-export function runColumns(overall: Record<string, unknown> | null) {
-  const o = overall ?? {};
-  return {
-    recall5: metric(o.recall5),
-    mrr: metric(o.mrr),
-    faithfulness: metric(o.faithfulness),
-    citations: metric(o.citationPrecision),
-    latency: ms(o.p50LatencyMs),
-  };
+// The metrics a runs table shows once a suite is picked. Retrieval and answer runs measure
+// different things, so each suite gets its own columns; an unknown suite shows its headline.
+const runColumnKeys: Record<string, string[]> = {
+  retrieval: ['recall5', 'recall10', 'mrr', 'ndcg10', 'hit5'],
+  answer: ['correctness', 'faithfulness', 'citationPrecision', 'p50LatencyMs'],
+};
+
+export function runColumnsFor(suite: Suite): MetricDef[] {
+  const defs = metricsFor(suite);
+  const picked = (runColumnKeys[suite] ?? [])
+    .map((key) => defs.find((d) => d.key === key))
+    .filter((d): d is MetricDef => d !== undefined);
+  return picked.length > 0 ? picked : [headlineFor(suite)];
 }
 
 export const caseTypes = ['BOOK', 'CODE', 'MULTI_HOP', 'CROSS_SOURCE', 'NO_ANSWER'] as const;

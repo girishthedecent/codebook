@@ -1,4 +1,4 @@
-import type { StudyType } from '@/api/types';
+import type { Study, StudyType } from '@/api/types';
 
 // Study copy. Sentence case, plain words.
 export const s = {
@@ -6,8 +6,15 @@ export const s = {
   newSet: 'New study set',
   empty: 'No study sets yet.',
   emptyHint: 'Make a quiz, flashcards, a mind map or a summary from your sources.',
-  guestNote: 'Sign in to make your own study sets.',
-  demoNote: 'The demo workspace is read-only. Make your own workspace to create study sets.',
+  guestNote: "Sets made from the demo's sources.",
+  demoNote: 'The demo workspace is read-only. Make a workspace of your own to create study sets.',
+  signIn: 'Make your own — sign in',
+  all: 'All',
+  loading: 'Loading study sets',
+  loadingOne: 'Loading the study set',
+  theSources: 'its sources',
+  filterLabel: 'Filter by kind',
+  cancelDialog: 'Keep it',
   pickOne: 'Pick a study set to open it.',
   back: 'Study',
   loadMore: 'Show older',
@@ -15,9 +22,13 @@ export const s = {
   delete: 'Delete',
   deleteTitle: 'Delete this study set?',
   deleteBody: 'It is removed for good. The sources stay as they are.',
-  making: 'Making this set. It usually takes under a minute.',
-  leaveHint:
-    'You can leave this page; it keeps going and shows up in the list when it is done. Or cancel it.',
+  making:
+    'Reading the sources, writing the set, then checking each item against what it cites. It usually takes under a minute.',
+  leaveHint: 'You can leave this page; it keeps going and shows up in the list when it is done.',
+  stale: 'This is taking longer than usual and may have stalled.',
+  staleHint: 'Cancel it and make it again, or check back in a while.',
+  cancelled: 'You cancelled this set.',
+  cancelledHint: 'Nothing was kept. Make it again whenever you like.',
   cancel: 'Cancel',
   retry: 'Try again',
   gone: 'This study set no longer exists. It may have been deleted.',
@@ -29,6 +40,16 @@ export const s = {
   offline: 'You seem to be offline.',
   queued: 'Waiting to start.',
   failed: "This set couldn't be made.",
+  noSource: 'no source',
+  noSourceHint: "The model didn't tie this to a passage, so treat it with care.",
+  madeFrom: 'Made from',
+  spread: 'a spread of passages across the sources',
+  wholeChapter: 'one chapter',
+  folder: (path: string) => `the ${path} folder`,
+  focusedOn: (topic: string) => `focused on “${topic}”`,
+  difficulty: (d: string) => `${d} difficulty`,
+  questionsCount: (n: number) => `${n} ${n === 1 ? 'question' : 'questions'}`,
+  cardsCount: (n: number) => `${n} ${n === 1 ? 'card' : 'cards'}`,
   noSources: 'Add a source first; study sets are made from what you have indexed.',
   sourcesLink: 'Go to sources',
   sourcesIndexing:
@@ -45,7 +66,14 @@ export const s = {
     count: (type: StudyType) => (type === 'QUIZ' ? 'Questions' : 'Cards'),
     difficulty: 'Difficulty',
     submit: 'Make it',
+    cancel: 'Cancel',
+    optional: 'optional',
     tooManySources: 'Pick at most 10 sources.',
+    firstTen: 'You have more than 10 sources, so the first 10 are picked. Change the picks below.',
+    sampled:
+      'Without a topic, the set draws on a spread of passages across the sources, not on every page.',
+    limit: (reset: string) => `You have reached today's limit for study sets. It resets ${reset}.`,
+    limitSoon: 'You have reached the limit for study sets. Try again a little later.',
     noneSelected: 'Pick at least one source.',
     selectAll: 'Select all',
     selectNone: 'Clear',
@@ -59,8 +87,9 @@ export const s = {
     yourAnswer: 'Your answer',
     answer: 'Answer',
     score: (right: number, n: number) => `${right} of ${n}`,
-    scoreLabel: 'correct',
+    scoreLabel: 'correct. The answers are below, marked.',
     missed: 'Missed',
+    review: 'Every question',
     allRight: 'You got every question.',
     again: 'Take it again',
     resumed: 'Picked up where you left off.',
@@ -92,7 +121,7 @@ export const s = {
     expand: 'Expand',
     collapse: 'Collapse',
     selected: 'Selected',
-    hint: 'Drag to move, scroll to zoom, click a topic to fold it.',
+    hint: 'Drag to move, hold Ctrl or ⌘ and scroll to zoom, click a topic to fold it.',
   },
   summary: { keyTerms: 'Key terms' },
 };
@@ -116,4 +145,18 @@ export const statusLabel = {
   RUNNING: 'Making',
   DONE: 'Ready',
   FAILED: 'Failed',
+  CANCELLED: 'Cancelled',
 } as const;
+
+/** Why a set failed, in words that say what to do. Keyed by the server's error code. */
+export const errorCopy: Record<NonNullable<Study['errorCode']>, string> = {
+  CANCELLED: 'You cancelled this set.',
+  VALIDATION_FAILED:
+    "The draft didn't pass its checks, so nothing was kept. Making it again usually works.",
+  MODEL_UNAVAILABLE: "The models couldn't answer just now. Try again in a few minutes.",
+  TIMEOUT: 'The model took too long to answer. Try again in a few minutes.',
+  NO_MATERIAL:
+    'There was nothing indexed to read for this selection. Check that the sources have finished indexing, or choose a wider focus.',
+  QUEUE_FAILED: "It couldn't be started. Try again in a moment.",
+  GENERATION_FAILED: 'Something went wrong while making it. Try again in a few minutes.',
+};

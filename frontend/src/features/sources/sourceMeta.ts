@@ -1,7 +1,6 @@
 import type { Source, SourceStatus, SourceType } from '@/api/types';
-import { strings } from './strings';
 
-/** The small mono label in front of a source title. */
+/** The small mono label in front of a source title. Kept for the search results. */
 export const typeMark: Record<SourceType, string> = {
   PDF: 'book',
   GITHUB_REPO: 'repo',
@@ -10,38 +9,6 @@ export const typeMark: Record<SourceType, string> = {
 
 export function isIndexing(status: SourceStatus) {
   return status === 'PENDING' || status === 'PROCESSING';
-}
-
-type RepoOrigin = { owner?: string; repo?: string; ref?: string; defaultBranch?: string };
-type WebOrigin = { url?: string };
-type Stats = { pages?: number; files?: number; chunks?: number; commitSha?: string };
-
-/** "491 pages", "100 files · 1c6f1b0", "expressjs.com". */
-export function secondaryLine(source: Source): string {
-  const stats = source.stats as Stats;
-  switch (source.type) {
-    case 'PDF':
-      return stats.pages ? `${stats.pages} pages` : '';
-    case 'GITHUB_REPO': {
-      const origin = source.origin as RepoOrigin;
-      const name = origin.owner && origin.repo ? `${origin.owner}/${origin.repo}` : '';
-      const sha = stats.commitSha?.slice(0, 7);
-      const files = stats.files ? `${stats.files} files` : '';
-      return [name, files, sha].filter(Boolean).join(' · ');
-    }
-    case 'WEBSITE': {
-      const host = hostOf((source.origin as WebOrigin).url);
-      const pages = stats.pages && stats.pages > 1 ? `${stats.pages} pages` : '';
-      return [host, pages].filter(Boolean).join(' · ');
-    }
-  }
-}
-
-/** "Indexing · embedding" while it runs, the plain status otherwise. */
-export function statusText(source: Source): string {
-  if (source.status === 'PROCESSING')
-    return `${strings.status.PROCESSING} · ${strings.stage[source.stage]}`;
-  return strings.status[source.status];
 }
 
 export function hostOf(url: string | undefined) {
@@ -53,22 +20,48 @@ export function hostOf(url: string | undefined) {
   }
 }
 
-/** Finds the source a 409 "already in the workspace" refers to, when it can be told apart. */
-export function findDuplicate(
-  sources: Source[],
-  input: { type: 'GITHUB_REPO'; owner: string; repo: string } | { type: 'WEBSITE'; url: string },
-) {
+export type NewSource =
+  | { type: 'GITHUB_REPO'; owner: string; repo: string; ref?: string }
+  | { type: 'WEBSITE'; url: string };
+
+const COMMIT = /^[0-9a-f]{7,40}$/i;
+
+/**
+ * Finds the source that `input` would duplicate, the way the backend does: a repository is
+ * the same one at the same ref (no ref means the default branch, and a short commit matches
+ * the full one), a page is the same one without its #fragment.
+ */
+export function findDuplicate(sources: Source[], input: NewSource) {
   return sources.find((s) => {
     if (s.type !== input.type) return false;
     if (input.type === 'GITHUB_REPO') {
-      const o = s.origin as RepoOrigin;
+      const o = s.origin as { owner?: string; repo?: string; ref?: string; defaultBranch?: string };
       return (
         o.owner?.toLowerCase() === input.owner.toLowerCase() &&
-        o.repo?.toLowerCase() === input.repo.toLowerCase()
+        o.repo?.toLowerCase() === input.repo.toLowerCase() &&
+        sameRef(o, input.ref)
       );
     }
-    return normalizeUrl((s.origin as WebOrigin).url) === normalizeUrl(input.url);
+    const stored = withoutFragment((s.origin as { url?: string }).url);
+    return stored !== undefined && stored === withoutFragment(input.url);
   });
+}
+
+function sameRef(stored: { ref?: string; defaultBranch?: string }, wanted: string | undefined) {
+  const ref = wanted?.trim();
+  if (!ref) return stored.ref === stored.defaultBranch;
+  if (stored.ref === ref) return true;
+  return COMMIT.test(ref) && !!stored.ref?.toLowerCase().startsWith(ref.toLowerCase());
+}
+
+function withoutFragment(raw: string | undefined) {
+  try {
+    const url = new URL((raw ?? '').trim());
+    url.hash = '';
+    return url.href;
+  } catch {
+    return undefined;
+  }
 }
 
 const GITHUB_SHORT = /^([A-Za-z0-9](?:[A-Za-z0-9-]{0,38}))\/([A-Za-z0-9._-]{1,100})$/;
@@ -121,14 +114,6 @@ function safeDecode(part: string) {
     return decodeURIComponent(part);
   } catch {
     return part;
-  }
-}
-
-function normalizeUrl(raw: string | undefined) {
-  try {
-    return new URL((raw ?? '').trim()).href;
-  } catch {
-    return raw;
   }
 }
 

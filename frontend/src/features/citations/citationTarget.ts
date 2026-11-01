@@ -27,7 +27,7 @@ export function citationDestination(c: Citation): CitationDestination {
   return { kind: 'none' };
 }
 
-/** "DDIA · p. 157", "lib/router/index.js:42–61", "expressjs.com · Routing". */
+/** "Title · p. 90", "model.py:29–76", "huggingface.co · Text generation". */
 export function citationLabel(c: Citation): string {
   if (c.pageStart) {
     const pages =
@@ -52,4 +52,26 @@ function hostOf(url: string) {
   } catch {
     return url;
   }
+}
+
+function pages(c: Citation) {
+  if (!c.pageStart) return undefined;
+  return c.pageEnd && c.pageEnd !== c.pageStart
+    ? `pp. ${c.pageStart}–${c.pageEnd}`
+    : `p. ${c.pageStart}`;
+}
+
+function lines(c: Citation) {
+  if (!c.lineStart) return undefined;
+  return c.lineEnd && c.lineEnd !== c.lineStart
+    ? `lines ${c.lineStart}–${c.lineEnd}`
+    : `line ${c.lineStart}`;
+}
+
+/** A caption as a printed listing has it: "Title, p. 157", "model.py, lines 42–61", "Title, Routing". */
+export function citationCaption(c: Citation): string {
+  const place = pages(c) ?? lines(c) ?? c.heading;
+  const what = c.path && c.sourceType === 'GITHUB_REPO' ? c.path : c.sourceTitle;
+  if (c.kind === 'WEB' && c.url && !place) return hostOf(c.url);
+  return place ? `${what}, ${place}` : what;
 }

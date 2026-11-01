@@ -3,35 +3,64 @@ import { Link, useNavigate } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { flatItems } from '@/api/queries/keys';
 import { useConversations, useCreateConversation } from '@/api/queries/conversations';
-import { useSources } from '@/api/queries/sources';
+import { useDemo } from '@/api/queries/demo';
 import { useWorkspace } from '@/api/queries/workspaces';
 import type { Source } from '@/api/types';
 import { useMe } from '@/auth/useMe';
+import { Button, Callout, EmptyState, SectionHeading, Skeleton, SourceBadge } from '@/ui';
 import { useBreakpoint } from '@/lib/breakpoints';
+import { displayTitle } from '@/lib/displayTitle';
 import { Composer } from './Composer';
-import { clearDraft } from './drafts';
+import { clearDraft, saveDraft } from './drafts';
 import { handOff } from './handoff';
+import { LimitPanel } from './LimitPanel';
 import { chat } from './strings';
+import { useAskLimit } from './useAskLimit';
+import { useWorkspaceSources } from './useWorkspaceSources';
 import { seedMessages } from './useMessages';
 
-/** Questions worth asking, from what the workspace holds. Plain, specific, at most four. */
+/** Questions to start with for a workspace the curator didn't write any for. */
 function suggestions(sources: Source[]): string[] {
   const ready = sources.filter((s) => s.status === 'READY');
-  const out: string[] = [];
   const book = ready.find((s) => s.type === 'PDF');
   const repo = ready.find((s) => s.type === 'GITHUB_REPO');
   const site = ready.find((s) => s.type === 'WEBSITE');
-  if (book) out.push(`What are the main ideas in ${book.title}?`);
-  if (repo) out.push(`Where does a request enter ${repo.title}, and what happens next?`);
-  if (book && repo) out.push(`Which ideas from ${book.title} show up in ${repo.title}?`);
-  if (site) out.push(`What does ${site.title} explain, in short?`);
-  if (repo && out.length < 4) out.push(`How is ${repo.title} organized?`);
+  const bookName = book && displayTitle(book).name;
+  const repoName = repo && displayTitle(repo).name;
+  const out: string[] = [];
+  if (bookName) out.push(`What is “${bookName}” mostly about, and what does it ask of the reader?`);
+  if (repoName) out.push(`How is ${repoName} organised, and where would I start reading?`);
+  if (bookName && repoName) {
+    out.push(`Which ideas in “${bookName}” show up in the code of ${repoName}?`);
+  }
+  if (site) out.push(`What does “${displayTitle(site).name}” cover, in a few sentences?`);
   return out.slice(0, 4);
 }
 
+const number = (v: unknown) => (typeof v === 'number' && v >= 0 ? v : undefined);
+const plural = (n: number, one: string, many = `${one}s`) =>
+  `${n.toLocaleString()} ${n === 1 ? one : many}`;
+
+/** What a source holds, in a few words: "491 pages", "100 files, 155 symbols". */
+function counts(source: Source): string {
+  if (source.status === 'FAILED') return 'Could not be read';
+  if (source.status !== 'READY') return 'Still being read';
+  const stats = source.stats as { pages?: unknown; files?: unknown; graph?: { symbols?: unknown } };
+  if (source.type === 'GITHUB_REPO') {
+    const files = number(stats.files);
+    const symbols = number(stats.graph?.symbols);
+    return [files !== undefined && plural(files, 'file'), symbols && plural(symbols, 'symbol')]
+      .filter(Boolean)
+      .join(', ');
+  }
+  const pages = number(stats.pages);
+  return pages === undefined ? '' : plural(pages, 'page');
+}
+
 /**
- * The workspace home: a fresh question. Asking creates the conversation and moves to its
- * page, which starts the answer at once (the question is handed over, not re-typed).
+ * The workspace home, set out like a title page: the name, what it holds, and questions to
+ * begin with. Nothing exists on the server until a question is asked; then the conversation is
+ * made and the question is handed to its page, which starts the answer at once.
  */
 export function ChatHome({ workspaceId }: { workspaceId: string }) {
   const navigate = useNavigate();
@@ -39,16 +68,19 @@ export function ChatHome({ workspaceId }: { workspaceId: string }) {
   const { isGuest } = useMe();
   const phone = useBreakpoint() === 'phone';
   const workspace = useWorkspace(workspaceId);
-  const sourcesQuery = useSources(workspaceId);
-  const sources = flatItems(sourcesQuery.data);
+  const demo = useDemo().data;
+  const inDemo = demo?.workspace.id === workspaceId;
+  const { sources, known: sourcesKnown } = useWorkspaceSources(workspaceId);
   const create = useCreateConversation(workspaceId);
-  const [error, setError] = useState<string>();
-  const [restore, setRestore] = useState<{ text: string; at: number }>();
+  const { limit, expired } = useAskLimit();
+  const [failed, setFailed] = useState(false);
+  // Bumped to make the box read its draft again after a question was put back.
+  const [boxKey, setBoxKey] = useState(0);
   const draftScope = `new:${workspaceId}`;
 
   const ask = (question: string, useMemory: boolean, typed = true) => {
-    if (create.isPending) return;
-    setError(undefined);
+    if (create.isPending || limit) return;
+    setFailed(false);
     create.mutate(undefined, {
       onSuccess: (conversation) => {
         seedMessages(client, { ...conversation, messages: { items: [], nextCursor: null } });
@@ -59,75 +91,146 @@ export function ChatHome({ workspaceId }: { workspaceId: string }) {
           params: { workspaceId, conversationId: conversation.id },
         });
       },
-      onError: (e) => {
-        setError(e.message);
+      onError: () => {
+        setFailed(true);
         // The box was emptied when it sent; a typed question goes back so it isn't lost.
-        if (typed) setRestore({ text: question, at: Date.now() });
+        if (typed) {
+          saveDraft(draftScope, question);
+          setBoxKey((k) => k + 1);
+        }
       },
     });
   };
 
-  const ideas = suggestions(sources);
-  const noSources = sources.length === 0 && sourcesQuery.isSuccess;
+  const name = workspace.data?.name ?? (inDemo ? demo.workspace.name : undefined);
+  const description = workspace.data?.description ?? (inDemo ? demo.workspace.description : null);
+  const ideas =
+    inDemo && demo.starterQuestions.length > 0 ? demo.starterQuestions : suggestions(sources);
+  const empty = sourcesKnown && sources.length === 0;
 
   return (
     <div className="flex min-h-full flex-1 flex-col">
-      <div className="mx-auto w-full max-w-[720px] flex-1 px-4 pt-6 pb-6 sm:px-6 sm:pt-20">
-        <p className="min-h-4 font-mono text-xs text-ink-3 max-sm:hidden">{workspace.data?.name}</p>
-        <h1 className="mt-2 min-h-7 font-serif text-xl font-semibold text-ink">
-          {sourcesQuery.isPending ? '' : noSources ? chat.homeEmpty : chat.homeLine}
-        </h1>
-        {noSources && (
-          <Link
-            to="/w/$workspaceId/sources"
-            params={{ workspaceId }}
-            className="mt-3 inline-flex text-sm text-accent underline underline-offset-2 max-sm:min-h-11 max-sm:items-center"
+      <div className="mx-auto w-full max-w-narrow flex-1 px-4 pt-8 pb-8 sm:px-6 sm:pt-16">
+        <header>
+          {name ? (
+            <h1 className="heading-display text-ink [overflow-wrap:anywhere]">{name}</h1>
+          ) : (
+            <Skeleton className="h-11 w-3/5" />
+          )}
+          {description && (
+            <p className="mt-3 max-w-prose font-serif text-base text-pretty text-ink-2">
+              {description}
+            </p>
+          )}
+        </header>
+
+        {empty && (
+          <EmptyState
+            className="mt-6"
+            action={
+              <Button asChild variant="secondary">
+                <Link to="/w/$workspaceId/sources" params={{ workspaceId }}>
+                  {chat.home.addSource}
+                </Link>
+              </Button>
+            }
           >
-            {chat.addSource}
-          </Link>
+            {chat.home.noSources}
+          </EmptyState>
+        )}
+
+        {sources.length > 0 && (
+          <section className="mt-10" aria-labelledby="home-sources">
+            <SectionHeading id="home-sources" hint={chat.home.sourcesHint}>
+              {chat.home.sourcesHeading}
+            </SectionHeading>
+            <ul>
+              {sources.map((source) => (
+                <SourceLine key={source.id} workspaceId={workspaceId} source={source} />
+              ))}
+            </ul>
+          </section>
         )}
 
         {ideas.length > 0 && (
-          <ul className="mt-8 border-t border-rule">
-            {ideas.map((q) => (
-              <li key={q} className="border-b border-rule">
-                <button
-                  type="button"
-                  disabled={create.isPending}
-                  onClick={() => ask(q, !isGuest, false)}
-                  className="w-full py-2.5 text-left font-serif text-base text-ink-2 hover:text-ink disabled:opacity-50 max-sm:min-h-11"
-                >
-                  {q}
-                </button>
-              </li>
-            ))}
-          </ul>
+          <section className="mt-10" aria-labelledby="home-ideas">
+            <SectionHeading id="home-ideas">{chat.home.ideasHeading}</SectionHeading>
+            <ol>
+              {ideas.map((question, i) => (
+                <li key={question}>
+                  <button
+                    type="button"
+                    disabled={create.isPending || Boolean(limit)}
+                    onClick={() => ask(question, !isGuest, false)}
+                    className="group flex min-h-11 w-full items-baseline gap-3 py-2 text-left disabled:opacity-50"
+                  >
+                    <span className="w-5 shrink-0 text-right font-serif text-base text-ink-3 oldstyle-nums tabular-nums">
+                      {i + 1}.
+                    </span>
+                    <span className="font-serif text-base text-ink group-hover:underline group-hover:decoration-ink-3 group-hover:underline-offset-2">
+                      {question}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ol>
+          </section>
         )}
 
         {create.isPending && (
           <p className="mt-4 text-xs text-ink-3" role="status">
-            {chat.starting}
+            {chat.home.starting}
           </p>
         )}
-        {error && (
-          <p className="mt-4 text-xs text-error" role="alert">
-            {error}
-          </p>
+        {failed && (
+          <Callout tone="error" className="mt-4">
+            {chat.home.createFailed}
+          </Callout>
         )}
 
         {phone && <RecentConversations workspaceId={workspaceId} />}
       </div>
 
-      <Composer
-        draftScope={draftScope}
-        streaming={false}
-        isGuest={isGuest}
-        focusOnMount
-        restore={restore}
-        onSend={(q, m) => ask(q, m)}
-        onStop={() => undefined}
-      />
+      {limit ? (
+        <LimitPanel limit={limit} isGuest={isGuest} onExpired={expired} />
+      ) : (
+        <Composer
+          key={boxKey}
+          draftScope={draftScope}
+          streaming={false}
+          isGuest={isGuest}
+          hasSources={sources.length > 0}
+          focusOnMount
+          onSend={(q, m) => ask(q, m)}
+          onStop={() => undefined}
+        />
+      )}
     </div>
+  );
+}
+
+function SourceLine({ workspaceId, source }: { workspaceId: string; source: Source }) {
+  const { name, ref } = displayTitle(source);
+  const detail = counts(source);
+  return (
+    <li>
+      <Link
+        to="/w/$workspaceId/sources/$sourceId"
+        params={{ workspaceId, sourceId: source.id }}
+        className="group flex min-h-11 items-baseline gap-3 py-2"
+      >
+        <SourceBadge type={source.type} className="translate-y-1.5 self-center" />
+        <span className="min-w-0 font-serif text-base text-ink group-hover:underline group-hover:decoration-ink-3 group-hover:underline-offset-2 [overflow-wrap:anywhere]">
+          {name}
+          {ref && <span className="ml-1.5 text-xs text-ink-3 tabular-nums">{ref}</span>}
+        </span>
+        <span
+          aria-hidden
+          className="h-0 min-w-4 flex-1 -translate-y-1 border-b border-dotted border-edge"
+        />
+        <span className="shrink-0 text-xs text-ink-3 tabular-nums">{detail}</span>
+      </Link>
+    </li>
   );
 }
 
@@ -136,11 +239,11 @@ function RecentConversations({ workspaceId }: { workspaceId: string }) {
   const recent = flatItems(useConversations(workspaceId).data).slice(0, 6);
   if (recent.length === 0) return null;
   return (
-    <section className="mt-10">
-      <h2 className="text-xs font-medium text-ink-3">{chat.recent}</h2>
-      <ul className="mt-2 border-t border-rule">
+    <section className="mt-10" aria-labelledby="home-recent">
+      <SectionHeading id="home-recent">{chat.conversations}</SectionHeading>
+      <ul>
         {recent.map((c) => (
-          <li key={c.id} className="border-b border-rule">
+          <li key={c.id}>
             <Link
               to="/w/$workspaceId/c/$conversationId"
               params={{ workspaceId, conversationId: c.id }}

@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { CaretLeft, CaretRight } from '@phosphor-icons/react';
+import { CaretLeft, CaretRight, MagnifyingGlassPlus } from '@phosphor-icons/react';
 import { cn } from '@/lib/cn';
+import { Button } from '@/ui';
 import { s } from './strings';
 
 export type Zoom = 'fit' | 1 | 1.5;
@@ -11,7 +12,10 @@ const zooms: Array<{ value: Zoom; label: string }> = [
   { value: 1.5, label: '150%' },
 ];
 
-/** Page input, previous/next, and zoom when the real page is shown. */
+/**
+ * Page input, previous/next, and zoom when the real page is shown. On a phone the bar is
+ * "‹ 12 / 189 ›" with one zoom button that steps through the sizes.
+ */
 export function PageBar({
   page,
   pageCount,
@@ -26,20 +30,19 @@ export function PageBar({
   onZoom?: (zoom: Zoom) => void;
 }) {
   const [draft, setDraft] = useState<string | null>(null);
-  const iconButton =
-    'flex size-8 items-center justify-center rounded-sm text-ink-2 hover:bg-paper-2 hover:text-ink disabled:opacity-40 max-sm:size-11';
+  const current = zooms.findIndex((z) => z.value === zoom);
 
   return (
-    <div className="flex h-10 shrink-0 items-center gap-1 border-b max-sm:h-12 border-rule px-2 text-xs text-ink-2">
-      <button
-        type="button"
-        className={iconButton}
+    <div className="flex shrink-0 items-center gap-1 border-b border-rule px-2 py-1 text-xs text-ink-2">
+      <Button
+        variant="ghost"
+        size="sm"
         aria-label={s.prevPage}
         disabled={page <= 1}
         onClick={() => onGo(page - 1)}
       >
-        <CaretLeft size={14} />
-      </button>
+        <CaretLeft size={14} aria-hidden />
+      </Button>
       <form
         className="flex items-center gap-1.5"
         onSubmit={(e) => {
@@ -58,40 +61,57 @@ export function PageBar({
           value={draft ?? String(page)}
           onChange={(e) => setDraft(e.target.value.replace(/\D/g, ''))}
           onBlur={() => setDraft(null)}
-          className="h-7 w-12 max-sm:h-10 rounded-xs border border-rule-2 bg-paper text-center font-serif text-sm [font-variant-numeric:oldstyle-nums]"
+          className="h-8 w-12 rounded-xs border border-edge bg-paper text-center font-serif text-sm oldstyle-nums max-sm:h-11 max-sm:w-14 max-sm:text-base"
         />
         {pageCount && (
-          <span className="font-serif text-sm [font-variant-numeric:oldstyle-nums]">
-            {s.of} {pageCount}
+          <span className="font-serif text-sm oldstyle-nums">
+            <span aria-hidden className="sm:hidden">
+              / {pageCount}
+            </span>
+            <span className="max-sm:sr-only">
+              {s.of} {pageCount}
+            </span>
           </span>
         )}
       </form>
-      <button
-        type="button"
-        className={iconButton}
+      <Button
+        variant="ghost"
+        size="sm"
         aria-label={s.nextPage}
         disabled={pageCount !== undefined && page >= pageCount}
         onClick={() => onGo(page + 1)}
       >
-        <CaretRight size={14} />
-      </button>
+        <CaretRight size={14} aria-hidden />
+      </Button>
       {zoom !== undefined && onZoom && (
-        <div role="group" aria-label={s.zoom} className="ml-auto flex items-center">
-          {zooms.map((z) => (
-            <button
-              key={String(z.value)}
-              type="button"
-              aria-pressed={zoom === z.value}
-              onClick={() => onZoom(z.value)}
-              className={cn(
-                'h-7 rounded-xs px-2 hover:bg-paper-2 max-sm:h-10 max-sm:px-2.5',
-                zoom === z.value ? 'font-medium text-ink' : 'text-ink-3',
-              )}
-            >
-              {z.label}
-            </button>
-          ))}
-        </div>
+        <>
+          <div role="group" aria-label={s.zoom} className="ml-auto flex items-center max-sm:hidden">
+            {zooms.map((z) => (
+              <button
+                key={String(z.value)}
+                type="button"
+                aria-pressed={zoom === z.value}
+                onClick={() => onZoom(z.value)}
+                className={cn(
+                  'h-8 rounded-xs px-2 hover:bg-paper-2',
+                  zoom === z.value ? 'font-medium text-ink' : 'text-ink-3',
+                )}
+              >
+                {z.label}
+              </button>
+            ))}
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="ml-auto sm:hidden"
+            aria-label={`${s.zoom}: ${zooms[current]?.label}`}
+            onClick={() => onZoom(zooms[(current + 1) % zooms.length]!.value)}
+          >
+            <MagnifyingGlassPlus size={16} aria-hidden />
+            {zooms[current]?.label === s.fitWidth ? 'Fit' : zooms[current]?.label}
+          </Button>
+        </>
       )}
     </div>
   );

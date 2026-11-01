@@ -29,8 +29,15 @@ export function BookView(props: BookViewProps) {
 
   if (noPdf !== sourceId) {
     return (
-      <Suspense fallback={<Frame page={page} onGo={go} loading />}>
-        <PdfBook {...props} onUnavailable={unavailable} />
+      <Suspense
+        fallback={
+          <div className="flex h-full min-h-0 flex-col">
+            <PageBar page={page} onGo={go} />
+            <ProgressRule label={s.loading} />
+          </div>
+        }
+      >
+        <PdfBook key={sourceId} {...props} onUnavailable={unavailable} />
       </Suspense>
     );
   }
@@ -38,23 +45,6 @@ export function BookView(props: BookViewProps) {
     <div className="flex h-full min-h-0 flex-col">
       <PageBar page={page} onGo={go} />
       <TextPage {...props} />
-    </div>
-  );
-}
-
-function Frame({
-  page,
-  onGo,
-  loading,
-}: {
-  page: number;
-  onGo: (p: number) => void;
-  loading?: boolean;
-}) {
-  return (
-    <div className="flex h-full min-h-0 flex-col">
-      <PageBar page={page} onGo={onGo} />
-      {loading && <ProgressRule label={s.loading} />}
     </div>
   );
 }
@@ -68,10 +58,10 @@ function TextPage({ sourceId, page, snippet }: Omit<BookViewProps, 'onPage'>) {
     <>
       {content.isPending && <ProgressRule label={s.loading} />}
       <div className="min-h-0 flex-1 overflow-auto px-5 py-5">
-        {data?.excerpt && <p className="mb-4 font-mono text-xs text-ink-3">{s.excerpt}</p>}
+        {data?.excerpt && <p className="mb-4 text-xs text-ink-3">{s.excerpt}</p>}
         {data &&
           (data.text.trim() ? (
-            <Highlighted text={data.text} snippet={snippet} className="prose max-w-[64ch]" />
+            <Highlighted text={data.text} snippet={snippet} className="prose" />
           ) : (
             <p className="text-ink-3">{s.noText}</p>
           ))}

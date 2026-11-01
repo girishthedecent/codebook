@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { isApiError } from '@/api/client';
-import { useNavigate, useParams } from '@tanstack/react-router';
+import { useNavigate } from '@tanstack/react-router';
 import { CaretUpDown, Check, Stack } from '@phosphor-icons/react';
 import { useDemo } from '@/api/queries/demo';
 import { flatItems } from '@/api/queries/keys';
 import { useWorkspace, useWorkspaces } from '@/api/queries/workspaces';
 import type { Workspace } from '@/api/types';
-import { signOut, useMe } from '@/auth';
+import { useMe } from '@/auth';
+import { useSignOut } from '@/auth/useSignOut';
 import { Menu, MenuItem, MenuLabel, MenuSeparator } from '@/ui';
 import { cn } from '@/lib/cn';
 import { forgetWorkspace } from './lastWorkspace';
@@ -24,9 +25,15 @@ type OpenDialog = 'new' | 'rename' | 'delete' | null;
  * The sidebar header: the current workspace's name, and a menu to switch, create, rename or
  * delete workspaces plus the account rows. Guests only ever see the demo workspace.
  */
-export function WorkspaceSwitcher({ collapsed }: { collapsed: boolean }) {
+export function WorkspaceSwitcher({
+  workspaceId,
+  collapsed,
+}: {
+  workspaceId: string;
+  collapsed: boolean;
+}) {
   const navigate = useNavigate();
-  const { workspaceId } = useParams({ from: '/w/$workspaceId' });
+  const { signOut } = useSignOut();
   const { me, isGuest } = useMe();
   const currentQuery = useWorkspace(workspaceId);
   const own = flatItems(useWorkspaces().data);
@@ -34,10 +41,10 @@ export function WorkspaceSwitcher({ collapsed }: { collapsed: boolean }) {
   const [dialog, setDialog] = useState<OpenDialog>(null);
   const trigger = useRef<HTMLButtonElement>(null);
 
-  // The workspace routes never serve the demo, so its name comes from the demo payload.
+  // The demo is shared and read-only: anyone can open it, but only the seed changes it.
   const inDemo = demo?.id === workspaceId;
   const current = currentQuery.data;
-  const missing = !inDemo && isApiError(currentQuery.error, 404);
+  const missing = isApiError(currentQuery.error, 404);
   useEffect(() => {
     // `/w` would otherwise keep reopening a workspace that no longer exists.
     if (missing) forgetWorkspace(workspaceId);
@@ -73,8 +80,8 @@ export function WorkspaceSwitcher({ collapsed }: { collapsed: boolean }) {
             aria-label={`${t.label}: ${name}`}
             title={collapsed ? name : undefined}
             className={cn(
-              'flex h-12 w-full items-center gap-2 text-left text-sm outline-none',
-              'hover:bg-paper-3 focus-visible:bg-paper-3',
+              'flex h-12 w-full items-center gap-2 text-left text-sm',
+              'hover:bg-paper-3 focus-visible:bg-paper-3 focus-visible:outline-offset-[-2px]',
               collapsed ? 'justify-center px-0' : 'px-4',
             )}
           >
@@ -131,14 +138,7 @@ export function WorkspaceSwitcher({ collapsed }: { collapsed: boolean }) {
         ) : (
           <>
             <MenuItem onSelect={() => void navigate({ href: '/settings' })}>{t.settings}</MenuItem>
-            <MenuItem
-              onSelect={async () => {
-                await signOut();
-                void navigate({ to: '/', replace: true });
-              }}
-            >
-              {t.signOut}
-            </MenuItem>
+            <MenuItem onSelect={() => void signOut()}>{t.signOut}</MenuItem>
           </>
         )}
       </Menu>

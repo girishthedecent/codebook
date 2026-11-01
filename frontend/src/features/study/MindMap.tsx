@@ -117,7 +117,7 @@ function OutlineItem({
           <span className="size-8 shrink-0" />
         )}
         <span className="py-2.5">
-          {node.label} <Cites citations={citationsOf(node, index)} />
+          {node.label} <Cites citations={citationsOf(node, index)} uncited={node.uncited} />
           {hasChildren && !open && (
             <span className="ml-1 font-mono text-xs text-ink-3">+{node.children.length}</span>
           )}
@@ -244,11 +244,13 @@ function MapCanvas({ root, folded, toggle, index }: TreeProps) {
     if (rect) zoomAt(rect.width / 2, rect.height / 2, factor);
   };
 
-  // Wheel zooms around the cursor. Registered by hand so it can cancel the page scroll.
+  // Ctrl or ⌘ with the wheel zooms around the cursor (a pinch on a trackpad arrives the same
+  // way); a plain wheel scrolls the page. Registered by hand so it can cancel the page scroll.
   useEffect(() => {
     const el = box.current;
     if (!el) return;
     const onWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey) return;
       e.preventDefault();
       const rect = el.getBoundingClientRect();
       const factor = Math.exp(-e.deltaY * 0.0015);
@@ -310,7 +312,7 @@ function MapCanvas({ root, folded, toggle, index }: TreeProps) {
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
-        className="relative h-[min(70vh,640px)] min-h-[360px] cursor-grab touch-none overflow-hidden rounded-md border border-rule bg-paper active:cursor-grabbing"
+        className="relative h-[min(70vh,640px)] min-h-[360px] cursor-grab touch-none overflow-hidden rounded-md border border-edge bg-paper active:cursor-grabbing"
       >
         <svg
           width="100%"
@@ -326,7 +328,7 @@ function MapCanvas({ root, folded, toggle, index }: TreeProps) {
                   key={`edge-${n.node.id}`}
                   d={edge(n.parent, n)}
                   fill="none"
-                  stroke="var(--rule-2)"
+                  stroke="var(--edge)"
                   strokeWidth={1 / view.k}
                 />
               ) : null,
@@ -347,7 +349,7 @@ function MapCanvas({ root, folded, toggle, index }: TreeProps) {
           <Button
             size="sm"
             variant="ghost"
-            className="h-10! min-w-10!"
+            className="w-9 px-0 max-sm:w-11"
             aria-label={s.map.zoomOut}
             onClick={() => zoomCenter(0.8)}
           >
@@ -356,13 +358,13 @@ function MapCanvas({ root, folded, toggle, index }: TreeProps) {
           <Button
             size="sm"
             variant="ghost"
-            className="h-10! min-w-10!"
+            className="w-9 px-0 max-sm:w-11"
             aria-label={s.map.zoomIn}
             onClick={() => zoomCenter(1.25)}
           >
             +
           </Button>
-          <Button size="sm" variant="ghost" className="h-10! sm:h-7!" onClick={fitView}>
+          <Button size="sm" variant="ghost" onClick={fitView}>
             {s.map.fit}
           </Button>
         </div>
@@ -370,7 +372,8 @@ function MapCanvas({ root, folded, toggle, index }: TreeProps) {
       <p className="mt-2 min-h-5 text-xs text-ink-3">
         {current ? (
           <>
-            <span className="text-ink-2">{current.node.label}</span> <Cites citations={cites} />
+            <span className="text-ink-2">{current.node.label}</span>{' '}
+            <Cites citations={cites} uncited={current.node.uncited} />
           </>
         ) : (
           s.map.hint
@@ -429,12 +432,7 @@ function MapNode({
         {n.label}
       </text>
       {n.folded && (
-        <text
-          x={n.width + 16}
-          y={4.5}
-          fill="var(--ink-3)"
-          style={{ font: '11px "IBM Plex Mono", monospace' }}
-        >
+        <text x={n.width + 16} y={4.5} fill="var(--ink-3)" style={{ font: FONT }}>
           +{n.node.children.length}
         </text>
       )}

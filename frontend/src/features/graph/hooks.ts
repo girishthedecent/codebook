@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { queryOptions, useQuery } from '@tanstack/react-query';
 import {
   graphCallersQueryOptions,
   graphDependenciesQueryOptions,
   graphSymbolsQueryOptions,
 } from '@/api/queries';
+import { keys } from '@/api/queries/keys';
+import { api, unwrap } from '@/api/client';
 import { viewerSearchFor } from '@/lib/viewerParams';
 import { graphRoute, type Direction } from './search';
 import type { GraphSymbol } from '@/api/types';
@@ -18,19 +20,38 @@ export function useDebounced<T>(value: T, ms: number) {
   return debounced;
 }
 
+/** Where to start in a repository: its busiest symbols, files and most-called packages. */
+export const graphOverviewQueryOptions = (sourceId: string) =>
+  queryOptions({
+    queryKey: keys.graph(sourceId, 'overview', {}),
+    queryFn: ({ signal }) =>
+      unwrap(
+        api.GET('/api/v1/sources/{sourceId}/graph/overview', {
+          params: { path: { sourceId } },
+          signal,
+        }),
+      ),
+    staleTime: 5 * 60_000,
+  });
+
+export function useOverview(repo: string) {
+  return useQuery(graphOverviewQueryOptions(repo));
+}
+
 /** Up to 100 symbols matching a name or path fragment. */
 export function useSymbolMatches(repo: string, q: string) {
   return useQuery(graphSymbolsQueryOptions(repo, q, 100));
 }
 
 /**
- * A symbol by id. There is no lookup route, so this reads the `symbol` field of a depth-1
- * callers walk, which is cheap and shares the cache with the views that need it anyway.
+ * A symbol by qualified name or id. There is no lookup route, so this reads the `symbol` field
+ * of a depth-1 callers walk, which is cheap and shares the cache with the views that need it
+ * anyway.
  */
-export function useSymbolById(repo: string, id: string | undefined) {
+export function useSymbolByRef(repo: string, ref: string | undefined) {
   return useQuery({
-    ...graphCallersQueryOptions(repo, id ?? '', 1),
-    enabled: Boolean(id),
+    ...graphCallersQueryOptions(repo, ref ?? '', 1),
+    enabled: Boolean(ref),
     select: (walk) => walk.symbol,
   });
 }
@@ -58,12 +79,14 @@ export function useNeighborhood(repo: string, symbol: string, dir: Direction, de
   };
 }
 
-/** Navigation helpers shared by the canvas, the tree and the lists. */
+type Placed = Pick<GraphSymbol, 'filePath' | 'lineStart' | 'lineEnd'>;
+
+/** Navigation helpers shared by the map, the lists and the overview. */
 export function useGraphNavigation(repo: string) {
   const navigate = graphRoute.useNavigate();
   return {
     /** Opens the code viewer at the symbol's lines; the graph stays as it is. */
-    openInViewer: (s: Pick<GraphSymbol, 'filePath' | 'lineStart' | 'lineEnd'>) =>
+    openInViewer: (s: Placed) =>
       navigate({
         search: (prev) => ({
           ...prev,
@@ -76,9 +99,13 @@ export function useGraphNavigation(repo: string) {
           }),
         }),
       }),
-    /** Puts the symbol in the middle of the graph. */
-    focus: (id: string) =>
-      navigate({ search: (prev) => ({ ...prev, symbol: id, mode: 'explore' }) }),
+    /** Puts the symbol at the centre of the graph. */
+    focus: (s: Pick<GraphSymbol, 'qualifiedName'>) =>
+      navigate({ search: (prev) => ({ ...prev, symbol: s.qualifiedName, mode: 'explore' }) }),
+    traceFrom: (s: Pick<GraphSymbol, 'qualifiedName'>) =>
+      navigate({ search: (prev) => ({ ...prev, mode: 'trace', fromSym: s.qualifiedName }) }),
+    traceTo: (s: Pick<GraphSymbol, 'qualifiedName'>) =>
+      navigate({ search: (prev) => ({ ...prev, mode: 'trace', toSym: s.qualifiedName }) }),
   };
 }
 

@@ -5,7 +5,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { isApiError } from '@/api/client';
 import { keys } from '@/api/queries/keys';
 import { useDeleteConversation, useRenameConversation } from '@/api/queries/conversations';
-import { BackLink, Menu, MenuItem, MenuSeparator } from '@/ui';
+import { BackLink, Button, Callout, Menu, MenuItem, MenuSeparator } from '@/ui';
 import { useBreakpoint } from '@/lib/breakpoints';
 import { DeleteConversationDialog } from './DeleteConversationDialog';
 import { discardTurn } from './useTurn';
@@ -64,7 +64,7 @@ export function ConversationHeader({
 
   return (
     <header className="sticky top-0 z-10 border-b border-rule bg-paper">
-      <div className="mx-auto flex h-12 w-full max-w-[720px] items-center gap-2 px-4 sm:px-6">
+      <div className="mx-auto flex h-12 w-full max-w-narrow items-center gap-2 px-4 sm:px-6">
         {phone && (
           <BackLink to="/w/$workspaceId" params={{ workspaceId }} className="shrink-0">
             <span className="sr-only">{chat.back}</span>
@@ -76,24 +76,24 @@ export function ConversationHeader({
             label={chat.rename}
             onDone={save}
             onCancel={endEditing}
-            className="h-8 flex-1 text-sm font-medium"
+            className="h-8 flex-1 font-serif font-semibold"
           />
         ) : (
-          <h1 className="min-w-0 flex-1 truncate text-sm font-medium text-ink">
+          <h1 className="min-w-0 flex-1 truncate font-serif text-base font-semibold text-ink">
             {title ?? <span className="text-ink-3">{chat.untitled}</span>}
           </h1>
         )}
         <Menu
           align="end"
           trigger={
-            <button
+            <Button
               ref={menuButton}
-              type="button"
+              variant="ghost"
               aria-label={chat.options}
-              className="flex size-8 shrink-0 items-center justify-center rounded-sm text-ink-3 hover:bg-paper-2 hover:text-ink max-sm:size-11"
+              className="w-9 shrink-0 max-sm:w-11"
             >
               <DotsThree size={18} weight="bold" />
-            </button>
+            </Button>
           }
         >
           <MenuItem onSelect={() => setEditing(true)}>{chat.rename}</MenuItem>
@@ -114,9 +114,9 @@ export function ConversationHeader({
         failed={remove.isError}
       />
       {rename.isError && (
-        <p className="mx-auto max-w-[720px] px-4 pb-2 text-xs text-error sm:px-6" role="alert">
-          {chat.renameFailed}
-        </p>
+        <div className="mx-auto max-w-narrow px-4 pb-2 sm:px-6">
+          <Callout tone="error">{chat.renameFailed}</Callout>
+        </div>
       )}
     </header>
   );

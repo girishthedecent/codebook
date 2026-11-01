@@ -1,42 +1,98 @@
-import { useEffect, useRef, useState, type DragEvent, type FormEvent, type ReactNode } from 'react';
-import { Link } from '@tanstack/react-router';
-import { useQueryClient } from '@tanstack/react-query';
+import { useEffect, useRef, useState, type DragEvent, type FormEvent } from 'react';
+import { useNavigate } from '@tanstack/react-router';
 import { isApiError } from '@/api/client';
-import { flatItems, keys } from '@/api/queries/keys';
-import { PDF_MAX_BYTES, looksLikePdf, useCreateSource, useUploadPdf } from '@/api/queries/sources';
+import { flatItems } from '@/api/queries/keys';
+import {
+  PDF_MAX_BYTES,
+  looksLikePdf,
+  useCreateSource,
+  useSources,
+  useUploadPdf,
+} from '@/api/queries/sources';
 import type { Source } from '@/api/types';
 import { useBreakpoint } from '@/lib/breakpoints';
 import { cn } from '@/lib/cn';
-import { Button, Dialog, Field, Input, ProgressRule, Sheet, TabPanel, Tabs } from '@/ui';
+import {
+  Button,
+  Callout,
+  Dialog,
+  Field,
+  Input,
+  ProgressRule,
+  Select,
+  Sheet,
+  TabPanel,
+  Tabs,
+  TextButton,
+  TextLink,
+  toast,
+} from '@/ui';
+import { formatBytes, nameOf } from './sourceInfo';
 import { findDuplicate, isHttpUrl, parseRepoInput } from './sourceMeta';
-import { strings } from './strings';
+import { SOURCE_LIMIT, strings } from './strings';
 
 const s = strings.addDialog;
 type Tab = 'book' | 'repo' | 'site';
 
+const DEFAULT_PAGES = 10;
+const MAX_PAGES = 50;
+
+/** What a form needs from its dialog: close, and report the source that was made. */
+type FormProps = {
+  workspaceId: string;
+  sources: Source[];
+  full: boolean;
+  onAdded: (s: Source) => void;
+};
+
 /**
  * One place to add any kind of source. A dialog on wide screens, a bottom sheet on phones.
- * Closes on success; the new source shows up in the list with its progress line.
+ * Closes on success with a toast; the new source shows up in the list with its progress.
  */
 export function AddSourceDialog({
   workspaceId,
   open,
   onOpenChange,
+  onAdded,
 }: {
   workspaceId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Called with the new source, after the dialog has closed. */
+  onAdded?: (source: Source) => void;
 }) {
   const bp = useBreakpoint();
+  const navigate = useNavigate();
   const [tab, setTab] = useState<Tab>('book');
   // An upload in flight keeps the dialog open: dismissing it by accident would lose the file.
   const [uploading, setUploading] = useState(false);
-  const close = () => onOpenChange(false);
+  const sources = flatItems(useSources(workspaceId).data);
+  const full = sources.length >= SOURCE_LIMIT;
+
   const guardedChange = (next: boolean) => {
     if (!next && uploading) return;
     onOpenChange(next);
   };
 
+  const added = (source: Source) => {
+    onOpenChange(false);
+    toast({
+      kind: 'ok',
+      title: strings.addedTitle(nameOf(source).name),
+      description: strings.addedBody,
+      action: {
+        label: strings.addedOpen,
+        onClick: () =>
+          void navigate({
+            to: '/w/$workspaceId/sources/$sourceId',
+            params: { workspaceId, sourceId: source.id },
+          }),
+      },
+    });
+    onAdded?.(source);
+  };
+
+  const shared = { workspaceId, sources, full, onAdded: added };
   const body = (
     <Tabs
       label="Source type"
@@ -49,26 +105,32 @@ export function AddSourceDialog({
       ]}
     >
       <TabPanel value="book">
-        <BookForm workspaceId={workspaceId} onDone={close} onBusy={setUploading} />
+        <BookForm {...shared} onBusy={setUploading} />
       </TabPanel>
       <TabPanel value="repo">
-        <RepoForm workspaceId={workspaceId} onDone={close} />
+        <RepoForm {...shared} />
       </TabPanel>
       <TabPanel value="site">
-        <SiteForm workspaceId={workspaceId} onDone={close} />
+        <SiteForm {...shared} />
       </TabPanel>
     </Tabs>
   );
 
+  const description = (
+    <>
+      {s.description} {strings.count(sources.length, SOURCE_LIMIT)}.
+    </>
+  );
+
   if (bp === 'phone') {
     return (
-      <Sheet open={open} onOpenChange={guardedChange} title={s.title} description={s.description}>
+      <Sheet open={open} onOpenChange={guardedChange} title={s.title} description={description}>
         <div className="px-4 pb-6">{body}</div>
       </Sheet>
     );
   }
   return (
-    <Dialog open={open} onOpenChange={guardedChange} title={s.title} description={s.description}>
+    <Dialog open={open} onOpenChange={guardedChange} title={s.title} description={description}>
       {body}
     </Dialog>
   );
@@ -76,13 +138,10 @@ export function AddSourceDialog({
 
 function BookForm({
   workspaceId,
-  onDone,
+  full,
+  onAdded,
   onBusy,
-}: {
-  workspaceId: string;
-  onDone: () => void;
-  onBusy: (busy: boolean) => void;
-}) {
+}: FormProps & { onBusy: (busy: boolean) => void }) {
   const upload = useUploadPdf(workspaceId);
   const [file, setFile] = useState<File | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
@@ -128,11 +187,13 @@ function BookForm({
         onProgress: setProgress,
         signal: controller.current.signal,
       },
-      { onSuccess: onDone },
+      { onSuccess: onAdded },
     );
   };
 
   const cancelled = upload.error instanceof DOMException && upload.error.name === 'AbortError';
+  // The bytes are all sent at 100%, but the server still has to store them before it answers.
+  const saving = upload.isPending && progress >= 1;
 
   return (
     <form onSubmit={submit} className="space-y-4">
@@ -141,28 +202,27 @@ function BookForm({
           e.preventDefault();
           setDragging(true);
         }}
-        onDragLeave={() => setDragging(false)}
+        // Moving over a child fires dragleave on the zone; only leaving it counts.
+        onDragLeave={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragging(false);
+        }}
         onDrop={onDrop}
         className={cn(
           'rounded-md border border-dashed px-4 py-6 text-sm transition-colors duration-150',
-          dragging ? 'border-accent bg-accent-wash' : 'border-rule-2',
+          dragging ? 'border-accent bg-accent-wash' : 'border-edge',
         )}
       >
         {file ? (
           <div className="flex items-baseline justify-between gap-3">
-            <span className="truncate font-mono text-xs text-ink">{file.name}</span>
-            <span className="shrink-0 font-mono text-xs text-ink-3">{formatBytes(file.size)}</span>
+            <span className="min-w-0 truncate text-ink">{file.name}</span>
+            <span className="shrink-0 text-xs text-ink-3">{formatBytes(file.size)}</span>
           </div>
         ) : (
           <p className="text-ink-2">
             {s.drop}{' '}
-            <button
-              type="button"
-              onClick={() => input.current?.click()}
-              className="py-2 text-accent underline underline-offset-2"
-            >
+            <TextButton className="py-2" onClick={() => input.current?.click()}>
               {s.pick}
-            </button>
+            </TextButton>
             .
           </p>
         )}
@@ -181,74 +241,69 @@ function BookForm({
           }}
         />
         {file && !upload.isPending && (
-          <button
-            type="button"
-            onClick={() => input.current?.click()}
-            className="mt-1 py-2 text-xs text-accent underline underline-offset-2"
-          >
-            Choose another file
-          </button>
+          <TextButton className="mt-1 py-2 text-xs" onClick={() => input.current?.click()}>
+            {s.another}
+          </TextButton>
         )}
       </div>
-      {fileError && (
-        <p role="alert" className="text-sm text-error">
-          {fileError}
-        </p>
-      )}
+      {fileError && <Callout tone="error">{fileError}</Callout>}
 
       <Field label={s.titleLabel} hint={s.titleHint}>
         <Input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={200} />
       </Field>
 
       {upload.isPending && (
-        <div className="space-y-1.5">
-          <ProgressRule value={progress} label={s.uploading} />
-          <div className="flex justify-between text-xs text-ink-3">
+        <div className="space-y-1.5" aria-live="polite">
+          <ProgressRule
+            value={saving ? undefined : progress}
+            label={saving ? s.saving : s.uploading}
+          />
+          <div className="flex items-baseline justify-between gap-3 text-xs text-ink-3">
             <span>
-              {s.uploading} · {Math.round(progress * 100)}%
+              {saving
+                ? `${s.saving}. ${s.savingHint}`
+                : `${s.uploading}, ${Math.round(progress * 100)}%`}
             </span>
-            <button
-              type="button"
-              onClick={() => controller.current?.abort()}
-              className="py-2 text-accent underline underline-offset-2"
-            >
-              {s.cancel}
-            </button>
+            {!saving && (
+              <TextButton className="py-2" onClick={() => controller.current?.abort()}>
+                {s.cancel}
+              </TextButton>
+            )}
           </div>
         </div>
       )}
-      {upload.error && !cancelled && (
-        <SubmitError error={upload.error} workspaceId={workspaceId} duplicate={undefined} />
-      )}
+      {upload.error && !cancelled && <SubmitError error={upload.error} workspaceId={workspaceId} />}
+      {full && <Callout tone="warn">{s.full(SOURCE_LIMIT)}</Callout>}
 
-      <Actions disabled={!file} loading={upload.isPending} />
+      <Actions disabled={!file || full} loading={upload.isPending} />
     </form>
   );
 }
 
-function RepoForm({ workspaceId, onDone }: { workspaceId: string; onDone: () => void }) {
+function RepoForm({ workspaceId, sources, full, onAdded }: FormProps) {
   const create = useCreateSource(workspaceId);
-  const sources = useCachedSources(workspaceId);
   const [repo, setRepo] = useState('');
   const [ref, setRef] = useState('');
   const [touched, setTouched] = useState(false);
   const parsed = parseRepoInput(repo);
   const invalid = touched && repo.trim() !== '' && !parsed;
+  const wantedRef = ref.trim() || parsed?.ref;
+
+  const duplicate = parsed
+    ? findDuplicate(sources, {
+        type: 'GITHUB_REPO',
+        owner: parsed.owner,
+        repo: parsed.repo,
+        ref: wantedRef,
+      })
+    : undefined;
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
     setTouched(true);
-    if (!parsed) return;
-    create.mutate(
-      { type: 'GITHUB_REPO', url: parsed.url, ref: ref.trim() || parsed.ref },
-      { onSuccess: onDone },
-    );
+    if (!parsed || duplicate) return;
+    create.mutate({ type: 'GITHUB_REPO', url: parsed.url, ref: wantedRef }, { onSuccess: onAdded });
   };
-
-  const duplicate =
-    parsed && isApiError(create.error, 409)
-      ? findDuplicate(sources(), { type: 'GITHUB_REPO', owner: parsed.owner, repo: parsed.repo })
-      : undefined;
 
   return (
     <form onSubmit={submit} className="space-y-4" noValidate>
@@ -260,17 +315,20 @@ function RepoForm({ workspaceId, onDone }: { workspaceId: string; onDone: () => 
             create.reset();
           }}
           onBlur={() => setTouched(true)}
-          placeholder="expressjs/express"
+          placeholder="karpathy/nanoGPT"
           autoComplete="off"
           autoCapitalize="off"
           spellCheck={false}
           className="font-mono"
         />
       </Field>
-      <Field label={s.refLabel} hint={parsed?.ref ? `From the link: ${parsed.ref}` : s.refHint}>
+      <Field label={s.refLabel} hint={parsed?.ref ? s.refFromLink(parsed.ref) : s.refHint}>
         <Input
           value={ref}
-          onChange={(e) => setRef(e.target.value)}
+          onChange={(e) => {
+            setRef(e.target.value);
+            create.reset();
+          }}
           maxLength={255}
           placeholder={parsed?.ref ?? 'main'}
           autoComplete="off"
@@ -279,38 +337,40 @@ function RepoForm({ workspaceId, onDone }: { workspaceId: string; onDone: () => 
           className="font-mono"
         />
       </Field>
-      {create.error && (
-        <SubmitError error={create.error} workspaceId={workspaceId} duplicate={duplicate} />
-      )}
-      <Actions disabled={!parsed} loading={create.isPending} />
+      {duplicate && <Duplicate source={duplicate} workspaceId={workspaceId} />}
+      {create.error && !duplicate && <SubmitError error={create.error} workspaceId={workspaceId} />}
+      {full && <Callout tone="warn">{s.full(SOURCE_LIMIT)}</Callout>}
+      <Actions disabled={!parsed || !!duplicate || full} loading={create.isPending} />
     </form>
   );
 }
 
-function SiteForm({ workspaceId, onDone }: { workspaceId: string; onDone: () => void }) {
+function SiteForm({ workspaceId, sources, full, onAdded }: FormProps) {
   const create = useCreateSource(workspaceId);
-  const sources = useCachedSources(workspaceId);
   const [url, setUrl] = useState('');
   const [touched, setTouched] = useState(false);
-  const [follow, setFollow] = useState(false);
+  const [depth, setDepth] = useState(0);
+  const [pages, setPages] = useState(String(DEFAULT_PAGES));
   const valid = isHttpUrl(url);
   const invalid = touched && url.trim() !== '' && !valid;
+  const pageCount = Number(pages);
+  const pagesValid = Number.isInteger(pageCount) && pageCount >= 1 && pageCount <= MAX_PAGES;
+
+  const duplicate = valid
+    ? findDuplicate(sources, { type: 'WEBSITE', url: url.trim() })
+    : undefined;
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
     setTouched(true);
-    if (!valid) return;
+    if (!valid || duplicate || (depth > 0 && !pagesValid)) return;
     create.mutate(
-      follow
-        ? { type: 'WEBSITE', url: url.trim(), maxDepth: 1, maxPages: 10 }
-        : { type: 'WEBSITE', url: url.trim() },
-      { onSuccess: onDone },
+      depth > 0
+        ? { type: 'WEBSITE', url: url.trim(), maxDepth: depth, maxPages: pageCount }
+        : { type: 'WEBSITE', url: url.trim(), maxDepth: 0 },
+      { onSuccess: onAdded },
     );
   };
-
-  const duplicate = isApiError(create.error, 409)
-    ? findDuplicate(sources(), { type: 'WEBSITE', url: url.trim() })
-    : undefined;
 
   return (
     <form onSubmit={submit} className="space-y-4" noValidate>
@@ -324,29 +384,46 @@ function SiteForm({ workspaceId, onDone }: { workspaceId: string; onDone: () => 
             create.reset();
           }}
           onBlur={() => setTouched(true)}
-          placeholder="https://expressjs.com/en/guide/routing.html"
+          placeholder="https://huggingface.co/docs/transformers/en/llm_tutorial"
           autoComplete="off"
           autoCapitalize="off"
           spellCheck={false}
           className="font-mono"
         />
       </Field>
-      <label className="flex min-h-11 cursor-pointer items-start gap-3 text-sm text-ink">
-        <input
-          type="checkbox"
-          checked={follow}
-          onChange={(e) => setFollow(e.target.checked)}
-          className="mt-1 accent-[var(--accent)]"
-        />
-        <span className="flex flex-col">
-          {s.follow}
-          <small className="text-xs text-ink-3">{s.followHint}</small>
-        </span>
-      </label>
-      {create.error && (
-        <SubmitError error={create.error} workspaceId={workspaceId} duplicate={duplicate} />
+      <Field label={s.depthLabel} hint={s.depthHint}>
+        <Select value={depth} onChange={(e) => setDepth(Number(e.target.value))}>
+          {([0, 1, 2] as const).map((d) => (
+            <option key={d} value={d}>
+              {s.depthOptions[d]}
+            </option>
+          ))}
+        </Select>
+      </Field>
+      {depth > 0 && (
+        <Field
+          label={s.pagesLabel}
+          hint={s.pagesHint}
+          error={pagesValid ? undefined : `Enter a number from 1 to ${MAX_PAGES}.`}
+        >
+          <Input
+            type="number"
+            inputMode="numeric"
+            min={1}
+            max={MAX_PAGES}
+            value={pages}
+            onChange={(e) => setPages(e.target.value)}
+            className="w-28"
+          />
+        </Field>
       )}
-      <Actions disabled={!valid} loading={create.isPending} />
+      {duplicate && <Duplicate source={duplicate} workspaceId={workspaceId} />}
+      {create.error && !duplicate && <SubmitError error={create.error} workspaceId={workspaceId} />}
+      {full && <Callout tone="warn">{s.full(SOURCE_LIMIT)}</Callout>}
+      <Actions
+        disabled={!valid || !!duplicate || full || (depth > 0 && !pagesValid)}
+        loading={create.isPending}
+      />
     </form>
   );
 }
@@ -354,73 +431,54 @@ function SiteForm({ workspaceId, onDone }: { workspaceId: string; onDone: () => 
 function Actions({ disabled, loading }: { disabled: boolean; loading: boolean }) {
   return (
     <div className="flex justify-end pt-1">
-      <Button
-        type="submit"
-        variant="primary"
-        className="max-sm:h-10"
-        disabled={disabled}
-        loading={loading}
-      >
+      <Button type="submit" variant="primary" disabled={disabled} loading={loading}>
         {s.submit}
       </Button>
     </div>
   );
 }
 
+function Duplicate({ source, workspaceId }: { source: Source; workspaceId: string }) {
+  return (
+    <Callout
+      tone="warn"
+      action={
+        <TextLink
+          to="/w/$workspaceId/sources/$sourceId"
+          params={{ workspaceId, sourceId: source.id }}
+        >
+          {s.seeIt}
+        </TextLink>
+      }
+    >
+      {s.duplicate}
+    </Callout>
+  );
+}
+
 /**
- * The backend's message, with the cases that need more than words: a 409 links to the
- * existing source or the list (to free a slot), a 429 says when to retry, and an upload
- * that a proxy rejected for size has no message of its own.
+ * The backend's message, with the cases that need more than words: a 409 (a duplicate that
+ * was added elsewhere meanwhile, or the limit) links to the list, a 429 says when to retry,
+ * and an upload that a proxy rejected for size has no message of its own.
  */
-function SubmitError({
-  error,
-  workspaceId,
-  duplicate,
-}: {
-  error: Error;
-  workspaceId: string;
-  duplicate: Source | undefined;
-}): ReactNode {
-  const link = 'text-accent underline underline-offset-2';
+function SubmitError({ error, workspaceId }: { error: Error; workspaceId: string }) {
   if (isApiError(error, 409)) {
     return (
-      <p role="alert" className="text-sm break-words text-error">
-        {/[.!?]$/.test(error.message) ? error.message : `${error.message}.`}{' '}
-        {duplicate ? (
-          <Link
-            to="/w/$workspaceId/sources/$sourceId"
-            params={{ workspaceId, sourceId: duplicate.id }}
-            className={link}
-          >
-            {s.seeIt}
-          </Link>
-        ) : (
-          <Link to="/w/$workspaceId/sources" params={{ workspaceId }} className={link}>
+      <Callout
+        tone="warn"
+        action={
+          <TextLink to="/w/$workspaceId/sources" params={{ workspaceId }}>
             {strings.all}
-          </Link>
-        )}
-      </p>
+          </TextLink>
+        }
+      >
+        {/[.!?]$/.test(error.message) ? error.message : `${error.message}.`}
+      </Callout>
     );
   }
   let message = error.message;
   if (isApiError(error, 413)) message = s.tooBig;
   else if (isApiError(error, 429) && error.retryAfterSec)
     message = s.retryAfter(error.retryAfterSec);
-  return (
-    <p role="alert" className="text-sm break-words text-error">
-      {message}
-    </p>
-  );
-}
-
-/** Reads the sources already in the cache, to point a duplicate at the existing one. */
-function useCachedSources(workspaceId: string) {
-  const client = useQueryClient();
-  return () =>
-    flatItems(client.getQueryData<{ pages: { items: Source[] }[] }>(keys.sources(workspaceId)));
-}
-
-function formatBytes(n: number) {
-  if (n < 1024 * 1024) return `${Math.max(1, Math.round(n / 1024))} KB`;
-  return `${(n / 1024 / 1024).toFixed(1)} MB`;
+  return <Callout tone="error">{message}</Callout>;
 }

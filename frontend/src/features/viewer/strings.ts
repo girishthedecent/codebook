@@ -3,6 +3,7 @@ export const s = {
   close: 'Close viewer',
   prevCite: 'Previous source',
   nextCite: 'Next source',
+  citePosition: (n: number, of: number) => `${n} of ${of}`,
   loading: 'Loading',
   deleted: 'This source was deleted. Close the viewer to go back to the answer.',
   unavailable: 'Source unavailable',
@@ -22,6 +23,13 @@ export const s = {
   earlier: 'Show earlier lines',
   later: 'Show later lines',
   linesOf: (n: number) => `${n.toLocaleString()} lines`,
+  caption: (file: string, from: number, to: number) =>
+    from === to ? `${file}, line ${from}` : `${file}, lines ${from}–${to}`,
   openPage: 'Open the page',
   unknown: 'This view needs a page, a file or a section.',
+  pageCount: (n: number) => `This book has ${n.toLocaleString()} ${n === 1 ? 'page' : 'pages'}.`,
+  toLastPage: (n: number) => `Go to page ${n}`,
+  pageFailed: "This page couldn't be drawn.",
+  fileFailed: "The book's file couldn't be opened.",
+  resize: 'Resize the viewer',
 } as const;

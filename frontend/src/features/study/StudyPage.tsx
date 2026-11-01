@@ -4,7 +4,7 @@ import { useMe } from '@/auth/useMe';
 import { useBreakpoint } from '@/lib/breakpoints';
 import { CreateStudy } from './CreateStudy';
 import { StudyArtifact } from './StudyArtifact';
-import { StudyList } from './StudyList';
+import { StudyList, useStudyList } from './StudyList';
 import type { StudySearch } from './search';
 import { s } from './strings';
 
@@ -26,8 +26,10 @@ export function StudyPage({ workspaceId, studyId, search = {}, setSearch = () =>
   const signedOut = guest || isLoading;
   // The demo workspace belongs to no one who visits it, so nobody can add to it.
   const isDemo = useIsDemoWorkspace(workspaceId);
-  const isGuest = signedOut || isDemo;
+  const readOnly = signedOut || isDemo;
   const [creating, setCreating] = useState(false);
+  // The list is the empty state when there is nothing to open, so the pane stays quiet then.
+  const hasSets = (useStudyList(workspaceId, search.kind).data?.pages[0]?.items.length ?? 0) > 0;
 
   const list = (
     <StudyList
@@ -35,8 +37,8 @@ export function StudyPage({ workspaceId, studyId, search = {}, setSearch = () =>
       selectedId={studyId}
       kind={search.kind}
       onKind={(kind) => setSearch({ kind })}
-      readOnly={isGuest}
-      note={signedOut ? s.guestNote : s.demoNote}
+      readOnly={readOnly}
+      guest={signedOut}
       onCreate={() => setCreating(true)}
     />
   );
@@ -45,14 +47,14 @@ export function StudyPage({ workspaceId, studyId, search = {}, setSearch = () =>
       key={studyId}
       workspaceId={workspaceId}
       studyId={studyId}
-      readOnly={isGuest}
+      readOnly={readOnly}
       showBack={phone}
       search={search}
       setSearch={setSearch}
     />
-  ) : (
-    <p className="px-6 py-4 text-sm text-ink-3">{s.pickOne}</p>
-  );
+  ) : hasSets ? (
+    <p className="px-6 py-8 font-serif text-base text-ink-3">{s.pickOne}</p>
+  ) : null;
 
   return (
     <>
@@ -68,7 +70,7 @@ export function StudyPage({ workspaceId, studyId, search = {}, setSearch = () =>
           <div className="min-w-0 flex-1">{artifact}</div>
         </div>
       )}
-      {!isGuest && (
+      {!readOnly && (
         <CreateStudy workspaceId={workspaceId} open={creating} onOpenChange={setCreating} />
       )}
     </>

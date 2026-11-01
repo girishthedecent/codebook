@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type PointerEvent } from 'react';
 import type { Citation } from '@/api/types';
-import { Button, Kbd } from '@/ui';
+import { Button, Kbd, TextButton } from '@/ui';
 import { cn } from '@/lib/cn';
 import { useBreakpoint } from '@/lib/breakpoints';
 import { useShortcut } from '@/lib/keyboard';
@@ -67,6 +67,8 @@ export function Flashcards({ deck, index, search, setSearch }: Props) {
   }, [hasCard]);
   useShortcut('arrowright', () => go(at + 1), { enabled: Boolean(card) });
   useShortcut('arrowleft', () => go(at - 1), { enabled: at > 0 });
+  useShortcut('k', () => sort('know'), { enabled: Boolean(card) });
+  useShortcut('a', () => sort('again'), { enabled: Boolean(card) });
 
   // Tap flips; a horizontal drag past the threshold moves instead.
   const start = useRef<{ x: number; y: number } | null>(null);
@@ -128,7 +130,7 @@ export function Flashcards({ deck, index, search, setSearch }: Props) {
   const cites = citationsOf(card, index);
   return (
     <div className="max-w-[560px]">
-      <div className="flex items-baseline justify-between font-mono text-xs text-ink-3">
+      <div className="flex items-baseline justify-between text-xs text-ink-3 tabular-nums">
         <span>
           {at + 1} / {total}
         </span>
@@ -139,79 +141,82 @@ export function Flashcards({ deck, index, search, setSearch }: Props) {
       {search.pile === 'again' && (
         <p className="mt-1 text-xs text-ink-3">
           {s.cards.showingAgain}{' '}
-          <button
-            type="button"
-            className="inline-flex min-h-10 items-center text-accent underline underline-offset-2"
+          <TextButton
+            className="inline-flex min-h-10 items-center"
             onClick={() => setSearch({ pile: undefined, card: 1 })}
           >
             {s.cards.showAll}
-          </button>
+          </TextButton>
         </p>
       )}
 
-      <div
-        ref={cardRef}
-        role="button"
-        tabIndex={0}
-        aria-label={`${flipped ? s.cards.back : s.cards.front}: ${flipped ? card.back : card.front}. ${s.cards.flip}`}
-        onKeyDown={(e) => {
-          // Space is handled by the window listener above.
-          if (e.key === 'Enter') setFlipped((f) => !f);
-        }}
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerCancel={() => {
-          start.current = null;
-          setDragX(0);
-        }}
-        style={dragX ? { transform: `translateX(${dragX * 0.6}px)` } : undefined}
-        className="relative mt-3 grid min-h-56 cursor-pointer touch-pan-y select-none rounded-md border border-rule-2 bg-paper-2/50 transition-[border-color] duration-150 hover:border-ink-3"
-      >
-        <Face label={s.cards.front} visible={!flipped} text={card.front} />
-        <Face label={s.cards.back} visible={flipped} text={card.back} />
+      <div className="relative mt-3">
+        {/* The rest of the deck, as two sheets showing under this one. */}
+        {at < total - 1 && (
+          <>
+            <span
+              aria-hidden
+              className="absolute inset-0 translate-x-3 translate-y-3 rounded-md border border-rule bg-paper-2 opacity-60"
+            />
+            <span
+              aria-hidden
+              className="absolute inset-0 translate-x-1.5 translate-y-1.5 rounded-md border border-rule bg-paper-2"
+            />
+          </>
+        )}
+        <div
+          ref={cardRef}
+          role="button"
+          tabIndex={0}
+          aria-label={`${flipped ? s.cards.back : s.cards.front}: ${flipped ? card.back : card.front}. ${s.cards.flip}`}
+          onKeyDown={(e) => {
+            // Space is handled by the window listener above.
+            if (e.key === 'Enter') setFlipped((f) => !f);
+          }}
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerUp}
+          onPointerCancel={() => {
+            start.current = null;
+            setDragX(0);
+          }}
+          style={dragX ? { transform: `translateX(${dragX * 0.6}px)` } : undefined}
+          className="relative grid min-h-56 cursor-pointer touch-pan-y select-none rounded-md border border-edge bg-paper transition-[border-color] duration-150 hover:border-ink-3"
+        >
+          <Face label={s.cards.front} visible={!flipped} text={card.front} />
+          <Face label={s.cards.back} visible={flipped} text={card.back} />
+        </div>
       </div>
-      <p className="mt-2 min-h-5 text-xs text-ink-3">
-        {flipped && cites.length > 0 && <Cites citations={cites} />}
+      <p className="mt-5 min-h-5 text-xs text-ink-3">
+        {flipped && <Cites citations={cites} uncited={card.uncited} />}
       </p>
 
       <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
         <div className="flex gap-1">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-10! px-3!"
-            disabled={at === 0}
-            onClick={() => go(at - 1)}
-          >
+          <Button variant="ghost" size="sm" disabled={at === 0} onClick={() => go(at - 1)}>
             ← {s.cards.prev}
           </Button>
-          <Button variant="ghost" size="sm" className="h-10! px-3!" onClick={() => go(at + 1)}>
+          <Button variant="ghost" size="sm" onClick={() => go(at + 1)}>
             {s.cards.next} →
           </Button>
         </div>
         <div className="flex gap-2">
           <Button
             variant="secondary"
-            className="h-11! sm:h-9!"
             onClick={() => sort('again')}
             aria-pressed={again.has(card.id)}
           >
             {s.cards.again}
           </Button>
-          <Button
-            variant="primary"
-            className="h-11! sm:h-9!"
-            onClick={() => sort('know')}
-            aria-pressed={know.has(card.id)}
-          >
+          <Button variant="primary" onClick={() => sort('know')} aria-pressed={know.has(card.id)}>
             {s.cards.know}
           </Button>
         </div>
       </div>
       {keyboard && (
         <p className="mt-4 text-xs text-ink-3">
-          <Kbd>Space</Kbd> flip · <Kbd>←</Kbd> <Kbd>→</Kbd> move
+          <Kbd>Space</Kbd> flip · <Kbd>←</Kbd> <Kbd>→</Kbd> move · <Kbd>K</Kbd> know it ·{' '}
+          <Kbd>A</Kbd> again
         </p>
       )}
     </div>
@@ -228,8 +233,8 @@ function Face({ label, visible, text }: { label: string; visible: boolean; text:
         visible ? 'opacity-100' : 'pointer-events-none opacity-0',
       )}
     >
-      <span className="font-mono text-xs text-ink-3">{label}</span>
-      <p className="mt-3 font-serif text-lg leading-snug whitespace-pre-line">{text}</p>
+      <span className="text-xs text-ink-3">{label}</span>
+      <p className="mt-3 font-serif text-lg leading-snug whitespace-pre-line text-ink">{text}</p>
     </div>
   );
 }

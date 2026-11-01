@@ -86,7 +86,7 @@ export function SymbolCombobox({
         onFocus={() => setOpen(true)}
         onBlur={() => setOpen(false)}
         onKeyDown={onKeyDown}
-        className={cn('font-mono text-xs', selectedName && 'placeholder:text-ink')}
+        className={cn('font-mono', selectedName && 'placeholder:text-ink')}
       />
       {matches.isFetching && q && (
         <Spinner className="absolute top-1/2 right-2.5 size-3.5 -translate-y-1/2" />
@@ -96,15 +96,15 @@ export function SymbolCombobox({
           id={listId}
           role="listbox"
           aria-label={label}
-          className="absolute inset-x-0 top-full z-30 mt-1 max-h-80 overflow-y-auto rounded-md border border-rule-2 bg-paper py-1 shadow-float"
+          className="absolute inset-x-0 top-full z-30 mt-1 max-h-80 overflow-y-auto rounded-md border border-edge bg-paper py-1 shadow-float"
         >
           {matches.isError && (
-            <li role="alert" className="px-3 py-2 text-xs text-error">
+            <li role="alert" className="px-3 py-2 text-sm text-error">
               {t.searchError}
             </li>
           )}
           {items.length === 0 && !matches.isFetching && !matches.isError && (
-            <li className="px-3 py-2 text-xs text-ink-3">{t.noMatches}</li>
+            <li className="px-3 py-2 text-sm text-ink-3">{t.noMatches}</li>
           )}
           {items.map((s, i) => (
             <li

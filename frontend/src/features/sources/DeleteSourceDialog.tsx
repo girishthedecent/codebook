@@ -2,7 +2,8 @@ import { useEffect } from 'react';
 import { isApiError } from '@/api/client';
 import { useDeleteSource } from '@/api/queries/sources';
 import type { Source } from '@/api/types';
-import { Button, Dialog } from '@/ui';
+import { Button, Callout, Dialog } from '@/ui';
+import { nameOf } from './sourceInfo';
 import { strings } from './strings';
 
 export function DeleteSourceDialog({
@@ -34,7 +35,7 @@ export function DeleteSourceDialog({
       onOpenChange={onOpenChange}
       size="sm"
       title={strings.deleteTitle}
-      description={source.title}
+      description={nameOf(source).name}
       actions={
         <>
           <Button variant="ghost" onClick={() => onOpenChange(false)}>
@@ -58,9 +59,7 @@ export function DeleteSourceDialog({
     >
       <p className="text-ink-2">{strings.deleteBody}</p>
       {remove.error && !isApiError(remove.error, 404) && (
-        <p role="alert" className="mt-3 break-words text-error">
-          {remove.error.message}
-        </p>
+        <Callout error={remove.error} className="mt-3" />
       )}
     </Dialog>
   );

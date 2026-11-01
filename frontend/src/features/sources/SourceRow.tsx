@@ -1,79 +1,76 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from '@tanstack/react-router';
 import { DotsThree } from '@phosphor-icons/react';
 import { useResyncSource } from '@/api/queries/sources';
 import type { Source } from '@/api/types';
-import { Button, Menu, MenuItem, MenuSeparator } from '@/ui';
+import { cn } from '@/lib/cn';
+import { Button, Callout, Menu, MenuItem, MenuSeparator, SourceBadge } from '@/ui';
 import { DeleteSourceDialog } from './DeleteSourceDialog';
-import { SourceProgress, StatusText } from './SourceStatus';
-import { isIndexing, secondaryLine, typeMark } from './sourceMeta';
+import { SourceStatus } from './SourceStatus';
+import { colophon, nameOf, stuckMinutes } from './sourceInfo';
+import { isIndexing } from './sourceMeta';
 import { strings } from './strings';
-import { useProgressStream } from './useProgressStream';
 
-/** One source in the list: mark, title, details, status, and a menu for owners. */
+/** One source in the library: badge, title, a line about it, and its progress when indexing. */
 export function SourceRow({
   source,
   workspaceId,
   canManage,
+  now,
+  highlighted,
 }: {
   source: Source;
   workspaceId: string;
   canManage: boolean;
+  now: number;
+  highlighted?: boolean;
 }) {
   const navigate = useNavigate();
   const resync = useResyncSource(workspaceId);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  useProgressStream(workspaceId, source.id, isIndexing(source.status));
+  const row = useRef<HTMLLIElement>(null);
 
-  const detail = secondaryLine(source);
-  const open = () =>
-    navigate({
-      to: '/w/$workspaceId/sources/$sourceId',
-      params: { workspaceId, sourceId: source.id },
-    });
+  // A source that was just added is where the eye should land.
+  useEffect(() => {
+    if (highlighted) row.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }, [highlighted]);
+
+  const { name, ref } = nameOf(source);
+  const line = colophon(source);
+  const stuck = stuckMinutes(source, now) !== undefined;
+  const canRetry = isIndexing(source.status) ? stuck : true;
 
   return (
-    <li className="border-b border-rule">
-      <div className="flex items-start gap-3 py-3">
-        <span className="w-9 shrink-0 pt-0.5 font-mono text-xs text-ink-3">
-          {typeMark[source.type]}
-        </span>
+    <li
+      ref={row}
+      className={cn(
+        'group relative -mx-3 rounded-md px-3 py-4 transition-colors duration-700 ease-out hover:bg-paper-2',
+        highlighted && 'bg-accent-wash',
+      )}
+    >
+      <div className="flex items-start gap-3">
+        <SourceBadge type={source.type} className="mt-0.5" />
         <div className="min-w-0 flex-1">
-          <div className="flex items-baseline justify-between gap-3">
+          <h2 className="heading-minor min-w-0 [overflow-wrap:anywhere]">
             <Link
               to="/w/$workspaceId/sources/$sourceId"
               params={{ workspaceId, sourceId: source.id }}
-              className="-my-2 min-w-0 truncate py-2 text-sm font-medium text-ink hover:underline hover:underline-offset-2"
+              className="text-ink after:absolute after:inset-0 after:content-[''] hover:underline hover:underline-offset-2"
             >
-              {source.title}
+              {name}
             </Link>
-            <StatusText source={source} className="hidden sm:inline" />
-          </div>
-          <SourceProgress source={source} className="mt-1.5" />
-          {detail && <div className="mt-0.5 truncate font-mono text-xs text-ink-3">{detail}</div>}
-          <StatusText source={source} className="mt-0.5 block sm:hidden" />
-          {source.status === 'FAILED' && (
-            <div className="mt-1.5 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-              {source.error && (
-                <span className="min-w-0 text-xs break-words text-error">{source.error}</span>
-              )}
-              {canManage && (
-                <button
-                  type="button"
-                  onClick={() => resync.mutate(source.id)}
-                  disabled={resync.isPending}
-                  className="-my-1.5 py-1.5 text-xs text-accent underline underline-offset-2 disabled:opacity-50"
-                >
-                  {strings.retryIndex}
-                </button>
-              )}
-            </div>
-          )}
-          {resync.error && (
-            <div role="alert" className="mt-1 text-xs break-words text-error">
-              {resync.error.message}
-            </div>
-          )}
+            {ref && <span className="ml-1.5 font-mono text-xs font-normal text-ink-3">@{ref}</span>}
+          </h2>
+          {line && <p className="mt-0.5 text-xs text-ink-3">{line}</p>}
+          <SourceStatus
+            source={source}
+            now={now}
+            canManage={canManage}
+            onRetry={() => resync.mutate(source.id)}
+            retrying={resync.isPending}
+            className="relative mt-2"
+          />
+          {resync.error && <Callout error={resync.error} className="relative mt-2" />}
         </div>
         <Menu
           align="end"
@@ -81,20 +78,26 @@ export function SourceRow({
             <Button
               variant="ghost"
               size="sm"
-              aria-label={`Actions for ${source.title}`}
-              className="-mr-2 size-11 shrink-0 px-0 sm:size-8"
+              aria-label={`Actions for ${name}`}
+              className="relative shrink-0"
             >
               <DotsThree size={18} weight="bold" />
             </Button>
           }
         >
-          <MenuItem onSelect={open}>{strings.open}</MenuItem>
+          <MenuItem
+            onSelect={() =>
+              navigate({
+                to: '/w/$workspaceId/sources/$sourceId',
+                params: { workspaceId, sourceId: source.id },
+              })
+            }
+          >
+            {strings.open}
+          </MenuItem>
           {canManage && (
             <>
-              <MenuItem
-                onSelect={() => resync.mutate(source.id)}
-                disabled={isIndexing(source.status)}
-              >
+              <MenuItem onSelect={() => resync.mutate(source.id)} disabled={!canRetry}>
                 {strings.resync}
               </MenuItem>
               <MenuSeparator />

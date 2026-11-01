@@ -1,31 +1,49 @@
 import { Link, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { DotsThree } from '@phosphor-icons/react';
+import { useInfiniteQuery } from '@tanstack/react-query';
 import { flatItems } from '@/api/queries/keys';
 import {
-  isStudyPending,
+  studiesQueryOptions,
   useCancelStudy,
   useDeleteStudy,
   useRegenerateStudy,
-  useStudies,
 } from '@/api/queries/study';
 import type { Study, StudyType } from '@/api/types';
 import {
   Button,
+  Callout,
   ChipButton,
   Dialog,
+  EmptyState,
   Menu,
   MenuItem,
   MenuSeparator,
   ProgressRule,
-  Spinner,
+  Skeleton,
+  StatusDot,
+  TextLink,
 } from '@/ui';
 import { cn } from '@/lib/cn';
-import { ErrorLine } from './ErrorLine';
 import { relativeDate } from './format';
-import { s, statusLabel, typeLabel } from './strings';
+import { isStale, studyState } from './state';
+import { s, typeLabel } from './strings';
 
 const filters: (StudyType | undefined)[] = [undefined, 'QUIZ', 'FLASHCARDS', 'MINDMAP', 'SUMMARY'];
+
+/** The list polls while something is being made, and stops for one that looks stalled. */
+export function useStudyList(workspaceId: string, type?: StudyType) {
+  const base = studiesQueryOptions(workspaceId, type);
+  return useInfiniteQuery({
+    ...base,
+    refetchInterval: (query) =>
+      query.state.data?.pages.some((page) =>
+        page.items.some((study) => studyState(study).making && !isStale(study)),
+      )
+        ? 3000
+        : false,
+  });
+}
 
 type Props = {
   workspaceId: string;
@@ -34,66 +52,79 @@ type Props = {
   kind?: StudyType;
   onKind: (kind: StudyType | undefined) => void;
   readOnly: boolean;
-  /** Why it's read-only, shown under the heading. */
-  note?: string;
+  /** Visitors without an account are told how to make their own. */
+  guest: boolean;
   onCreate: () => void;
 };
 
-/** The workspace's study sets as hairline rows, newest first, with a kind filter. */
+/** The workspace's study sets, newest first, with a kind filter. */
 export function StudyList({
   workspaceId,
   selectedId,
   kind: type,
   onKind,
   readOnly,
-  note = s.guestNote,
+  guest,
   onCreate,
 }: Props) {
-  const query = useStudies(workspaceId, type);
+  const query = useStudyList(workspaceId, type);
   const studies = flatItems(query.data);
 
   return (
     <section aria-labelledby="study-heading" className="flex min-h-0 flex-col">
-      <header className="flex h-12 items-center justify-between gap-2 px-4">
-        <h1 id="study-heading" className="text-sm font-semibold">
-          {s.title}
-        </h1>
-        {!readOnly && (
-          <Button size="sm" variant="secondary" className="h-10! sm:h-7!" onClick={onCreate}>
-            {s.newSet}
-          </Button>
+      <header className="flex flex-col gap-2 px-4 pt-5 pb-3">
+        <div className="flex items-center justify-between gap-2">
+          <h1 id="study-heading" className="heading-page">
+            {s.title}
+          </h1>
+          {!readOnly && (
+            <Button size="sm" variant="primary" onClick={onCreate}>
+              {s.newSet}
+            </Button>
+          )}
+        </div>
+        {readOnly && (
+          <p className="text-xs text-pretty text-ink-3">
+            {guest ? s.guestNote : s.demoNote}{' '}
+            {guest && (
+              <TextLink
+                to="/sign-in"
+                search={{ next: window.location.pathname + window.location.search }}
+                className="inline-flex min-h-6 items-center"
+              >
+                {s.signIn}
+              </TextLink>
+            )}
+          </p>
         )}
       </header>
-      {readOnly && <p className="px-4 pb-2 text-xs text-ink-3">{note}</p>}
 
-      <div role="group" aria-label="Filter by kind" className="flex flex-wrap gap-1.5 px-4 pb-3">
+      <div role="group" aria-label={s.filterLabel} className="flex flex-wrap gap-2 px-4 pb-4">
         {filters.map((f) => (
-          <ChipButton
-            key={f ?? 'all'}
-            className="h-10! px-3! sm:h-6! sm:px-2!"
-            pressed={type === f}
-            onClick={() => onKind(f)}
-          >
-            {f ? typeLabel[f] : 'All'}
+          <ChipButton key={f ?? 'all'} pressed={type === f} onClick={() => onKind(f)}>
+            {f ? typeLabel[f] : s.all}
           </ChipButton>
         ))}
       </div>
 
       {query.isPending ? (
-        <div className="flex items-center gap-2 px-4 py-3 text-sm text-ink-3">
-          <Spinner className="size-3.5" label="Loading study sets" /> Loading
+        <div role="status" className="flex flex-col gap-2 px-4">
+          <span className="sr-only">{s.loading}</span>
+          {[0, 1, 2].map((i) => (
+            <Skeleton key={i} className="h-14 w-full" />
+          ))}
         </div>
       ) : query.isError && studies.length === 0 ? (
-        <div className="px-4 py-3">
-          <ErrorLine error={query.error} onRetry={() => void query.refetch()} />
+        <div className="px-4">
+          <Callout error={query.error} onRetry={() => void query.refetch()} />
         </div>
       ) : studies.length === 0 ? (
-        <div className="px-4 py-3 text-sm text-ink-2">
-          <p>{type ? s.emptyFiltered : s.empty}</p>
-          {!readOnly && !type && <p className="mt-1 text-ink-3">{s.emptyHint}</p>}
+        <div className="px-4">
+          <EmptyState className="py-4">{type ? s.emptyFiltered : s.empty}</EmptyState>
+          {!readOnly && !type && <p className="text-xs text-ink-3">{s.emptyHint}</p>}
         </div>
       ) : (
-        <ul className="border-t border-rule">
+        <ul className="px-2">
           {studies.map((study) => (
             <StudyRow
               key={study.id}
@@ -109,7 +140,7 @@ export function StudyList({
 
       {query.isError && studies.length > 0 && (
         <div className="px-4 py-3">
-          <ErrorLine error={query.error} onRetry={() => void query.refetch()} />
+          <Callout error={query.error} onRetry={() => void query.refetch()} />
         </div>
       )}
 
@@ -118,7 +149,6 @@ export function StudyList({
           <Button
             size="sm"
             variant="ghost"
-            className="h-10! sm:h-7!"
             loading={query.isFetchingNextPage}
             onClick={() => void query.fetchNextPage()}
           >
@@ -143,43 +173,33 @@ function StudyRow({
   kind?: StudyType;
   readOnly: boolean;
 }) {
-  const pending = isStudyPending(study);
+  const state = studyState(study);
   const navigate = useNavigate();
   const regenerate = useRegenerateStudy(workspaceId);
   const cancel = useCancelStudy(workspaceId);
   return (
-    <li className={cn('relative border-b border-rule', selected && 'bg-paper-2')}>
-      <div className="flex items-start gap-2 pr-2">
+    <li className={cn('relative rounded-sm', selected && 'bg-paper-3')}>
+      <div className="flex items-start gap-1 pr-1">
         <Link
           to="/w/$workspaceId/study/$studyId"
           params={{ workspaceId, studyId: study.id }}
           search={{ kind }}
           aria-current={selected ? 'page' : undefined}
-          className="min-w-0 flex-1 px-4 py-2.5 hover:bg-paper-2/70"
+          className="min-w-0 flex-1 rounded-sm px-2 py-2.5 hover:bg-paper-2"
         >
-          <span className="flex items-baseline gap-2 font-mono text-xs text-ink-3">
-            <span>{typeLabel[study.type].toLowerCase()}</span>
+          <span className="flex flex-wrap items-center gap-x-2 text-xs text-ink-3">
+            <span>{typeLabel[study.type]}</span>
             <span aria-hidden>·</span>
             <span>{relativeDate(study.createdAt)}</span>
-            {study.status !== 'DONE' && (
-              <>
-                <span aria-hidden>·</span>
-                <span className={cn(study.status === 'FAILED' && 'text-error')}>
-                  {statusLabel[study.status]}
-                </span>
-              </>
+            {state.tone && (
+              <StatusDot tone={state.tone} label={state.label} className="ml-1 text-ink-3" />
             )}
           </span>
-          <span
-            className={cn(
-              'mt-0.5 block truncate text-sm',
-              selected ? 'font-medium text-ink' : 'text-ink',
-            )}
-          >
+          <span className="mt-0.5 block text-sm text-pretty text-ink [overflow-wrap:anywhere]">
             {study.title}
           </span>
-          {study.status === 'FAILED' && study.error && (
-            <span className="mt-0.5 block truncate text-xs text-ink-3">{study.error}</span>
+          {state.failed && study.error && (
+            <span className="mt-0.5 block text-xs text-ink-3">{state.reason}</span>
           )}
         </Link>
         {!readOnly && (
@@ -203,20 +223,15 @@ function StudyRow({
           />
         )}
       </div>
-      {regenerate.isError && (
-        <p role="alert" className="px-4 pb-2 text-xs text-error">
-          {regenerate.error.message}
+      {(regenerate.isError || cancel.isError) && (
+        <p role="alert" className="px-2 pb-2 text-xs text-error">
+          {(regenerate.error ?? cancel.error)?.message}
         </p>
       )}
-      {cancel.isError && (
-        <p role="alert" className="px-4 pb-2 text-xs text-error">
-          {cancel.error.message}
-        </p>
-      )}
-      {pending && (
+      {state.making && !isStale(study) && (
         <ProgressRule
-          label={`${statusLabel[study.status]}: ${study.title}`}
-          className="absolute inset-x-0 bottom-0"
+          label={`${state.label}: ${study.title}`}
+          className="absolute inset-x-2 bottom-0 w-auto"
         />
       )}
     </li>
@@ -244,16 +259,17 @@ function RowMenu({
       <Menu
         align="end"
         trigger={
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="sm"
             aria-label={`Actions for ${study.title}`}
-            className="mt-1 flex size-10 shrink-0 items-center justify-center rounded-sm text-ink-3 hover:bg-paper-3 hover:text-ink"
+            className="mt-1 size-9 px-0 max-sm:size-11"
           >
-            <DotsThree size={18} weight="bold" />
-          </button>
+            <DotsThree size={18} weight="bold" aria-hidden />
+          </Button>
         }
       >
-        {isStudyPending(study) ? (
+        {studyState(study).making ? (
           <MenuItem onSelect={onCancel}>{s.cancel}</MenuItem>
         ) : (
           <MenuItem disabled={regenerating} onSelect={onRegenerate}>
@@ -283,7 +299,7 @@ export function DeleteStudyDialog({
   onOpenChange,
   onDeleted,
 }: {
-  study: Study;
+  study: Pick<Study, 'id' | 'title'>;
   workspaceId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -303,10 +319,10 @@ export function DeleteStudyDialog({
       actions={
         <>
           <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={remove.isPending}>
-            Cancel
+            {s.cancelDialog}
           </Button>
           <Button
-            variant="primary"
+            variant="danger"
             loading={remove.isPending}
             onClick={() =>
               remove.mutate(study.id, {
@@ -322,7 +338,7 @@ export function DeleteStudyDialog({
         </>
       }
     >
-      <p className="truncate font-medium">{study.title}</p>
+      <p className="font-medium [overflow-wrap:anywhere]">{study.title}</p>
       {remove.isError && <p className="mt-2 text-error">{remove.error.message}</p>}
     </Dialog>
   );

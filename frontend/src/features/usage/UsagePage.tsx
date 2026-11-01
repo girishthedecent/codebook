@@ -1,10 +1,21 @@
 import { useUsage } from '@/api/queries/usage';
 import type { Usage } from '@/api/types';
 import { useMe } from '@/auth';
-import { ProgressRule, Table, TBody, TD, TH, THead, TR } from '@/ui';
-import { InlineError } from '@/features/account/InlineError';
-import { PageHeader, SectionHeading } from '@/features/account/PageHeader';
-import { formatBytes, formatCost, formatCount } from '@/features/account/format';
+import {
+  Callout,
+  DataTable,
+  PageHeader,
+  ProgressRule,
+  SectionHeading,
+  TBody,
+  TD,
+  TH,
+  THead,
+  TR,
+  TextLink,
+} from '@/ui';
+import { ListLoading } from '@/features/account/ListLoading';
+import { formatBytes, formatCost, formatCount, formatReset } from '@/features/account/format';
 import { strings } from '@/features/account/strings';
 
 const s = strings.usage;
@@ -17,15 +28,19 @@ export function UsagePage() {
 
   return (
     <>
-      <PageHeader title={s.title} intro={isGuest ? s.guest : s.intro} />
-      <div className="max-w-[720px] space-y-10">
+      <PageHeader title={s.title} intro={isGuest ? s.guestIntro : s.intro} />
+      <div className="flex max-w-narrow flex-col gap-10">
         {usage.isPending ? (
-          <ProgressRule label="Loading usage" />
+          <ListLoading label="Loading usage" />
         ) : usage.isError ? (
-          <InlineError error={usage.error} retry={() => void usage.refetch()} />
+          <Callout error={usage.error} onRetry={() => void usage.refetch()} />
         ) : (
           <>
-            <Limits usage={usage.data} />
+            {usage.data.guest ? (
+              <GuestAllowance guest={usage.data.guest} />
+            ) : (
+              <Limits usage={usage.data} />
+            )}
             {!isGuest && <Totals usage={usage.data} />}
             {!isGuest && <Storage usage={usage.data} />}
           </>
@@ -35,10 +50,61 @@ export function UsagePage() {
   );
 }
 
+function GuestAllowance({ guest }: { guest: NonNullable<Usage['guest']> }) {
+  const left = Math.max(0, guest.limit - guest.used);
+  return (
+    <section aria-labelledby="allowance">
+      <SectionHeading id="allowance">{s.limits}</SectionHeading>
+      <div className="flex items-baseline justify-between gap-4 text-sm">
+        <span className="text-ink">{s.guestLabel}</span>
+        <span className="tabular-nums text-ink">{s.guestLeft(left, guest.limit)}</span>
+      </div>
+      <ProgressRule
+        value={guest.limit > 0 ? guest.used / guest.limit : 1}
+        label={s.guestLabel}
+        className="mt-2"
+      />
+      <p className="mt-2 text-xs text-ink-3">
+        {left === 0 && `${s.guestEmpty} `}
+        {s.guestResets(formatReset(guest.resetsAt))}
+      </p>
+      <p className="mt-5 text-sm text-ink-2">
+        {s.guestMore} <TextLink to="/sign-in">{s.guestSignIn}</TextLink>
+      </p>
+    </section>
+  );
+}
+
+function Limits({ usage }: { usage: Usage }) {
+  return (
+    <section aria-labelledby="limits">
+      <SectionHeading id="limits">{s.limits}</SectionHeading>
+      <ul className="flex flex-col gap-5">
+        {LIMITS.map((key) => {
+          const { limit, remaining } = usage.limits[key];
+          const used = limit > 0 ? (limit - remaining) / limit : 0;
+          return (
+            <li key={key}>
+              <div className="flex items-baseline justify-between gap-4 text-sm">
+                <span className="text-ink">{s.limitRows[key]}</span>
+                <span className="tabular-nums text-ink-2">
+                  {s.remaining(formatCount(remaining), formatCount(limit))}
+                </span>
+              </div>
+              <ProgressRule value={used} label={s.limitRows[key]} className="mt-2" />
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
+
 function Totals({ usage }: { usage: Usage }) {
   return (
-    <section>
-      <Table>
+    <section aria-labelledby="totals">
+      <SectionHeading id="totals">{s.totals}</SectionHeading>
+      <DataTable label={s.totals}>
         <THead>
           <TR>
             <TH>{s.cols.period}</TH>
@@ -63,32 +129,7 @@ function Totals({ usage }: { usage: Usage }) {
             </TR>
           ))}
         </TBody>
-      </Table>
-    </section>
-  );
-}
-
-function Limits({ usage }: { usage: Usage }) {
-  return (
-    <section>
-      <SectionHeading>{s.limits}</SectionHeading>
-      <ul>
-        {LIMITS.map((key) => {
-          const { limit, remaining } = usage.limits[key];
-          const used = limit > 0 ? (limit - remaining) / limit : 0;
-          return (
-            <li key={key} className="border-b border-rule py-3 last:border-b-0">
-              <div className="flex items-baseline justify-between gap-4 text-sm">
-                <span className="text-ink">{s.limitRows[key]}</span>
-                <span className="font-mono text-xs tabular-nums text-ink-2">
-                  {s.remaining(formatCount(remaining), formatCount(limit))}
-                </span>
-              </div>
-              <ProgressRule value={used} label={s.limitRows[key]} className="mt-2" />
-            </li>
-          );
-        })}
-      </ul>
+      </DataTable>
     </section>
   );
 }
@@ -96,23 +137,19 @@ function Limits({ usage }: { usage: Usage }) {
 function Storage({ usage }: { usage: Usage }) {
   const { pdfBytes, limitBytes } = usage.storage;
   return (
-    <section>
-      <SectionHeading>{s.storage}</SectionHeading>
-      <div className="py-3">
-        <div className="flex items-baseline justify-between gap-4 text-sm">
-          <span className="text-ink">
-            {s.storageRow(formatBytes(pdfBytes), formatBytes(limitBytes))}
-          </span>
-          <span className="font-mono text-xs tabular-nums text-ink-2">
-            {s.sources(usage.sources)}
-          </span>
-        </div>
-        <ProgressRule
-          value={limitBytes > 0 ? pdfBytes / limitBytes : 0}
-          label={s.storage}
-          className="mt-2"
-        />
+    <section aria-labelledby="storage">
+      <SectionHeading id="storage">{s.storage}</SectionHeading>
+      <div className="flex items-baseline justify-between gap-4 text-sm">
+        <span className="text-ink">
+          {s.storageRow(formatBytes(pdfBytes), formatBytes(limitBytes))}
+        </span>
+        <span className="tabular-nums text-ink-2">{s.sources(usage.sources)}</span>
       </div>
+      <ProgressRule
+        value={limitBytes > 0 ? pdfBytes / limitBytes : 0}
+        label={s.storage}
+        className="mt-2"
+      />
     </section>
   );
 }

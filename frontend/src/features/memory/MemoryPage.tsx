@@ -10,28 +10,33 @@ import {
 import type { Memory } from '@/api/types';
 import {
   Button,
+  Callout,
   Dialog,
+  EmptyState,
   Field,
   Input,
-  ProgressRule,
+  PageHeader,
+  SectionHeading,
+  Select,
   Switch,
   Textarea,
-  controlClass,
   toast,
 } from '@/ui';
 import { cn } from '@/lib/cn';
 import { useUnsavedChanges } from '@/lib/useUnsavedChanges';
 import { en } from '@/i18n/en';
-import { InlineError } from '@/features/account/InlineError';
-import { PageHeader, SectionHeading } from '@/features/account/PageHeader';
+import { ListLoading } from '@/features/account/ListLoading';
 import { formatWhen } from '@/features/account/format';
 import { strings } from '@/features/account/strings';
 
 const s = strings.memory;
 const KINDS = ['PROFILE', 'FACT'] as const;
 type Kind = (typeof KINDS)[number];
-// Mirrors the backend's memory.maxContentChars.
+// Mirror the backend's memory.maxContentChars and memory.profileCap.
 const MAX_CHARS = 300;
+const PROFILE_CAP = 15;
+const DEFAULT_IMPORTANCE = 3;
+const LEVELS = [1, 2, 3, 4, 5] as const;
 
 export function MemoryPage() {
   const [showDeleted, setShowDeleted] = useState(false);
@@ -52,13 +57,13 @@ export function MemoryPage() {
           )
         }
       />
-      <div className="max-w-[640px] space-y-10">
+      <div className="flex max-w-narrow flex-col gap-10">
         <AddMemory />
         <Switch checked={showDeleted} onCheckedChange={setShowDeleted} label={s.showDeleted} />
         {memories.isPending ? (
-          <ProgressRule label="Loading memories" />
+          <ListLoading label="Loading memories" />
         ) : memories.isError ? (
-          <InlineError error={memories.error} retry={() => void memories.refetch()} />
+          <Callout error={memories.error} onRetry={() => void memories.refetch()} />
         ) : (
           KINDS.map((kind) => (
             <MemoryGroup key={kind} kind={kind} items={items.filter((m) => m.kind === kind)} />
@@ -71,19 +76,42 @@ export function MemoryPage() {
 }
 
 function MemoryGroup({ kind, items }: { kind: Kind; items: Memory[] }) {
+  const live = items.filter((m) => !m.deletedAt).length;
+  const hint =
+    kind === 'PROFILE'
+      ? `${s.kinds[kind].hint} ${s.profileCount(live, PROFILE_CAP)}`
+      : s.kinds[kind].hint;
   return (
-    <section>
-      <SectionHeading hint={s.kinds[kind].hint}>{s.kinds[kind].label}</SectionHeading>
+    <section aria-labelledby={`memory-${kind}`}>
+      <SectionHeading id={`memory-${kind}`} hint={hint}>
+        {s.kinds[kind].label}
+      </SectionHeading>
       {items.length === 0 ? (
-        <p className="py-3 text-sm text-ink-3">{s.empty}</p>
+        <EmptyState className="py-4">{s.emptyKind[kind]}</EmptyState>
       ) : (
-        <ul>
+        <ul className="divide-y divide-rule">
           {items.map((m) => (
             <MemoryRow key={m.id} memory={m} />
           ))}
         </ul>
       )}
     </section>
+  );
+}
+
+/** Five dots, as many filled as the memory's importance. */
+function Importance({ level }: { level: number }) {
+  const label = s.importance[level - 1] ?? s.importance[DEFAULT_IMPORTANCE - 1]!;
+  return (
+    <span role="img" aria-label={s.importanceOf(level, label)} className="inline-flex gap-0.5">
+      {LEVELS.map((n) => (
+        <span
+          key={n}
+          aria-hidden
+          className={cn('size-1.5 rounded-full border border-ink-3', n <= level && 'bg-ink-3')}
+        />
+      ))}
+    </span>
   );
 }
 
@@ -119,12 +147,15 @@ function MemoryRow({ memory }: { memory: Memory }) {
   if (editing) return <EditRow memory={memory} onDone={finishEdit} />;
 
   return (
-    <li className="flex gap-x-4 gap-y-1 border-b border-rule py-3 last:border-b-0 max-sm:flex-col sm:items-start">
+    <li className="flex gap-x-4 gap-y-1 py-3 max-sm:flex-col sm:items-start">
       <div className={cn('min-w-0 flex-1', deleted && 'text-ink-3')}>
         <p className={cn('font-serif text-base', deleted && 'line-through')}>{memory.content}</p>
-        <p className="mt-1 font-mono text-xs text-ink-3">
-          {deleted ? s.deleted : s.added(formatWhen(memory.createdAt))}
-          {!deleted && memory.lastUsedAt && ` · ${s.used(formatWhen(memory.lastUsedAt))}`}
+        <p className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-ink-3">
+          <Importance level={memory.importance} />
+          <span>
+            {deleted ? s.deleted : s.added(formatWhen(memory.createdAt))}
+            {!deleted && memory.lastUsedAt && `, ${s.used(formatWhen(memory.lastUsedAt))}`}
+          </span>
         </p>
       </div>
       <div className="flex shrink-0 gap-1 max-sm:-ml-2.5">
@@ -156,12 +187,33 @@ function MemoryRow({ memory }: { memory: Memory }) {
   );
 }
 
+function ImportanceSelect({
+  value,
+  onChange,
+}: {
+  value: number;
+  onChange: (value: number) => void;
+}) {
+  return (
+    <Field label={s.importanceLabel}>
+      <Select value={value} onChange={(e) => onChange(Number(e.target.value))}>
+        {LEVELS.map((n) => (
+          <option key={n} value={n}>
+            {n} · {s.importance[n - 1]}
+          </option>
+        ))}
+      </Select>
+    </Field>
+  );
+}
+
 function EditRow({ memory, onDone }: { memory: Memory; onDone: () => void }) {
   const [content, setContent] = useState(memory.content);
+  const [importance, setImportance] = useState(memory.importance);
   const update = useUpdateMemory();
   const input = useRef<HTMLTextAreaElement>(null);
   const trimmed = content.trim();
-  const unchanged = trimmed === memory.content;
+  const unchanged = trimmed === memory.content && importance === memory.importance;
 
   useUnsavedChanges(!unchanged && !update.isSuccess);
 
@@ -170,11 +222,18 @@ function EditRow({ memory, onDone }: { memory: Memory; onDone: () => void }) {
 
   const save = () => {
     if (unchanged) return onDone();
-    update.mutate({ memoryId: memory.id, content: trimmed }, { onSuccess: onDone });
+    update.mutate(
+      {
+        memoryId: memory.id,
+        content: trimmed === memory.content ? undefined : trimmed,
+        importance: importance === memory.importance ? undefined : importance,
+      },
+      { onSuccess: onDone },
+    );
   };
 
   return (
-    <li className="border-b border-rule py-3 last:border-b-0">
+    <li className="py-3">
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -197,7 +256,10 @@ function EditRow({ memory, onDone }: { memory: Memory; onDone: () => void }) {
             }}
           />
         </Field>
-        <div className="mt-2 flex gap-2">
+        <div className="mt-3 sm:w-48">
+          <ImportanceSelect value={importance} onChange={setImportance} />
+        </div>
+        <div className="mt-3 flex gap-2">
           <Button type="submit" size="sm" loading={update.isPending} disabled={!trimmed}>
             {en.common.save}
           </Button>
@@ -213,24 +275,28 @@ function EditRow({ memory, onDone }: { memory: Memory; onDone: () => void }) {
 function AddMemory() {
   const [content, setContent] = useState('');
   const [kind, setKind] = useState<Kind>('FACT');
+  const [importance, setImportance] = useState(DEFAULT_IMPORTANCE);
   const create = useCreateMemory();
   const trimmed = content.trim();
   useUnsavedChanges(trimmed.length > 0);
 
   return (
-    <section>
-      <SectionHeading>{s.addTitle}</SectionHeading>
+    <section aria-labelledby="memory-add">
+      <SectionHeading id="memory-add">{s.addTitle}</SectionHeading>
       <form
-        className="mt-3 grid gap-3 sm:grid-cols-[1fr_10rem] sm:items-end"
+        className="grid gap-3 sm:grid-cols-[1fr_11rem]"
         onSubmit={(e) => {
           e.preventDefault();
           if (!trimmed) return;
-          create.mutate({ kind, content: trimmed }, { onSuccess: () => setContent('') });
+          create.mutate(
+            { kind, content: trimmed, importance },
+            { onSuccess: () => setContent('') },
+          );
         }}
       >
         <Field label={s.addLabel} hint={s.addHint(MAX_CHARS)} error={create.error?.message}>
           <Textarea
-            rows={2}
+            rows={4}
             value={content}
             maxLength={MAX_CHARS}
             onChange={(e) => setContent(e.target.value)}
@@ -238,19 +304,16 @@ function AddMemory() {
         </Field>
         <div className="flex flex-col gap-3">
           <Field label={s.kindLabel}>
-            <select
-              value={kind}
-              onChange={(e) => setKind(e.target.value as Kind)}
-              className={cn(controlClass, 'h-9')}
-            >
+            <Select value={kind} onChange={(e) => setKind(e.target.value as Kind)}>
               {KINDS.map((k) => (
                 <option key={k} value={k}>
                   {s.kinds[k].label}
                 </option>
               ))}
-            </select>
+            </Select>
           </Field>
-          <Button type="submit" loading={create.isPending} disabled={!trimmed}>
+          <ImportanceSelect value={importance} onChange={setImportance} />
+          <Button type="submit" variant="primary" loading={create.isPending} disabled={!trimmed}>
             {s.add}
           </Button>
         </div>

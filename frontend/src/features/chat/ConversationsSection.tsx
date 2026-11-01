@@ -9,7 +9,7 @@ import {
   useRenameConversation,
 } from '@/api/queries/conversations';
 import type { Conversation } from '@/api/types';
-import { Menu, MenuItem, MenuSeparator, Spinner } from '@/ui';
+import { Button, Menu, MenuItem, MenuSeparator, Skeleton, TextButton, TextLink } from '@/ui';
 import { useBreakpoint } from '@/lib/breakpoints';
 import { cn } from '@/lib/cn';
 import { DeleteConversationDialog } from './DeleteConversationDialog';
@@ -61,7 +61,7 @@ export function ConversationsSection({
         <h2 id="conversations-heading" className="text-xs font-medium text-ink-3">
           {chat.conversations}
         </h2>
-        <Link
+        <TextLink
           to="/w/$workspaceId"
           params={{ workspaceId }}
           // Already on the home page the link goes nowhere, so it puts the cursor in the box.
@@ -69,28 +69,28 @@ export function ConversationsSection({
             if (!phone)
               setTimeout(() => document.getElementById(`composer-new:${workspaceId}`)?.focus(), 0);
           }}
-          className="text-xs text-accent hover:underline hover:underline-offset-2 [@media(pointer:coarse)]:flex [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:items-center"
+          className="text-xs no-underline hover:underline [@media(pointer:coarse)]:flex [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:items-center"
         >
           {chat.newConversation}
-        </Link>
+        </TextLink>
       </div>
 
       {query.isPending && (
-        <p className="flex items-center gap-2 px-2 py-1 text-xs text-ink-3" role="status">
-          <Spinner className="size-3" /> {chat.loading}
-        </p>
+        <div className="space-y-2 px-2 py-2" role="status">
+          <Skeleton className="h-4 w-4/5" />
+          <Skeleton className="h-4 w-3/5" />
+        </div>
       )}
 
       {query.isError && items.length === 0 && (
         <div className="px-2 py-1 text-xs text-ink-3">
           <p>{chat.listFailed}</p>
-          <button
-            type="button"
+          <TextButton
             onClick={() => void query.refetch()}
-            className="mt-1 text-accent underline underline-offset-2 [@media(pointer:coarse)]:min-h-11"
+            className="mt-1 [@media(pointer:coarse)]:min-h-11"
           >
             {chat.retry}
-          </button>
+          </TextButton>
         </div>
       )}
 
@@ -100,7 +100,7 @@ export function ConversationsSection({
 
       {grouped(items).map((g) => (
         <div key={g.label} className="mt-2">
-          <h3 className="px-2 py-1 font-mono text-[11px] tracking-wide text-ink-3">{g.label}</h3>
+          <h3 className="px-2 py-1 text-xs text-ink-3">{g.label}</h3>
           <ul>
             {g.items.map((c) => (
               <ConversationRow key={c.id} workspaceId={workspaceId} conversation={c} />
@@ -110,14 +110,15 @@ export function ConversationsSection({
       ))}
 
       {query.hasNextPage && (
-        <button
-          type="button"
+        <Button
+          variant="ghost"
+          size="sm"
           onClick={() => void query.fetchNextPage()}
-          disabled={query.isFetchingNextPage}
-          className="mt-1 px-2 py-1 text-xs text-ink-3 hover:text-ink disabled:opacity-50 [@media(pointer:coarse)]:min-h-11"
+          loading={query.isFetchingNextPage}
+          className="mt-1"
         >
           {chat.showMore}
-        </button>
+        </Button>
       )}
     </section>
   );

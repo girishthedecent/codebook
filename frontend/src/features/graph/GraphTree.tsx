@@ -1,126 +1,199 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { ArrowsClockwise, CaretRight } from '@phosphor-icons/react';
 import { graphCallersQueryOptions, graphDependenciesQueryOptions } from '@/api/queries';
 import type { GraphSymbol } from '@/api/types';
-import { Spinner } from '@/ui';
+import { Button, SectionHeading, Skeleton, TextButton } from '@/ui';
 import { cn } from '@/lib/cn';
-import { ErrorLine } from './ErrorLine';
-import { SymbolLine } from './SymbolLine';
-import { graphStrings as t } from './strings';
+import { ErrorNote } from './ErrorNote';
+import { Outside } from './Outside';
+import { graphStrings as t, kindLabel } from './strings';
 
 type Dir = 'callers' | 'dependencies';
 
-type Props = {
+type Actions = {
+  onOpen: (symbol: GraphSymbol) => void;
+  onFocus: (symbol: GraphSymbol) => void;
+};
+
+// Longer lists show their first rows and a button for the rest.
+const FIRST_ROWS = 10;
+
+type Props = Actions & {
   repo: string;
   center: GraphSymbol;
-  /** Which sides to show; both by default. */
-  dir?: 'callers' | 'dependencies' | 'both';
-  onOpen: (symbol: GraphSymbol) => void;
-  onFocus: (id: string) => void;
+  /** Package names from the overview, to tell libraries apart from unmatched calls. */
+  packages: string[];
 };
 
 /**
- * The graph as a tree, one hop at a time: used on phones instead of the canvas, and as the
- * keyboard-friendly list view elsewhere. Each row fetches its own next level when expanded.
+ * Who calls the symbol and what it calls, side by side on wide screens and one above the
+ * other on a phone. Each row opens its next hop in place, which is the way to walk the graph
+ * without the map.
  */
-export function GraphTree({ repo, center, dir = 'both', onOpen, onFocus }: Props) {
+export function Connections({ repo, center, packages, onOpen, onFocus }: Props) {
   return (
-    <div className="space-y-6">
-      {dir !== 'dependencies' && (
-        <section aria-labelledby="tree-callers">
-          <h2 id="tree-callers" className="mb-1 text-xs font-medium text-ink-2">
-            {t.calledBy}
-          </h2>
-          <Level
-            repo={repo}
-            symbolId={center.id}
-            dir="callers"
-            ancestors={[center.id]}
-            onOpen={onOpen}
-            onFocus={onFocus}
-          />
-        </section>
-      )}
-      {dir !== 'callers' && (
-        <section aria-labelledby="tree-calls">
-          <h2 id="tree-calls" className="mb-1 text-xs font-medium text-ink-2">
-            {t.calls}
-          </h2>
-          <Level
-            repo={repo}
-            symbolId={center.id}
-            dir="dependencies"
-            ancestors={[center.id]}
-            onOpen={onOpen}
-            onFocus={onFocus}
-          />
-        </section>
-      )}
+    <div className="grid gap-x-12 gap-y-10 lg:grid-cols-2 lg:[&>*+*]:border-l lg:[&>*+*]:border-rule lg:[&>*+*]:pl-12">
+      <Column
+        repo={repo}
+        center={center}
+        dir="callers"
+        packages={packages}
+        onOpen={onOpen}
+        onFocus={onFocus}
+      />
+      <Column
+        repo={repo}
+        center={center}
+        dir="dependencies"
+        packages={packages}
+        onOpen={onOpen}
+        onFocus={onFocus}
+      />
     </div>
   );
 }
 
-type LevelProps = {
-  repo: string;
-  symbolId: string;
-  dir: Dir;
-  ancestors: string[];
-  onOpen: (symbol: GraphSymbol) => void;
-  onFocus: (id: string) => void;
-};
-
-function Level({ repo, symbolId, dir, ancestors, onOpen, onFocus }: LevelProps) {
+function Column({ repo, center, dir, packages, onOpen, onFocus }: Props & { dir: Dir }) {
   // Two queries with one enabled: their result types differ, so they can't share a call.
   const callers = useQuery({
-    ...graphCallersQueryOptions(repo, symbolId, 1),
+    ...graphCallersQueryOptions(repo, center.qualifiedName, 1),
     enabled: dir === 'callers',
   });
   const dependencies = useQuery({
-    ...graphDependenciesQueryOptions(repo, symbolId, 1),
+    ...graphDependenciesQueryOptions(repo, center.qualifiedName, 1),
     enabled: dir === 'dependencies',
   });
   const query = dir === 'callers' ? callers : dependencies;
+  const headingId = useId();
+  const count = query.data?.symbols.length;
 
-  if (query.isPending) {
-    return (
-      <div className="flex h-9 items-center gap-2 text-xs text-ink-3">
-        <Spinner className="size-3.5" label={t.loading} />
-      </div>
-    );
-  }
-  if (query.error) {
-    return (
-      <div className="py-2">
-        <ErrorLine error={query.error} onRetry={() => void query.refetch()} />
-      </div>
-    );
-  }
+  return (
+    <section aria-labelledby={headingId}>
+      <SectionHeading
+        as="h3"
+        id={headingId}
+        hint={count === undefined ? undefined : symbolCount(count, query.data?.truncated)}
+      >
+        {dir === 'callers' ? t.calledBy : t.calls}
+      </SectionHeading>
+      {query.isPending ? (
+        <RowsLoading />
+      ) : query.error ? (
+        <ErrorNote error={query.error} onRetry={() => void query.refetch()} />
+      ) : (
+        <>
+          <Rows
+            symbols={query.data.symbols}
+            truncated={query.data.truncated}
+            repo={repo}
+            dir={dir}
+            ancestors={[center.id]}
+            onOpen={onOpen}
+            onFocus={onFocus}
+          />
+          {dir === 'dependencies' && dependencies.data && (
+            <Outside external={dependencies.data.external} packages={packages} className="mt-8" />
+          )}
+        </>
+      )}
+    </section>
+  );
+}
 
-  const symbols = [...query.data.symbols].sort(
+const symbolCount = (n: number, truncated?: boolean) =>
+  `${n} ${n === 1 ? 'symbol' : 'symbols'}${truncated ? ', the nearest of more' : ''}`;
+
+function RowsLoading() {
+  return (
+    <div className="flex flex-col gap-3 pt-1" role="status">
+      <span className="sr-only">{t.loading}</span>
+      {[0, 1, 2].map((i) => (
+        <Skeleton key={i} className="h-12 w-full" />
+      ))}
+    </div>
+  );
+}
+
+type RowsProps = Actions & {
+  repo: string;
+  symbols: GraphSymbol[];
+  truncated: boolean;
+  dir: Dir;
+  ancestors: string[];
+};
+
+function Rows({ symbols, truncated, repo, dir, ancestors, onOpen, onFocus }: RowsProps) {
+  const [all, setAll] = useState(false);
+  const sorted = [...symbols].sort(
     (a, b) => a.filePath.localeCompare(b.filePath) || a.lineStart - b.lineStart,
   );
-  if (symbols.length === 0) {
+  if (sorted.length === 0) {
     return (
-      <p className="py-2 text-xs text-ink-3">
+      <p className="py-2 text-sm text-ink-3">
         {dir === 'callers' ? t.nothingCalls : t.callsNothing}
       </p>
     );
   }
+  const shown = all ? sorted : sorted.slice(0, FIRST_ROWS);
   return (
-    <ul role="group" className="border-l border-rule">
-      {symbols.map((s) => (
-        <Row
-          key={s.id}
-          repo={repo}
-          symbol={s}
-          dir={dir}
-          ancestors={ancestors}
-          onOpen={onOpen}
-          onFocus={onFocus}
-        />
-      ))}
-      {query.data.truncated && <li className="py-1.5 pl-3 text-xs text-ink-3">{t.truncated}</li>}
-    </ul>
+    <>
+      <ul>
+        {shown.map((s) => (
+          <Row
+            key={s.id}
+            repo={repo}
+            symbol={s}
+            dir={dir}
+            ancestors={ancestors}
+            onOpen={onOpen}
+            onFocus={onFocus}
+          />
+        ))}
+      </ul>
+      {sorted.length > FIRST_ROWS && (
+        <TextButton className="mt-2 inline-flex min-h-10 items-center" onClick={() => setAll(!all)}>
+          {all ? t.fewer : t.more(sorted.length - FIRST_ROWS)}
+        </TextButton>
+      )}
+      {truncated && <p className="mt-2 text-xs text-ink-3">{t.truncated}</p>}
+    </>
+  );
+}
+
+/** One more hop from a row, fetched when the row is opened. */
+function Level({
+  repo,
+  symbol,
+  dir,
+  ancestors,
+  onOpen,
+  onFocus,
+}: Omit<RowsProps, 'symbols' | 'truncated'> & { symbol: GraphSymbol }) {
+  const callers = useQuery({
+    ...graphCallersQueryOptions(repo, symbol.qualifiedName, 1),
+    enabled: dir === 'callers',
+  });
+  const dependencies = useQuery({
+    ...graphDependenciesQueryOptions(repo, symbol.qualifiedName, 1),
+    enabled: dir === 'dependencies',
+  });
+  const query = dir === 'callers' ? callers : dependencies;
+
+  if (query.isPending) return <RowsLoading />;
+  if (query.error) {
+    return <ErrorNote error={query.error} onRetry={() => void query.refetch()} />;
+  }
+  return (
+    <Rows
+      symbols={query.data.symbols}
+      truncated={query.data.truncated}
+      repo={repo}
+      dir={dir}
+      ancestors={ancestors}
+      onOpen={onOpen}
+      onFocus={onFocus}
+    />
   );
 }
 
@@ -131,20 +204,21 @@ function Row({
   ancestors,
   onOpen,
   onFocus,
-}: Omit<LevelProps, 'symbolId'> & { symbol: GraphSymbol }) {
+}: Omit<RowsProps, 'symbols' | 'truncated'> & { symbol: GraphSymbol }) {
   const [open, setOpen] = useState(false);
   // A cycle would expand forever; show it once and stop.
   const cycle = ancestors.includes(symbol.id);
 
   return (
-    <li className="border-b border-rule last:border-b-0">
-      <div className="flex min-h-11 items-center gap-1 pl-1">
+    <li>
+      <div className="flex items-start gap-1">
         {cycle ? (
           <span
-            className="w-12 shrink-0 text-center font-mono text-xs text-ink-3"
             title={t.alreadyAbove}
+            className="flex size-10 shrink-0 items-center justify-center text-ink-3"
           >
-            ↺
+            <ArrowsClockwise size={14} aria-hidden />
+            <span className="sr-only">{t.alreadyAbove}</span>
           </span>
         ) : (
           <button
@@ -152,37 +226,46 @@ function Row({
             aria-expanded={open}
             aria-label={`${open ? t.collapse : t.expand} ${dir === 'callers' ? t.calledBy.toLowerCase() : t.calls.toLowerCase()} ${symbol.name}`}
             onClick={() => setOpen((o) => !o)}
-            className="flex h-11 w-12 shrink-0 items-center justify-center font-mono text-xs text-ink-3 hover:text-ink"
+            className="flex size-10 shrink-0 items-center justify-center rounded-sm text-ink-3 hover:bg-paper-2 hover:text-ink"
           >
-            <span
+            <CaretRight
+              size={12}
               aria-hidden
-              className={cn('inline-block transition-transform duration-150', open && 'rotate-90')}
-            >
-              ›
-            </span>
+              className={cn('transition-transform duration-150', open && 'rotate-90')}
+            />
           </button>
         )}
         <button
           type="button"
           onClick={() => onOpen(symbol)}
-          className="min-w-0 flex-1 py-2 pr-2 text-left hover:bg-paper-2"
+          title={t.openInViewer}
+          className="min-w-0 flex-1 rounded-sm px-2 py-1.5 text-left hover:bg-paper-2"
         >
-          <SymbolLine symbol={symbol} />
+          <span className="flex items-baseline gap-2">
+            <span className="min-w-0 truncate font-mono text-sm text-ink">{symbol.name}</span>
+            <span className="shrink-0 text-xs text-ink-3">{kindLabel(symbol.kind)}</span>
+          </span>
+          <span className="block truncate font-mono text-xs text-ink-3">
+            {symbol.filePath}:{symbol.lineStart}
+          </span>
+          {symbol.signature && (
+            <span className="block truncate font-mono text-xs text-ink-2">{symbol.signature}</span>
+          )}
         </button>
-        <button
-          type="button"
-          onClick={() => onFocus(symbol.id)}
+        <Button
+          size="sm"
+          variant="ghost"
           aria-label={`${t.center} ${symbol.name}`}
-          className="h-11 shrink-0 px-3 text-xs text-ink-3 hover:text-ink"
+          onClick={() => onFocus(symbol)}
         >
           {t.center}
-        </button>
+        </Button>
       </div>
       {open && !cycle && (
-        <div className="pb-1 pl-5">
+        <div className="mb-2 ml-5 border-l border-rule pl-3">
           <Level
             repo={repo}
-            symbolId={symbol.id}
+            symbol={symbol}
             dir={dir}
             ancestors={[...ancestors, symbol.id]}
             onOpen={onOpen}

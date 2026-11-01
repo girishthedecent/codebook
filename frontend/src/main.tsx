@@ -7,6 +7,7 @@ import { queryClient } from './api/queryClient';
 import { NotFound } from './ui/NotFound';
 import { RouteError } from './ui/RouteError';
 import { Toaster, TooltipProvider } from './ui';
+import { PendingScreen } from './features/shell/PendingScreen';
 import './styles/base.css';
 
 const router = createRouter({
@@ -15,6 +16,11 @@ const router = createRouter({
   defaultPreload: 'intent',
   defaultPreloadStaleTime: 0, // Query owns staleness; the router only triggers loads.
   scrollRestoration: true,
+  // A page that takes more than a blink to load shows the branded screen instead of a blank one,
+  // and keeps it just long enough not to flash.
+  defaultPendingComponent: PendingScreen,
+  defaultPendingMs: 400,
+  defaultPendingMinMs: 300,
   defaultNotFoundComponent: NotFound,
   defaultErrorComponent: RouteError,
 });

@@ -45,13 +45,14 @@ export function BarChart({
 
   const numbers = values.filter((v): v is number => v !== null);
   const ticks = niceTicks(0, Math.max(max ?? 0, ...numbers, 0));
-  const left = 8 + Math.max(...ticks.map((t) => formatY(t).length)) * 7;
+  const left = 8 + Math.max(...ticks.map((t) => formatY(t).length)) * 8;
   const innerW = Math.max(40, width - left - M.right);
   const innerH = height - M.top - M.bottom;
   const band = innerW / Math.max(1, x.length);
   const barW = Math.max(2, Math.min(MAX_BAR, band - 2));
   const sy = linear([0, ticks.at(-1)!], [M.top + innerH, M.top]);
-  const capLabels = x.length <= 12;
+  // A value over every column only while the columns are wide enough to hold it.
+  const capLabels = band >= 56;
   const every = Math.max(1, Math.ceil(x.length / Math.max(1, Math.floor(innerW / 64))));
 
   const onKey = (e: KeyboardEvent<SVGSVGElement>) => {
@@ -109,7 +110,7 @@ export function BarChart({
                   y={sy(t)}
                   dy="0.32em"
                   textAnchor="end"
-                  className="fill-ink-3 font-mono text-[11px]"
+                  className="fill-ink-3 font-mono text-xs"
                 >
                   {formatY(t)}
                 </text>
@@ -146,7 +147,7 @@ export function BarChart({
                       x={cx}
                       y={sy(v) - 5}
                       textAnchor="middle"
-                      className="fill-ink-2 font-mono text-[11px]"
+                      className="fill-ink-2 font-mono text-xs"
                     >
                       {formatY(v)}
                     </text>
@@ -156,7 +157,7 @@ export function BarChart({
                       x={cx}
                       y={height - 6}
                       textAnchor="middle"
-                      className="fill-ink-3 font-mono text-[11px]"
+                      className="fill-ink-3 font-mono text-xs"
                     >
                       {formatX(c)}
                     </text>

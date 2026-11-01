@@ -2,18 +2,22 @@ import { useCallback, useSyncExternalStore } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { isApiError } from '@/api/client';
 import { invalidateConversation } from '@/api/queries/conversations';
-import { keys } from '@/api/queries/keys';
 import { isAbortError, StreamDroppedError, streamTurn } from '@/api/sse';
 import type { Citation, TurnDone, TurnStep } from '@/api/types';
+import { applyTitle, refreshTitles } from './conversationCache';
 
 export type TurnStatus = 'idle' | 'streaming' | 'done' | 'error' | 'aborted';
 
 /** One agent step as the transcript shows it, live or saved. */
 export type StepView = {
+  /** Unique within the turn; the same on the step's start and end. */
+  id: string;
   index: number;
   tool: string;
   args?: unknown;
   ms?: number;
+  /** What the tool found, in a few words ("3 passages from 2 sources"). */
+  summary?: string;
   running: boolean;
   ok: boolean;
 };
@@ -21,13 +25,14 @@ export type StepView = {
 export type TurnError = {
   code: string;
   message: string;
-  /** Seconds until another question is allowed (429). */
-  retryAfter?: number;
   dropped?: boolean;
 };
 
+/** A 429 before the answer started: which limit, and how long until it ends. */
+export type TurnLimit = { code: string; message: string; retryAfterSec: number };
+
 /** How `send` ended, for callers that react once rather than render the state. */
-export type TurnOutcome = { rateLimited?: { retryAfter: number } };
+export type TurnOutcome = { limit?: TurnLimit };
 
 export type TurnState = {
   status: TurnStatus;
@@ -38,8 +43,10 @@ export type TurnState = {
   citations: Citation[];
   error?: TurnError;
   done?: TurnDone;
-  /** How many saved messages the conversation had when the question was asked. */
+  /** How many saved messages came before this question; the live exchange takes the place after. */
   baseline: number;
+  /** The saved messages when it was asked, to tell the ones this turn wrote from the rest. */
+  known: ReadonlySet<string>;
   startedAt: number;
   /** When it ended, so callers can tell a refetch that happened after it. 0 while running. */
   endedAt: number;
@@ -53,41 +60,48 @@ const idle: TurnState = {
   text: '',
   citations: [],
   baseline: 0,
+  known: new Set(),
   startedAt: 0,
   endedAt: 0,
 };
 
-function upsertStep(steps: StepView[], step: TurnStep): StepView[] {
-  const next: StepView = {
-    index: step.index,
-    tool: step.tool,
-    args: step.args,
-    ms: step.ms,
-    running: step.status === 'start',
-    ok: true,
-  };
-  const at = steps.findIndex((s) => s.index === step.index && s.tool === step.tool);
-  if (at === -1) return [...steps, next];
-  const copy = steps.slice();
-  copy[at] = { ...copy[at], ...next, args: next.args ?? copy[at]!.args };
-  return copy;
-}
+export type SendOptions = {
+  useMemory: boolean;
+  /** Replace the failed attempt of this same question instead of adding another. */
+  retry?: boolean;
+  baseline: number;
+  known: ReadonlySet<string>;
+};
 
-/**
- * The backend names a conversation in a background job after the first answer, so the
- * refetch right at the end of the turn still sees the placeholder title. Look again shortly.
- */
-function refreshTitleLater(
-  client: ReturnType<typeof useQueryClient>,
-  workspaceId: string,
-  conversationId: string,
-) {
-  for (const delay of [2500, 7000]) {
-    setTimeout(() => {
-      void client.invalidateQueries({ queryKey: keys.conversation(conversationId) });
-      void client.invalidateQueries({ queryKey: keys.conversations(workspaceId) });
-    }, delay);
+function upsertStep(steps: StepView[], step: TurnStep): StepView[] {
+  const running = step.status === 'start';
+  const at = steps.findIndex((s) => s.id === step.id);
+  if (at === -1) {
+    return [
+      ...steps,
+      {
+        id: step.id,
+        index: step.index,
+        tool: step.tool,
+        args: step.args,
+        ms: step.ms,
+        summary: step.summary,
+        running,
+        ok: step.ok ?? true,
+      },
+    ];
   }
+  const copy = steps.slice();
+  const before = copy[at]!;
+  copy[at] = {
+    ...before,
+    args: step.args ?? before.args,
+    ms: step.ms ?? before.ms,
+    summary: step.summary ?? before.summary,
+    running,
+    ok: step.ok ?? before.ok,
+  };
+  return copy;
 }
 
 // One entry per conversation, outside React, so a turn keeps streaming while the reader looks
@@ -145,13 +159,34 @@ export function discardTurn(conversationId: string) {
   entries.delete(conversationId);
 }
 
+type Client = ReturnType<typeof useQueryClient>;
+
+/**
+ * A stopped or dropped turn is saved by the server on its own time, so the refetch right at
+ * the end can come back before the partial answer is there. Look again shortly.
+ */
+function refetchSoon(client: Client, workspaceId: string, conversationId: string) {
+  for (const delay of [1500, 5000]) {
+    setTimeout(() => invalidateConversation(client, workspaceId, conversationId), delay);
+  }
+}
+
+/**
+ * A conversation's first question names it at once, and a model title replaces that once the
+ * answer has been read (the server waits about half a minute). Look again after both.
+ */
+function refreshTitlesLater(client: Client, workspaceId: string, conversationId: string) {
+  for (const delay of [35_000, 70_000]) {
+    setTimeout(() => refreshTitles(client, workspaceId, conversationId), delay);
+  }
+}
+
 async function runTurn(
-  client: ReturnType<typeof useQueryClient>,
+  client: Client,
   workspaceId: string,
   conversationId: string,
   question: string,
-  useMemory: boolean,
-  baseline: number,
+  { useMemory, retry, baseline, known }: SendOptions,
 ): Promise<TurnOutcome> {
   const entry = entryOf(conversationId);
   entry.controller?.abort();
@@ -164,16 +199,29 @@ async function runTurn(
     question,
     useMemory,
     baseline,
+    known,
     startedAt: Date.now(),
   }));
 
+  const firstQuestion = baseline === 0;
+  let first = true;
   try {
     for await (const ev of streamTurn(
       conversationId,
-      { content: question, useMemory },
+      { content: question, useMemory, retry: retry || undefined },
       ac.signal,
     )) {
+      // The server names the conversation before anything else, and says so in a `title` event;
+      // if that event doesn't come, the first thing that does means the name is already saved.
+      if (first) {
+        first = false;
+        if (firstQuestion && ev.event !== 'title')
+          refreshTitles(client, workspaceId, conversationId);
+      }
       switch (ev.event) {
+        case 'title':
+          applyTitle(client, workspaceId, conversationId, ev.data.title);
+          break;
         case 'step':
           update(entry, (t) => ({ ...t, steps: upsertStep(t.steps, ev.data) }));
           break;
@@ -195,17 +243,25 @@ async function runTurn(
   } catch (error) {
     if (isAbortError(error)) {
       finish(entry, { status: 'aborted' });
+      refetchSoon(client, workspaceId, conversationId);
     } else if (error instanceof StreamDroppedError) {
       finish(entry, {
         status: 'error',
         error: { code: 'DROPPED', message: error.message, dropped: true },
       });
-    } else if (isApiError(error) && error.retryAfterSec !== undefined) {
-      // Nothing was saved; the caller puts the question back and counts down.
+      refetchSoon(client, workspaceId, conversationId);
+    } else if (isApiError(error) && error.status === 429) {
+      // Nothing was saved; the caller puts the question back and says when to ask again.
       if (entry.frame !== null) cancelAnimationFrame(entry.frame);
       entry.controller = null;
       update(entry, () => idle);
-      return { rateLimited: { retryAfter: error.retryAfterSec } };
+      return {
+        limit: {
+          code: error.code,
+          message: error.message,
+          retryAfterSec: error.retryAfterSec ?? 60,
+        },
+      };
     } else if (isApiError(error)) {
       // The stream bypasses the query cache; replaying the 401 through a mutation lets the
       // shell's session-expiry handler (which listens to the cache) send the reader to sign in.
@@ -216,10 +272,7 @@ async function runTurn(
           .execute(undefined)
           .catch(() => undefined);
       }
-      finish(entry, {
-        status: 'error',
-        error: { code: error.code, message: error.message, retryAfter: error.retryAfterSec },
-      });
+      finish(entry, { status: 'error', error: { code: error.code, message: error.message } });
     } else {
       finish(entry, {
         status: 'error',
@@ -230,7 +283,7 @@ async function runTurn(
     // A deleted conversation has nothing to refetch.
     if (entries.get(conversationId) === entry) {
       invalidateConversation(client, workspaceId, conversationId);
-      refreshTitleLater(client, workspaceId, conversationId);
+      if (firstQuestion) refreshTitlesLater(client, workspaceId, conversationId);
     }
   }
   return {};
@@ -254,8 +307,8 @@ export function useTurn(workspaceId: string, conversationId: string) {
   const turn = useSyncExternalStore(subscribe, () => entryOf(conversationId).state);
 
   const send = useCallback(
-    (question: string, useMemory: boolean, baseline: number) =>
-      runTurn(client, workspaceId, conversationId, question, useMemory, baseline),
+    (question: string, options: SendOptions) =>
+      runTurn(client, workspaceId, conversationId, question, options),
     [client, conversationId, workspaceId],
   );
   const stop = useCallback(() => entryOf(conversationId).controller?.abort(), [conversationId]);

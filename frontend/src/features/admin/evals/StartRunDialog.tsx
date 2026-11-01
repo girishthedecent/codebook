@@ -1,12 +1,18 @@
 import { useId, useState, type FormEvent } from 'react';
 import { useEvalDatasets, useStartEvalRun } from '@/api/queries';
 import { isApiError } from '@/api/client';
-import { Button, Dialog, Field, Input, controlClass, toast } from '@/ui';
-import { cn } from '@/lib/cn';
+import { Button, Callout, Dialog, Field, Input, RadioGroup, Select, toast } from '@/ui';
 import { strings } from '../strings';
 import { knownConfigs } from './metrics';
 
 const NAME = /^[a-z0-9-]+$/;
+
+type Suite = 'retrieval' | 'answer';
+
+const suites = [
+  { value: 'retrieval', label: 'Retrieval', description: 'Search quality, no model answers.' },
+  { value: 'answer', label: 'Answer', description: 'The full chat pipeline plus a judge.' },
+];
 
 /** Queues a run for the eval worker. Runs go one at a time; a busy worker answers 409. */
 export function StartRunDialog({
@@ -19,7 +25,8 @@ export function StartRunDialog({
   const datasets = useEvalDatasets();
   const start = useStartEvalRun();
   const listId = useId();
-  const [suite, setSuite] = useState<'retrieval' | 'answer'>('retrieval');
+  const suiteLabel = useId();
+  const [suite, setSuite] = useState<Suite>('retrieval');
   const [dataset, setDataset] = useState('core');
   const [config, setConfig] = useState('hybrid');
   const [split, setSplit] = useState<'DEV' | 'HELDOUT'>('DEV');
@@ -50,7 +57,7 @@ export function StartRunDialog({
     );
   };
 
-  const pickSuite = (next: 'retrieval' | 'answer') => {
+  const pickSuite = (next: Suite) => {
     setSuite(next);
     if (!knownConfigs[next]?.includes(config)) setConfig(knownConfigs[next]![0]!);
   };
@@ -66,68 +73,43 @@ export function StartRunDialog({
           <Button variant="secondary" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button type="submit" form="start-run" loading={start.isPending}>
+          <Button type="submit" variant="primary" form="start-run" loading={start.isPending}>
             Queue run
           </Button>
         </>
       }
     >
       <form id="start-run" onSubmit={submit} className="flex flex-col gap-4">
-        <fieldset className="flex flex-col gap-1.5">
-          <legend className="mb-1.5 text-sm font-medium text-ink">Suite</legend>
-          {(['retrieval', 'answer'] as const).map((s) => (
-            <label
-              key={s}
-              className="flex min-h-9 cursor-pointer items-center gap-2 text-sm text-ink"
-            >
-              <input
-                type="radio"
-                name="suite"
-                value={s}
-                checked={suite === s}
-                onChange={() => pickSuite(s)}
-                className="accent-[var(--accent)]"
-              />
-              <span className="font-mono">{s}</span>
-              <span className="text-ink-3">
-                {s === 'retrieval'
-                  ? 'search quality, no model answers'
-                  : 'the full chat pipeline plus a judge'}
-              </span>
-            </label>
-          ))}
-        </fieldset>
-
-        {suite === 'answer' && (
-          <p className="border-l-2 border-warn pl-3 text-sm text-ink-2">
-            {strings.evals.runWarning}
+        <div>
+          <p id={suiteLabel} className="text-xs font-medium text-ink">
+            Suite
           </p>
-        )}
+          <RadioGroup
+            aria-labelledby={suiteLabel}
+            value={suite}
+            onValueChange={(value) => pickSuite(value as Suite)}
+            options={suites}
+          />
+        </div>
+
+        {suite === 'answer' && <Callout tone="warn">{strings.evals.runWarning}</Callout>}
 
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Dataset">
-            <select
-              value={dataset}
-              onChange={(e) => setDataset(e.target.value)}
-              className={cn(controlClass, 'h-9')}
-            >
+            <Select value={dataset} onChange={(e) => setDataset(e.target.value)}>
               {(datasets.data ?? [{ name: 'core', cases: 0 }]).map((d) => (
                 <option key={d.name} value={d.name}>
                   {d.name}
                   {d.cases ? ` (${d.cases} cases)` : ''}
                 </option>
               ))}
-            </select>
+            </Select>
           </Field>
           <Field label="Split">
-            <select
-              value={split}
-              onChange={(e) => setSplit(e.target.value as 'DEV' | 'HELDOUT')}
-              className={cn(controlClass, 'h-9')}
-            >
+            <Select value={split} onChange={(e) => setSplit(e.target.value as 'DEV' | 'HELDOUT')}>
               <option value="DEV">dev</option>
               <option value="HELDOUT">held-out</option>
-            </select>
+            </Select>
           </Field>
         </div>
 
@@ -148,19 +130,17 @@ export function StartRunDialog({
         </datalist>
 
         <Field label="Limit" hint="Optional: run only the first N cases." error={limitError}>
-          <Input
-            value={limit}
-            onChange={(e) => setLimit(e.target.value)}
-            inputMode="numeric"
-            className="w-32 font-mono"
-          />
+          <div className="w-32">
+            <Input
+              value={limit}
+              onChange={(e) => setLimit(e.target.value)}
+              inputMode="numeric"
+              className="font-mono"
+            />
+          </div>
         </Field>
 
-        {error && (
-          <p role="alert" className="text-sm text-error">
-            {error}
-          </p>
-        )}
+        {error && <Callout tone="error">{error}</Callout>}
       </form>
     </Dialog>
   );
