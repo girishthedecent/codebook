@@ -27,7 +27,9 @@ model User {
   workspaces     Workspace[]
   conversations  Conversation[]
   studyArtifacts StudyArtifact[]
+  studyAttempts  StudyAttempt[]
   memories       Memory[]
+  highlights     Highlight[]
 
   @@unique([email])
   @@map("user")
@@ -102,6 +104,7 @@ model Workspace {
   conversations  Conversation[]
   studyArtifacts StudyArtifact[]
   answerCache    AnswerCache[]
+  highlights     Highlight[]
 
   @@index([userId, createdAt])
 }
@@ -206,6 +209,7 @@ model Source {
   ingestDraft IngestDraft?
   symbols     CodeSymbol[]
   edges       CodeEdge[]
+  highlights  Highlight[]
 
   @@unique([workspaceId, dedupeKey])
   @@index([workspaceId, createdAt])
@@ -568,6 +572,8 @@ model Conversation {
   summarizedUpToMessageId String?
   // Memory extraction has read the messages up to this one; it only learns from later ones.
   memoryUpToMessageId     String?
+  // Pinned conversations head the workspace's list, the most recently pinned first.
+  pinnedAt                DateTime?
   createdAt               DateTime  @default(now())
   updatedAt               DateTime  @updatedAt
   messages                Message[]
@@ -656,29 +662,72 @@ enum JobStatus {
 }
 
 model StudyArtifact {
-  id            String    @id @default(cuid())
+  id            String         @id @default(cuid())
   workspaceId   String
-  workspace     Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspace     Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   userId        String
-  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   type          StudyType
   title         String
   // { sourceIds, tocNodeId?, pathPrefix?, topic?, count?, difficulty? }
   input         Json
-  status        JobStatus @default(PENDING)
+  status        JobStatus      @default(PENDING)
   // Typed per type by study.schemas.ts; citations resolved from `sources`.
   data          Json?
-  sources       Json      @default("[]")
+  sources       Json           @default("[]")
   // A failed set: what the user is told, and a code for why (see study.errors.ts). Null when
   // no code was recorded.
   error         String?
   errorCode     String?
   model         String?
   promptVersion String?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  attempts      StudyAttempt[]
 
   @@index([workspaceId, createdAt])
+}
+
+// One pass through a quiz or a deck of flashcards: how it went, item by item. Only the
+// latest few per user and set are kept (appConfig.study.attemptsKept).
+model StudyAttempt {
+  id         String        @id @default(cuid())
+  artifactId String
+  artifact   StudyArtifact @relation(fields: [artifactId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  score      Int
+  total      Int
+  // [{ index, ok }]: the item's position in the set, and whether it was answered right.
+  items      Json
+  createdAt  DateTime      @default(now())
+
+  @@index([artifactId, userId, createdAt])
+}
+
+// A passage a user marked in a source, with an optional note. It sits on a page of a PDF or
+// in a file of a repository or website (with its lines, for code); the migration adds a check
+// that exactly one of page and path is set.
+model Highlight {
+  id          String    @id @default(cuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sourceId    String
+  source      Source    @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  page        Int?
+  path        String?
+  lineStart   Int?
+  lineEnd     Int?
+  heading     String?
+  text        String
+  note        String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([workspaceId, userId, createdAt])
+  @@index([sourceId])
 }
 
 // Fixed-window rate limit counters, one row per key and window.

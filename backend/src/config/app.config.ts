@@ -207,6 +207,13 @@ export const appConfig = {
     topicResults: 20,
     // A set still PENDING or RUNNING after this long is taken as stuck and can be regenerated.
     staleAfterMs: 15 * 60_000,
+    // Attempts kept per user and set; older ones are dropped as new ones come in.
+    attemptsKept: 50,
+  },
+  highlights: {
+    maxPerWorkspace: 500,
+    maxTextChars: 2_000,
+    maxNoteChars: 1_000,
   },
   memory: {
     // Profile lines kept per user; an ADD past this replaces the least important one.

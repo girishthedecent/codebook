@@ -4,6 +4,7 @@ export type ErrorCode =
   | 'FORBIDDEN'
   | 'NOT_FOUND'
   | 'CONFLICT'
+  | 'HIGHLIGHT_LIMIT'
   | 'PAYLOAD_TOO_LARGE'
   | 'RATE_LIMITED'
   | 'GUEST_LIMIT'
@@ -53,9 +54,13 @@ export class NotFoundError extends AppError {
   }
 }
 
+// A cap a client words on its own (the highlights a user may keep) has its own code; any
+// other conflict is plain CONFLICT.
+export type ConflictCode = Extract<ErrorCode, 'CONFLICT' | 'HIGHLIGHT_LIMIT'>;
+
 export class ConflictError extends AppError {
-  constructor(message: string, details?: unknown) {
-    super(message, 409, 'CONFLICT', details);
+  constructor(message: string, details?: unknown, code: ConflictCode = 'CONFLICT') {
+    super(message, 409, code, details);
   }
 }
 

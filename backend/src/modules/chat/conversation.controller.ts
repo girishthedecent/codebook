@@ -9,6 +9,7 @@ import {
   type ConversationParams,
   type CreateConversationInput,
   type FeedbackInput,
+  type ListConversationsQuery,
   type MessageParams,
   type UpdateConversationInput,
 } from './conversation.dto.js';
@@ -40,11 +41,11 @@ export async function listConversationsHandler(_req: Request, res: Response) {
   const page = await listConversationsService(
     user.id,
     workspaceId,
-    res.locals.query as PaginationQuery,
+    res.locals.query as ListConversationsQuery,
   );
   res.json(
     successResponse('Conversations', {
-      items: page.items.map(toConversationResponse),
+      items: page.items.map((conversation) => toConversationResponse(conversation)),
       nextCursor: page.nextCursor,
     }),
   );

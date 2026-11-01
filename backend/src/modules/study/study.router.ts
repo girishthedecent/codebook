@@ -10,13 +10,21 @@ import { forbidGuests } from '../demo/demo.middleware.js';
 import { workspaceParamsSchema } from '../workspaces/workspace.validator.js';
 import {
   cancelStudyHandler,
+  createAttemptHandler,
   createStudyHandler,
   deleteStudyHandler,
   getStudyHandler,
+  listAttemptsHandler,
   listStudyHandler,
   regenerateStudyHandler,
 } from './study.controller.js';
-import { createStudySchema, listStudyQuerySchema, studyParamsSchema } from './study.validator.js';
+import {
+  createAttemptSchema,
+  createStudySchema,
+  listAttemptsQuerySchema,
+  listStudyQuerySchema,
+  studyParamsSchema,
+} from './study.validator.js';
 
 // Study sets cost model calls and stay with their workspace's owner; guests only read the
 // demo's.
@@ -61,4 +69,18 @@ studyRouter.post(
   noGuests,
   validateRequestParams(studyParamsSchema),
   cancelStudyHandler,
+);
+
+// Attempts are the reader's own, so guests keep theirs on the demo's sets too.
+studyRouter.get(
+  '/:studyId/attempts',
+  validateRequestParams(studyParamsSchema),
+  validateQueryParams(listAttemptsQuerySchema),
+  listAttemptsHandler,
+);
+studyRouter.post(
+  '/:studyId/attempts',
+  validateRequestParams(studyParamsSchema),
+  validateRequestBody(createAttemptSchema),
+  createAttemptHandler,
 );

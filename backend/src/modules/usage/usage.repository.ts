@@ -38,7 +38,13 @@ export async function usageWindows(userId: string, starts: Record<string, Date>)
   return new Map(rows.map(({ name, ...window }) => [name, window]));
 }
 
-export type UsageDay = { day: string; answers: number; tokens: number; costUsd: string };
+export type UsageDay = {
+  day: string;
+  answers: number;
+  tokensIn: number;
+  tokensOut: number;
+  costUsd: string;
+};
 
 /**
  * One row per UTC day from `firstDay` (YYYY-MM-DD) through `lastDay`, days without activity
@@ -49,7 +55,8 @@ export async function usageByDay(userId: string, firstDay: string, lastDay: stri
   return prismaClient.$queryRaw<UsageDay[]>`
     SELECT to_char(d.day, 'YYYY-MM-DD') AS day,
       coalesce(q.answers, 0)::int AS answers,
-      coalesce(e.tokens, 0)::int AS tokens,
+      coalesce(e."tokensIn", 0)::int AS "tokensIn",
+      coalesce(e."tokensOut", 0)::int AS "tokensOut",
       trim_scale(coalesce(e.cost, 0))::text AS "costUsd"
     FROM generate_series(${firstDay}::date, ${lastDay}::date, interval '1 day') AS d(day)
     LEFT JOIN (
@@ -61,7 +68,8 @@ export async function usageByDay(userId: string, firstDay: string, lastDay: stri
     ) q ON q.day = d.day
     LEFT JOIN (
       SELECT u."createdAt"::date AS day,
-        sum(u."tokensIn" + u."tokensOut") FILTER (WHERE u.type = 'LLM') AS tokens,
+        sum(u."tokensIn") FILTER (WHERE u.type = 'LLM') AS "tokensIn",
+        sum(u."tokensOut") FILTER (WHERE u.type = 'LLM') AS "tokensOut",
         sum(u."costUsd") AS cost
       FROM "UsageEvent" u
       WHERE u."userId" = ${userId} AND u."createdAt" >= ${firstDay}::date

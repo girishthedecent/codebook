@@ -1,6 +1,8 @@
 import prismaClient from '../../config/db.config.js';
 import type { Feedback, Message, Prisma } from '../../generated/prisma/client.js';
 import type { Page, PaginationQuery } from '../../utils/helpers/pagination.helpers.js';
+import type { ListConversationsQuery } from './conversation.dto.js';
+import { encodeListCursor, type ConversationListCursor } from './conversation.validator.js';
 
 // A conversation belongs to the user who started it. They see it as long as its workspace is
 // theirs or the public demo (guests chat on the demo workspace, each in their own threads).
@@ -21,34 +23,49 @@ function toPage<T extends { id: string }>(rows: T[], limit: number, at: (row: T)
   return { items, nextCursor: rows.length > limit && last ? cursorFor(at(last), last.id) : null };
 }
 
+// The first question, which a conversation's preview is made from.
+const withFirstQuestion = {
+  messages: {
+    where: { role: 'USER' },
+    orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+    take: 1,
+    select: { content: true },
+  },
+} satisfies Prisma.ConversationInclude;
+
 export async function createConversation(userId: string, workspaceId: string, title: string) {
   return prismaClient.conversation.create({ data: { userId, workspaceId, title } });
 }
 
-/** The user's conversations in a workspace, most recently active first. */
+/** Rows that come after the cursor in the list order (see listConversations). */
+function afterCursor({ pinnedAt, updatedAt, id }: ConversationListCursor) {
+  const later: Prisma.ConversationWhereInput = {
+    OR: [{ updatedAt: { lt: updatedAt } }, { updatedAt, id: { lt: id } }],
+  };
+  if (!pinnedAt) return { AND: [{ pinnedAt: null }, later] };
+  return {
+    OR: [{ pinnedAt: { lt: pinnedAt } }, { AND: [{ pinnedAt }, later] }, { pinnedAt: null }],
+  };
+}
+
+/**
+ * The user's conversations in a workspace with their first questions: the pinned ones first,
+ * most recently pinned first, then the rest by last activity.
+ */
 export async function listConversations(
   userId: string,
   workspaceId: string,
-  { cursor, limit }: PaginationQuery,
+  { cursor, limit }: ListConversationsQuery,
 ) {
   const rows = await prismaClient.conversation.findMany({
-    where: {
-      AND: [
-        { userId, workspaceId },
-        cursor
-          ? {
-              OR: [
-                { updatedAt: { lt: cursor.createdAt } },
-                { updatedAt: cursor.createdAt, id: { lt: cursor.id } },
-              ],
-            }
-          : {},
-      ],
-    },
-    orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
+    where: { AND: [{ userId, workspaceId }, cursor ? afterCursor(cursor) : {}] },
+    orderBy: [{ pinnedAt: { sort: 'desc', nulls: 'last' } }, { updatedAt: 'desc' }, { id: 'desc' }],
+    include: withFirstQuestion,
     take: limit + 1,
   });
-  return toPage(rows, limit, (row) => row.updatedAt);
+  const items = rows.slice(0, limit);
+  const last = items.at(-1);
+  return { items, nextCursor: rows.length > limit && last ? encodeListCursor(last) : null };
 }
 
 export async function findConversationForUser(userId: string, conversationId: string) {
@@ -103,17 +120,38 @@ export async function listMessages(conversationId: string, { cursor, limit }: Pa
   return toPage(rows, limit, (row) => row.createdAt);
 }
 
-/** Null when the conversation isn't this user's. */
-export async function updateConversationTitle(
+/** The conversation's first question, for its preview; empty when nothing was asked yet. */
+export async function firstQuestion(conversationId: string) {
+  const { where, ...query } = withFirstQuestion.messages;
+  return prismaClient.message.findMany({ ...query, where: { ...where, conversationId } });
+}
+
+/**
+ * Renames and pins or unpins. Pinning is not activity: without a new title, updatedAt is
+ * written back as it was, so the conversation keeps its place among the unpinned ones, and
+ * pinning a pinned one keeps its pin time. Null when the conversation isn't this user's.
+ */
+export async function updateConversation(
   userId: string,
   conversationId: string,
-  title: string,
+  { title, pinned }: { title?: string; pinned?: boolean },
 ) {
-  const { count } = await prismaClient.conversation.updateMany({
+  const current = await prismaClient.conversation.findFirst({
     where: { id: conversationId, ...visibleTo(userId) },
-    data: { title },
+    select: { pinnedAt: true, updatedAt: true },
   });
-  return count > 0 ? prismaClient.conversation.findUnique({ where: { id: conversationId } }) : null;
+  if (!current) return null;
+
+  const data: Prisma.ConversationUpdateManyMutationInput = {};
+  if (title !== undefined) data.title = title;
+  else data.updatedAt = current.updatedAt;
+  if (pinned !== undefined) data.pinnedAt = pinned ? (current.pinnedAt ?? new Date()) : null;
+
+  const [updated] = await prismaClient.conversation.updateManyAndReturn({
+    where: { id: conversationId, ...visibleTo(userId) },
+    data,
+  });
+  return updated ?? null;
 }
 
 /** Returns false when there was nothing of this user's to delete. */
