@@ -214,7 +214,7 @@ another Google project is tried before the next model, and when a question can't
 search falls back to keyword matches and says so.
 
 **Reliability.** A model that keeps hitting its quota is skipped for a while (a circuit breaker
-per model and key), a retried answer replaces the failed attempt, a guest whose answer failed
+per model and key; a key whose daily quota is used up is skipped until it starts over), a retried answer replaces the failed attempt, a guest whose answer failed
 because the models were out of quota gets the question back, and repeat first questions to the
 demo are answered from a 24-hour cache without model calls.
 

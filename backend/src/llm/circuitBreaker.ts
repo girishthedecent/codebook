@@ -24,9 +24,63 @@ export function isQuotaError(error: unknown): boolean {
   );
 }
 
-export function noteQuotaError(ref: ModelRef, now = Date.now()) {
+// A day's limit doesn't come back in five minutes, so a key that used one up is skipped until
+// it starts over instead of failing a few calls every cool-off. Gemini names the limit in the
+// 429's QuotaFailure details (a quotaId such as "GenerateRequestsPerDayPerProjectPerModel");
+// Groq names it in the message ("tokens per day (TPD)") and says when to try again.
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** True when the quota that ran out is a daily one. */
+export function isDailyLimit(error: unknown): boolean {
+  if (RetryError.isInstance(error)) return isDailyLimit(error.lastError);
+  if (!APICallError.isInstance(error)) return false;
+  const text = `${error.message} ${error.responseBody ?? ''}`;
+  return /"quotaId"\s*:\s*"[^"]*PerDay/i.test(text) || /\((?:RPD|TPD)\)/.test(text);
+}
+
+/** Milliseconds until a daily limit starts over, or undefined when the error doesn't say. */
+export function dailyLimitResetsIn(ref: ModelRef, error: unknown, now: number) {
+  if (RetryError.isInstance(error)) return dailyLimitResetsIn(ref, error.lastError, now);
+  if (!APICallError.isInstance(error)) return undefined;
+  if (ref.provider === 'google') return untilPacificMidnight(now);
+  // Groq: "Please try again in 1h2m3.5s", any part optional.
+  const wait = /try again in (?:(\d+)h)?(?:(\d+)m)?(?:([\d.]+)s)?/.exec(error.message);
+  if (!wait || !wait[0].match(/\d/)) return undefined;
+  const [, h = '0', m = '0', sec = '0'] = wait;
+  const ms = ((Number(h) * 60 + Number(m)) * 60 + Number(sec)) * 1000;
+  return Math.min(Math.ceil(ms), DAY_MS);
+}
+
+// Gemini's daily quotas start over at midnight Pacific time. A minute's slack keeps the first
+// call after it from landing on the old day.
+function untilPacificMidnight(now: number) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Los_Angeles',
+    hourCycle: 'h23',
+    hour: 'numeric',
+    minute: 'numeric',
+    second: 'numeric',
+  }).formatToParts(now);
+  const part = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? 0);
+  const elapsed = ((part('hour') * 60 + part('minute')) * 60 + part('second')) * 1000;
+  return DAY_MS - elapsed + 60_000;
+}
+
+export function noteQuotaError(ref: ModelRef, now = Date.now(), error?: unknown) {
   const { quotaErrors, windowMs, coolOffMs } = appConfig.circuitBreaker;
   const state = states.get(keyOf(ref)) ?? { errors: [], openUntil: 0 };
+  const resetsIn =
+    error !== undefined && isDailyLimit(error) ? dailyLimitResetsIn(ref, error, now) : undefined;
+  if (resetsIn !== undefined) {
+    state.openUntil = Math.max(state.openUntil, now + resetsIn);
+    state.errors = [];
+    logger.warn('Model daily quota used up; skipping it until it starts over', {
+      model: modelLabel(ref),
+      until: new Date(state.openUntil).toISOString(),
+    });
+    states.set(keyOf(ref), state);
+    return;
+  }
   state.errors = [...state.errors.filter((at) => now - at < windowMs), now];
   if (state.errors.length >= quotaErrors && state.openUntil <= now) {
     state.openUntil = now + coolOffMs;

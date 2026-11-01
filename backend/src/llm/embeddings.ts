@@ -112,7 +112,7 @@ async function embedMissing(entries: [key: string, input: string][], options: Em
       } catch (error) {
         lastError = error;
         // With one key there's nothing to skip to, so its breaker would only log.
-        if (refs.length > 1 && isQuotaError(error)) noteQuotaError(ref);
+        if (refs.length > 1 && isQuotaError(error)) noteQuotaError(ref, Date.now(), error);
         if (options.abortSignal?.aborted) break;
       }
     }

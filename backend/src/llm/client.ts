@@ -216,7 +216,7 @@ export async function streamStep(
       };
     } catch (error) {
       lastError = error;
-      if (isQuotaError(error)) noteQuotaError(ref);
+      if (isQuotaError(error)) noteQuotaError(ref, Date.now(), error);
       if (abortSignal?.aborted || emitted) break;
       logFailure(task, ref, error, hasFallback);
     }
@@ -284,7 +284,7 @@ async function callWithFallback<T>(options: CallOptions, attempt: Attempt<T>) {
       return { value, call };
     } catch (error) {
       lastError = error;
-      if (isQuotaError(error)) noteQuotaError(ref);
+      if (isQuotaError(error)) noteQuotaError(ref, Date.now(), error);
       // Only structured-output failures report usage; a timed-out call's tokens are unknown.
       if (NoObjectGeneratedError.isInstance(error) && error.usage) {
         const tokens = tokenCounts(error.usage);
